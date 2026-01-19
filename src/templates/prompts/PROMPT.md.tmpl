@@ -1,0 +1,77 @@
+## Context
+Study @.ralph/AGENTS.md for commands and patterns.
+Study @.ralph/specs/$FEATURE.md for feature specification.
+Study @.ralph/specs/$FEATURE-implementation-plan.md for current tasks.
+{{#if frameworkVariant}}For detailed architecture, see @{{appDir}}/.claude/CLAUDE.md{{/if}}
+
+## Learnings
+Read @.ralph/LEARNINGS.md for patterns and anti-patterns from previous iterations.
+Apply relevant learnings to avoid repeating past mistakes.
+
+## Performance
+For data fetching, new components, or optimization tasks, reference @.ralph/guides/PERFORMANCE.md.
+Key patterns: parallel fetches, direct imports, React.cache(), lazy loading.
+
+## Search
+- Use `mgrep "query"` for codebase searches (patterns, implementations, usages)
+- Use Context7 MCP for library/framework documentation
+- Search codebase before assuming something doesn't exist
+
+## Task
+Pick the next incomplete task from the implementation plan.
+**Skip E2E tasks** (tasks starting with `E2E:`) - those are handled in a separate phase.
+Implement it following the patterns in AGENTS.md.
+Write tests for the implementation.
+
+## Validation
+After changes, ALL must pass:
+1. Run: `cd {{appDir}} && {{lintCommand}} -- --fix`
+2. Run: `cd {{appDir}} && {{typecheckCommand}}` (typecheck)
+3. Run: `cd {{appDir}} && {{testCommand}}`
+4. Run: `cd {{appDir}} && {{buildCommand}}`
+
+If any validation fails, fix the issue before proceeding.
+
+## Security Review
+Before committing, review your changes against @.ralph/guides/SECURITY.md:
+1. **Quick scan**: Input validation, injection prevention, auth checks, data exposure
+2. **Run**: `cd {{appDir}} && {{packageManager}} audit` (check for vulnerable dependencies)
+3. **Check**: `mcp__supabase__get_advisors` with type "security" (RLS policies)
+4. **Red team**: Can auth be bypassed? Can other users' data be accessed?
+
+Flag any security issues in the implementation plan and fix before committing.
+
+## Design Quality Check
+Before marking a UI task complete, verify against @.ralph/guides/FRONTEND.md:
+1. Uses design tokens (no hard-coded colors like `#fff` or `rgb()`)
+2. Has hover/focus/active states on interactive elements
+3. Responsive on mobile (test at 375px width)
+4. Empty/loading/error states handled
+5. Charts have titles, tooltips, and legends (if applicable)
+6. Consistent spacing using Tailwind scale
+
+If any check fails, fix before committing.
+
+## Completion
+When ALL validations pass:
+1. Update @.ralph/specs/$FEATURE-implementation-plan.md - mark task done with commit hash
+2. `git -C {{appDir}} add -A`
+3. `git -C {{appDir}} commit -m "type(scope): description"`
+4. `git -C {{appDir}} push origin feat/$FEATURE`
+
+## Learning Capture
+If this iteration revealed something useful, append to @.ralph/LEARNINGS.md:
+- A useful pattern -> Add under "## Patterns (What Works)"
+- A mistake/issue -> Add under "## Anti-Patterns (What to Avoid)"
+- Tool usage tip -> Add under "## Tool Usage"
+- Codebase convention -> Add under "## Codebase Conventions"
+
+Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
+
+## Rules
+- One task per iteration
+- Tests are mandatory - no task is complete without tests
+- Search codebase before assuming something doesn't exist
+- If blocked, document in implementation plan and move to next task
+- Use Supabase MCP for database operations
+- Use PostHog MCP for analytics queries

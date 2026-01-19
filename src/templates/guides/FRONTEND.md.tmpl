@@ -1,0 +1,523 @@
+# Frontend Design Guide
+
+Comprehensive UI/UX reference for building polished, production-grade interfaces.
+
+## Design Thinking
+
+Before coding, understand the context:
+
+### Purpose-Driven Design
+- **What problem does this solve?** Every component should have a clear job.
+- **Who uses it?** Consider the user's context, expertise, and goals.
+- **What's the hierarchy?** Emphasize what matters most.
+
+### Visual Principles
+- **Hierarchy**: Guide the eye - primary action should be obvious
+- **Consistency**: Predictable patterns reduce cognitive load
+- **Feedback**: Every action should have visible response
+- **Proximity**: Related items should be visually grouped
+- **Contrast**: Use difference to create emphasis
+
+### Questions Before Building
+1. What existing patterns can I follow? (Search codebase first)
+2. What states does this need? (empty, loading, error, success)
+3. How does this look on mobile?
+4. What happens when there's lots of data? Or none?
+
+---
+
+## Anti-Patterns (AI Slop to Avoid)
+
+These patterns make UI look generated, not designed:
+
+| Anti-Pattern | Problem | Fix |
+|--------------|---------|-----|
+| Generic layout | No visual hierarchy | Emphasize primary content, de-emphasize secondary |
+| Missing interaction states | Dead-feeling UI | Add hover, focus, active, disabled states |
+| Charts without context | Data with no meaning | Add title, labels, legend, tooltips |
+| Forms without feedback | Users confused | Show validation inline, success/error states |
+| Empty = blank | Wasted opportunity | Helpful message + call to action |
+| Hard-coded colors | Inconsistent, hard to maintain | Use CSS variables / {{styling}} classes |
+| Walls of text | Overwhelming | Break into sections, use headings, whitespace |
+| All same-sized elements | Flat, boring | Vary size to create hierarchy |
+
+---
+
+## Layout Principles
+
+### Grid & Spacing
+- Use consistent spacing scale ({{styling}}: 2, 4, 6, 8, 12, 16, 24, 32)
+- Group related items with less space between them
+- More space separates distinct sections
+- Content should breathe - don't cram
+
+### Responsive Breakpoints
+```
+Mobile:  < 640px   (sm:)
+Tablet:  >= 640px  (md:)
+Desktop: >= 1024px (lg:)
+Wide:    >= 1280px (xl:)
+```
+
+### Mobile-First Approach
+1. Design for mobile constraint first
+2. Add complexity as screen grows
+3. Touch targets: minimum 44x44px
+4. Stack on mobile, side-by-side on desktop
+
+### Common Layouts
+- **Dashboard**: Grid of cards, stats at top
+- **Form**: Single column, labels above inputs
+- **Settings**: Two-column on desktop (nav + content)
+- **List**: Full width with filters, pagination
+
+---
+
+## Component Guidelines
+
+### State Matrix
+Every interactive component needs these states:
+
+| State | Visual Treatment |
+|-------|------------------|
+| Default | Base styling |
+| Hover | Subtle highlight (background shift) |
+| Focus | Visible ring (accessibility requirement) |
+| Active/Pressed | Slightly darker/smaller |
+| Disabled | Reduced opacity, no cursor pointer |
+| Loading | Spinner or skeleton, disabled interaction |
+| Error | Red/destructive color, error message |
+
+### Component Selection Guide
+
+| Need | Component | When to Use |
+|------|-----------|-------------|
+| Primary action | `Button variant="default"` | Main CTA per page/card |
+| Secondary action | `Button variant="outline"` | Alternative actions |
+| Destructive | `Button variant="destructive"` | Delete, remove, cancel subscription |
+| Navigation | Link or ghost button | Moving between pages |
+| Selection (1 of many) | Radio / Select | Limited options (< 7) |
+| Selection (many of many) | Checkbox | Multiple selections |
+| Text input | Input | Single line |
+| Long text | Textarea | Multi-line content |
+| On/Off | Switch | Boolean settings |
+| Feedback | Toast | Transient messages |
+| Confirmation | AlertDialog | Destructive actions |
+
+### Accessibility Requirements (WCAG 2.1)
+
+Accessibility isn't optional - it's foundational to good design.
+
+**Critical (must fix immediately):**
+- Missing alt text on images
+- Unlabeled buttons (add `aria-label` for icon-only buttons)
+- Non-semantic click handlers (use `<button>` not `<div onClick>`)
+
+**Serious:**
+- Removed focus states (never remove `:focus-visible` ring)
+- Missing keyboard support (all flows must be keyboard-operable)
+- Inadequate touch targets (minimum 44x44px mobile, 24x24px desktop)
+
+**Standards:**
+- All interactive elements keyboard accessible
+- Focus order follows visual order
+- Color not the only indicator (add icons/text)
+- Sufficient contrast (4.5:1 for text, consider APCA for perceptual accuracy)
+- Form inputs have explicit visible labels
+- Use `:focus-visible` to show focus only for keyboard users
+
+---
+
+## Data Visualization
+
+### Chart Type Selection
+
+| Data Type | Chart | Example |
+|-----------|-------|---------|
+| Part of whole | Pie/Donut | Response distribution |
+| Comparison | Bar (horizontal) | Rating breakdown |
+| Trend over time | Line/Area | Responses per day |
+| Distribution | Bar (vertical) | Survey channels |
+| Correlation | Scatter | (rare in this app) |
+
+### Required Chart Elements
+Every chart MUST have:
+- [ ] **Title**: What data is this?
+- [ ] **Labels**: Axis labels or segment labels
+- [ ] **Tooltip**: Details on hover
+- [ ] **Legend**: If multiple series
+- [ ] **Empty state**: When no data
+
+### Chart Pattern
+```tsx
+import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
+
+// Always define a config
+const chartConfig = {
+  value: { label: 'Responses', color: 'hsl(var(--chart-1))' },
+} satisfies ChartConfig
+
+// Use ChartContainer for consistent sizing
+<ChartContainer config={chartConfig} className="h-[300px]">
+  <BarChart data={data}>
+    <XAxis dataKey="name" />
+    <YAxis />
+    <ChartTooltip content={<ChartTooltipContent />} />
+    <Bar dataKey="value" fill="var(--color-value)" radius={4} />
+  </BarChart>
+</ChartContainer>
+```
+
+### Chart Colors
+Use semantic color tokens, not raw values:
+```css
+--chart-1: Primary data
+--chart-2: Secondary data
+--chart-3 through --chart-5: Additional series
+```
+
+### Visual Polish for Charts
+- Add `radius` to bars for softer appearance
+- Use gradients for area charts (gradient fills)
+- Animate on load with `animationDuration`
+- Format numbers in tooltips (e.g., percentages, currency)
+
+---
+
+## Micro-Interactions
+
+### Loading States
+| Duration | Treatment |
+|----------|-----------|
+| < 300ms | No indicator needed |
+| 300ms - 2s | Spinner or button loading state |
+| > 2s | Skeleton or progress indicator |
+
+```tsx
+// Button loading
+<Button disabled={isLoading}>
+  {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+  {isLoading ? 'Saving...' : 'Save'}
+</Button>
+
+// Skeleton for content
+<Skeleton className="h-4 w-[250px]" />
+```
+
+### Empty States
+Never show a blank space. Always:
+1. Explain what would be here
+2. Offer a path forward
+
+```tsx
+// Good empty state
+<div className="text-center py-12">
+  <BarChart3 className="mx-auto h-12 w-12 text-muted-foreground" />
+  <h3 className="mt-4 text-lg font-medium">No responses yet</h3>
+  <p className="mt-2 text-sm text-muted-foreground">
+    Share your survey to start collecting data
+  </p>
+  <Button className="mt-4">Copy Survey Link</Button>
+</div>
+```
+
+### Error States
+- Use `destructive` variant colors
+- Show what went wrong (simply)
+- Offer retry or alternative
+
+```tsx
+<Alert variant="destructive">
+  <AlertCircle className="h-4 w-4" />
+  <AlertTitle>Failed to load data</AlertTitle>
+  <AlertDescription>
+    Please try refreshing the page.
+    <Button variant="link" onClick={retry}>Retry</Button>
+  </AlertDescription>
+</Alert>
+```
+
+### Animation & Transitions
+
+**Performance rules:**
+- Only animate GPU-accelerated properties: `transform`, `opacity`
+- Never animate layout properties (`width`, `height`, `top`, `left`)
+- Avoid `transition: all` - explicitly list properties
+- Keep interactions under 200ms
+- Remove `will-change` when animation completes
+
+**User preferences:**
+- Always respect `prefers-reduced-motion`
+```tsx
+// Check user preference
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+// Or use {{styling}}
+<div className="motion-safe:animate-fade-in motion-reduce:animate-none">
+```
+
+**Duration guidelines:**
+- Hovers: 150-200ms
+- State changes: 200-300ms
+- Page transitions: 300-500ms
+- Ease: `ease-in-out` for most, `ease-out` for exits
+
+**Don't:**
+- Add motion without explicit purpose
+- Use custom easing curves without request
+- Animate large images or complex layouts
+
+---
+
+## Forms
+
+### Input Behavior
+- **Enter key**: Submits single-control forms immediately
+- **Cmd/Ctrl+Enter**: Submits in textareas (multi-line inputs)
+- **Never block paste** - even for number-only fields
+- **Never disable typing** - allow any input, validate on submit
+
+### Validation
+- Show errors **next to the field**, not in a banner
+- Focus the **first error field** on submit failure
+- Use inline validation for complex fields (email, password strength)
+- Error messages should be instructional, not just descriptive
+
+```tsx
+// Good: Error next to field
+<div className="space-y-2">
+  <Label htmlFor="email">Email</Label>
+  <Input id="email" aria-invalid={!!errors.email} />
+  {errors.email && (
+    <p className="text-sm text-destructive">{errors.email.message}</p>
+  )}
+</div>
+```
+
+### Labels & Targets
+- Every input needs an explicit `<Label>` (not just placeholder)
+- No dead zones on checkboxes/radios - label should be clickable
+- Enable password manager compatibility (proper `name` and `type` attributes)
+
+### Destructive Actions
+- Always use `AlertDialog` for destructive actions (delete, remove)
+- Provide undo functionality when possible
+- Require confirmation for irreversible actions
+
+---
+
+## URL & State Persistence
+
+Deep-link everything users might want to share or bookmark:
+
+- **Filters**: `?status=active&sort=date`
+- **Tabs**: `?tab=settings`
+- **Pagination**: `?page=2`
+- **Expanded panels**: `?section=advanced`
+- **Search queries**: `?q=search+term`
+
+```tsx
+// Use URL state instead of React state for shareable UI
+import { useSearchParams } from 'next/navigation'
+
+const [searchParams, setSearchParams] = useSearchParams()
+const activeTab = searchParams.get('tab') ?? 'overview'
+```
+
+**Optimistic updates**: Update UI immediately on likely success, reconcile with server response. Don't make users wait for round-trips on common actions.
+
+---
+
+## Performance
+
+### Response Time Targets
+- **Optimistic UI**: Update immediately, sync in background
+- **POST/PATCH/DELETE**: Target under 500ms
+- **Large lists**: Virtualize (react-virtual, tanstack-virtual)
+
+### Layout Stability
+- Set explicit `width` and `height` on images
+- Use skeleton loaders that match final content dimensions
+- Reserve space for dynamic content
+
+### Resource Loading
+- Preconnect to asset domains
+- Preload critical fonts
+- Move expensive computation to Web Workers
+
+### {{styling}} Tips
+- Use `h-dvh` instead of `h-screen` (handles mobile browser chrome)
+- Use `size-*` for square elements (e.g., `size-10` = `w-10 h-10`)
+- Maintain a fixed z-index scale (avoid z-index wars)
+
+---
+
+## Visual Polish
+
+### Shadows
+Use layered shadows for depth (ambient + direct light):
+```css
+/* Subtle elevation */
+box-shadow:
+  0 1px 2px rgba(0,0,0,0.05),   /* ambient */
+  0 1px 3px rgba(0,0,0,0.1);    /* direct */
+
+/* Card elevation */
+box-shadow:
+  0 2px 4px rgba(0,0,0,0.05),
+  0 4px 12px rgba(0,0,0,0.1);
+```
+
+### Border Radius
+Nested elements should have smaller radii:
+```tsx
+// Parent has larger radius
+<Card className="rounded-xl p-4">
+  {/* Child radius <= parent radius minus padding */}
+  <div className="rounded-lg">...</div>
+</Card>
+```
+
+### Optical Alignment
+Sometimes pixel-perfect isn't visually perfect:
+- Adjust +/-1px when perception beats geometry
+- Icons often need slight adjustments to appear centered
+- Text baselines may need manual tweaking
+
+### Design for All Data States
+Always design for:
+- **Empty**: No data yet (first-time user)
+- **Sparse**: Just a few items
+- **Dense**: Lots of data (test with 100+ items)
+- **Error**: Something went wrong
+
+### Typography Details
+- Use tabular numbers for data comparisons (`font-variant-numeric: tabular-nums`)
+- Use proper ellipsis character (`...`) not three dots
+- Use typographic quotes (`"` `"`) in content
+
+---
+
+## Quality Checklist
+
+Run before committing UI changes:
+
+### Design Tokens
+- [ ] No hard-coded colors (no `#fff`, `rgb()`, raw hex)
+- [ ] Using {{styling}} classes or CSS variables
+- [ ] Colors match light/dark theme
+
+### Interaction States
+- [ ] Hover state on all clickable elements
+- [ ] Focus ring visible (keyboard navigation)
+- [ ] Disabled state prevents interaction
+- [ ] Loading state shows spinner/skeleton
+
+### Responsive
+- [ ] Tested at 375px width (mobile)
+- [ ] No horizontal scroll on mobile
+- [ ] Touch targets are 44px minimum
+- [ ] Text readable without zoom
+
+### States Handled
+- [ ] Empty state is helpful (not blank)
+- [ ] Loading state is visible
+- [ ] Error state is styled and actionable
+
+### Charts (if applicable)
+- [ ] Has title describing the data
+- [ ] Has tooltips on hover
+- [ ] Has legend if multiple series
+- [ ] Uses ChartContainer pattern
+- [ ] Colors use chart tokens
+
+### Accessibility
+- [ ] Labels on all form inputs
+- [ ] Alt text on images
+- [ ] `aria-label` on icon-only buttons
+- [ ] Color is not the only indicator
+- [ ] Can navigate with keyboard
+- [ ] Focus ring visible (`:focus-visible`)
+
+### Forms
+- [ ] Enter submits single-input forms
+- [ ] Errors shown next to fields
+- [ ] First error focused on submit
+- [ ] Paste not blocked
+- [ ] AlertDialog for destructive actions
+
+### Performance
+- [ ] Images have explicit dimensions
+- [ ] Large lists virtualized
+- [ ] Animations use transform/opacity only
+- [ ] `prefers-reduced-motion` respected
+
+---
+
+## When to Invoke `frontend-design` Skill
+
+Use the `/frontend-design` skill for:
+- New pages or dashboards
+- Marketing or landing pages
+- Complex data visualizations
+- Features where distinctive aesthetics matter
+
+The skill provides creative direction beyond these patterns - use it when you need bold, distinctive design, not just functional UI.
+
+---
+
+## Quick Reference
+
+### Spacing Scale
+```
+0.5 = 2px    4 = 16px   10 = 40px
+1 = 4px     5 = 20px   12 = 48px
+2 = 8px     6 = 24px   16 = 64px
+3 = 12px    8 = 32px   20 = 80px
+```
+
+### Common Patterns
+```tsx
+// Card with stats
+<Card>
+  <CardHeader>
+    <CardTitle>Total Responses</CardTitle>
+  </CardHeader>
+  <CardContent>
+    <div className="text-3xl font-bold">1,234</div>
+    <p className="text-sm text-muted-foreground">+12% from last week</p>
+  </CardContent>
+</Card>
+
+// Form field with validation
+<div className="space-y-2">
+  <Label htmlFor="email">Email</Label>
+  <Input id="email" type="email" {...register('email')} />
+  {errors.email && (
+    <p className="text-sm text-destructive">{errors.email.message}</p>
+  )}
+</div>
+```
+
+### Color Tokens
+```
+background / foreground - page background and text
+card / card-foreground - elevated surfaces
+primary / primary-foreground - brand actions
+secondary / secondary-foreground - secondary actions
+muted / muted-foreground - subtle backgrounds/text
+accent / accent-foreground - highlights
+destructive / destructive-foreground - errors, danger
+border - subtle borders
+input - form input borders
+ring - focus rings
+```
+
+---
+
+## References
+
+Guidelines informed by:
+- [Vercel Web Interface Guidelines](https://vercel.com/design/guidelines)
+- [UI Skills](https://www.ui-skills.com) - Opinionated constraints for AI-assisted UI
+- [/rams](https://www.rams.ai) - Design review framework (WCAG, visual quality)

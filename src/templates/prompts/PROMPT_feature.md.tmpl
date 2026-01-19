@@ -1,0 +1,83 @@
+## Context
+Study @.ralph/AGENTS.md for commands and patterns.
+Study @.ralph/specs/README.md for spec structure.
+Study @.ralph/specs/$FEATURE.md for feature specification.
+{{#if frameworkVariant}}For detailed architecture, see @{{appDir}}/.claude/CLAUDE.md{{/if}}
+
+## Search
+- Use `mgrep "query"` to analyze existing codebase patterns
+- Use Context7 MCP to lookup library APIs and best practices
+
+## Phase: Planning
+1. Read the spec file: @.ralph/specs/$FEATURE.md
+2. Analyze codebase to identify what exists vs what's needed
+3. Create @.ralph/specs/$FEATURE-implementation-plan.md with tasks
+
+## Implementation Plan Format
+```markdown
+# $FEATURE Implementation Plan
+
+**Spec:** .ralph/specs/$FEATURE.md
+**Branch:** feat/$FEATURE
+**Status:** Planning | In Progress | PR Review | Completed
+
+## Tasks
+
+### Phase 1: Setup
+- [ ] Task 1 - [complexity: S/M/L]
+- [ ] Task 2
+
+### Phase 2: Core Implementation
+- [ ] Task 3
+- [ ] Task 4
+
+### Phase 3: Tests (Unit/Integration)
+- [ ] Write tests for [component]
+- [ ] Write tests for [feature]
+
+### Phase 4: Polish & Design
+- [ ] Run design checklist from @.ralph/guides/FRONTEND.md (if UI changes)
+- [ ] Verify responsive design (mobile/tablet/desktop)
+- [ ] Add loading/empty/error states
+- [ ] Verify hover/focus states on interactive elements
+{{#if styling}}- [ ] For charts: use ChartContainer pattern with tooltips + legends{{/if}}
+- [ ] Task N (additional polish)
+
+### Phase 5: E2E Testing
+Browser-based tests executed via Playwright MCP tools.
+
+- [ ] E2E: [Scenario name] - [brief description]
+  - **URL:** [starting URL, use {placeholders} for dynamic IDs]
+  - **Preconditions:** [setup requirements, e.g., "Survey must be published"]
+  - **Steps:**
+    1. [Action] -> [expected result]
+    2. [Action] -> [expected result]
+  - **Verify:** [final assertion text to check]
+  - **Database check:** [optional SQL query to verify data]
+
+Example E2E scenario:
+- [ ] E2E: Submit survey response - happy path
+  - **URL:** /survey/{surveyId}?utm_source=e2e_test
+  - **Preconditions:** Published survey with required questions
+  - **Steps:**
+    1. Navigate to survey URL -> Form displays with all questions
+    2. Fill required text field -> No validation error
+    3. Select rating 4 -> Button shows selected state
+    4. Click "Submit Survey" -> Loading state appears
+    5. Wait for "Thank You!" -> Success card displays
+  - **Verify:** "successfully submitted" text visible
+  - **Database check:** SELECT * FROM survey_responses WHERE survey_id = '{surveyId}'
+
+## Done
+- [x] Completed task - [commit hash]
+- [x] E2E: Scenario name - PASSED
+```
+
+## Rules
+- Plan only in this phase, do NOT implement
+- One task = one commit-sized unit of work
+- Every implementation task needs a corresponding test task
+- Use Supabase MCP to check existing schema
+- Use PostHog MCP to check existing analytics setup
+- For UI-heavy features (new pages, dashboards, analytics, marketing pages), reference @.ralph/guides/FRONTEND.md
+- Consider `/frontend-design` skill for features needing distinctive aesthetics

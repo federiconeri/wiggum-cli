@@ -1,0 +1,72 @@
+## Context
+Study @.ralph/specs/$FEATURE.md for original specification.
+Study @.ralph/specs/$FEATURE-implementation-plan.md for completed tasks.
+
+## Learnings
+Read @.ralph/LEARNINGS.md for verification patterns from previous features.
+
+## Task
+Verify that the implementation meets the spec requirements. Update spec files accordingly.
+
+### Step 1: Review Requirements
+Read @.ralph/specs/$FEATURE.md and for each requirement under "## Requirements":
+- Check if it was implemented (review implementation plan tasks)
+- Mark as `[x]` if complete
+- Leave as `[ ]` if not implemented, add note explaining why
+
+### Step 2: Review Acceptance Criteria
+For each item under "## Acceptance Criteria":
+- Verify against E2E test results in implementation plan
+- Mark as `[x]` if verified
+- Leave as `[ ]` with note if not met
+
+### Step 3: Update Spec Status
+Change `**Status:** Planned` (or `Draft`) to:
+- `**Status:** Completed` if all requirements met
+- `**Status:** Partial` if some requirements not met (with notes)
+
+Update `**Last Updated:**` to today's date.
+
+### Step 4: Update README.md
+Update @.ralph/specs/README.md Active Specs table:
+- Change status from "Planned" to "Completed" (or "Partial")
+- Update Last Updated date
+
+### Step 5: Document Gaps (if any)
+If any requirements were not fully met, add a section to the spec:
+
+```markdown
+## Implementation Notes
+- [Requirement X] - Deferred: [reason]
+- [Acceptance Criteria Y] - Partial: [explanation]
+```
+
+### Step 6: Commit Changes
+```bash
+git -C {{appDir}} add ../.ralph/specs/
+git -C {{appDir}} commit -m "docs($FEATURE): verify spec requirements complete"
+git -C {{appDir}} push origin feat/$FEATURE
+```
+
+## Verification Checklist
+Before marking complete, ensure:
+- [ ] All requirements in spec have been reviewed
+- [ ] All acceptance criteria have been reviewed
+- [ ] Spec status updated appropriately
+- [ ] README.md table updated
+- [ ] Any gaps documented with clear explanations
+- [ ] Changes committed and pushed
+
+## Rules
+- Be thorough - check every requirement and acceptance criterion
+- Be honest - don't mark incomplete items as complete
+- Document gaps clearly for future reference
+- If a requirement was intentionally deferred, explain why
+
+## Learning Capture
+If verification revealed patterns worth remembering, append to @.ralph/LEARNINGS.md:
+- Common gaps between spec and implementation -> Add under "## Anti-Patterns"
+- Useful spec writing patterns -> Add under "## Patterns"
+- Verification tips -> Add under "## Tool Usage"
+
+Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`

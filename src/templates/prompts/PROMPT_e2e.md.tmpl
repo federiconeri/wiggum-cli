@@ -1,0 +1,234 @@
+## Context
+Study @.ralph/AGENTS.md for commands and patterns.
+Study @.ralph/specs/$FEATURE.md for feature specification.
+Study @.ralph/specs/$FEATURE-implementation-plan.md for E2E test scenarios.
+{{#if frameworkVariant}}For detailed architecture, see @{{appDir}}/.claude/CLAUDE.md{{/if}}
+
+## Learnings
+Read @.ralph/LEARNINGS.md for E2E patterns and anti-patterns.
+Pay special attention to "E2E Pitfalls" section to avoid known issues.
+
+## Prerequisites
+Before E2E testing, verify:
+1. Build passes: `cd {{appDir}} && {{buildCommand}}`
+2. All unit tests pass: `cd {{appDir}} && {{testCommand}}`
+3. Clear cache if issues: `rm -rf {{appDir}}/.next`
+
+If either fails, fix issues before proceeding with E2E tests.
+
+## Task
+Execute automated E2E tests for the completed feature using Playwright MCP tools.
+
+### Step 1: Check Dev Server
+Verify dev server is running at http://localhost:3000. If not accessible, start it:
+```bash
+cd {{appDir}} && {{devCommand}} &
+```
+Wait ~10 seconds for server startup, then verify with a simple browser_navigate.
+
+### Step 1.5: Seed Test Data (if needed)
+
+Check if test scenarios require specific data volumes (e.g., pagination needs >10 rows).
+
+**Seeding with Supabase MCP:**
+```
+mcp__supabase__execute_sql
+query: "INSERT INTO table_name (survey_id, data, created_at)
+        SELECT '{survey_id}', '{"_test": true}'::jsonb, NOW() - (n || ' hours')::interval
+        FROM generate_series(1, 25) n;"
+```
+
+**Mark test data for cleanup:**
+- Add `"_test": true` to JSON data columns
+- Use unique utm_source: `e2e_${FEATURE}_${timestamp}`
+
+**Cleanup after tests:**
+```
+mcp__supabase__execute_sql
+query: "DELETE FROM table_name WHERE data->>'_test' = 'true';"
+```
+
+**If seeding is impractical:** Document in implementation plan that E2E was skipped but unit tests provide coverage.
+
+### Step 2: Parse E2E Test Scenarios
+Read E2E test scenarios from @.ralph/specs/$FEATURE-implementation-plan.md.
+Each scenario is marked with `- [ ] E2E:` prefix and follows this format:
+
+```
+- [ ] E2E: [Scenario name]
+  - **URL:** [starting URL]
+  - **Preconditions:** [setup needed]
+  - **Steps:**
+    1. [Action] -> [expected result]
+  - **Verify:** [final assertion]
+  - **Database check:** [optional SQL]
+```
+
+### Step 3: Execute Each Scenario
+For each E2E test scenario:
+
+1. **Navigate** to starting URL:
+   ```
+   mcp__plugin_playwright_playwright__browser_navigate
+   url: "http://localhost:3000/..."
+   ```
+
+2. **Capture page state** for element references:
+   ```
+   mcp__plugin_playwright_playwright__browser_snapshot
+   ```
+   This returns an accessibility tree with element refs (e.g., `button[3]`, `textbox[0]`).
+
+3. **Execute actions** using refs from snapshot:
+   - Click: `browser_click` with element description and ref
+   - Type: `browser_type` with ref, text, and optionally `submit: true`
+   - Fill form: `browser_fill_form` for multiple fields
+   - Select: `browser_select_option` for dropdowns
+   - Wait: `browser_wait_for` with text to appear/disappear
+
+4. **Verify results**:
+   - Call `browser_snapshot` to get current page state
+   - Check that expected text/elements are present in the snapshot
+   - Use `browser_wait_for` if async operations need time
+
+5. **On failure**:
+   - Take screenshot: `browser_take_screenshot`
+   - Check console: `browser_console_messages` for JS errors
+   - Document failure details
+
+### Step 4: Database Verification
+For scenarios with database checks, use Supabase MCP:
+```
+mcp__plugin_supabase_supabase__execute_sql
+project_id: [project ID]
+query: "SELECT * FROM survey_responses WHERE ..."
+```
+
+Verify returned data matches expected state.
+
+### Unique Test Data (for Parallel Execution)
+When creating test data, use unique identifiers to avoid conflicts with other loops:
+- Add feature-specific UTM params: `?utm_source=e2e_${FEATURE}_${timestamp}`
+- Use unique names/emails: `test_${FEATURE}_${timestamp}@example.com`
+- This ensures database queries find only this test's data
+
+### Step 5: Report Results
+Update @.ralph/specs/$FEATURE-implementation-plan.md for each scenario:
+
+**Passed:**
+```markdown
+- [x] E2E: scenario name - PASSED
+```
+
+**Failed:**
+```markdown
+- [ ] E2E: scenario name - FAILED: [brief reason]
+  - Error: [what went wrong]
+  - Screenshot: [if captured]
+  - Fix needed: [suggested action]
+```
+
+## Playwright MCP Tool Reference
+
+| Tool | Purpose | Key Parameters |
+|------|---------|----------------|
+| `browser_navigate` | Go to URL | `url` |
+| `browser_snapshot` | Get page state (use for assertions) | - |
+| `browser_click` | Click element | `element`, `ref` |
+| `browser_type` | Type into element | `element`, `ref`, `text`, `submit` |
+| `browser_fill_form` | Fill multiple fields | `fields[]` with name, type, ref, value |
+| `browser_select_option` | Select dropdown | `element`, `ref`, `values[]` |
+| `browser_wait_for` | Wait for text/time | `text`, `textGone`, `time` |
+| `browser_take_screenshot` | Capture visual state | `filename` (optional) |
+| `browser_console_messages` | Get JS console output | `level` (error/warning/info) |
+| `browser_press_key` | Press keyboard key | `key` (e.g., "Enter", "Tab") |
+| `browser_close` | Close browser/reset state | - |
+
+## Assertion Patterns
+
+### Text Verification
+```
+1. browser_snapshot -> get page content
+2. Check snapshot output for expected text strings
+3. If text not found, scenario fails
+```
+
+### Element State
+```
+1. browser_snapshot -> accessibility tree shows element states
+2. Check for: enabled/disabled, checked/unchecked, visible
+```
+
+### URL Verification
+```
+1. After navigation/action, snapshot shows current URL
+2. Verify URL contains expected path/params
+```
+
+### Database State
+```
+1. mcp__plugin_supabase_supabase__execute_sql with SELECT query
+2. Verify row count, column values match expectations
+```
+
+## Browser State Management
+
+- Use `browser_close` between unrelated scenarios to reset localStorage/cookies
+- Keep browser open for scenarios that test state persistence (e.g., duplicate submission)
+- Fresh browser state = clean localStorage, no prior submissions tracked
+
+## Error Recovery
+
+If a scenario fails:
+1. Document the failure with specific error details
+2. Note what fix is likely needed (code bug vs test spec issue)
+3. Continue with remaining scenarios
+4. At end, summary shows total passed/failed
+
+Failures will trigger a fix iteration in the loop.
+
+## Completion
+
+When all scenarios are executed:
+1. Update implementation plan with results for each scenario
+2. Update the Implementation Summary status to `[PASSED]` if all passed
+3. **Commit the updated implementation plan:**
+   ```bash
+   git -C {{appDir}} add -A && git -C {{appDir}} commit -m "test($FEATURE): E2E tests passed via Playwright"
+   ```
+4. **Push to remote:**
+   ```bash
+   git -C {{appDir}} push origin feat/$FEATURE
+   ```
+5. If all passed: signal ready for PR phase
+6. If any failed: failures documented, loop will retry after fix iteration
+
+## Troubleshooting
+
+### UI Changes Not Visible
+If code changes don't appear in the browser:
+1. Stop the dev server
+2. Clear cache: `rm -rf {{appDir}}/.next`
+3. Restart: `cd {{appDir}} && {{devCommand}}`
+4. Wait for full rebuild before testing
+
+### Stale Data
+- Clear browser storage: Use `browser_close` between scenarios
+- Check Supabase for stale test data from previous runs
+- Delete test data: `DELETE FROM table WHERE data->>'_test' = 'true'`
+
+## Rules
+- Always get a fresh `browser_snapshot` after actions before making assertions
+- Use `browser_wait_for` when waiting for async operations (form submission, API calls)
+- Take screenshots only on failures to avoid clutter
+- Verify database state for data-mutation features
+- Keep scenarios independent when possible
+- Document failures clearly so fix iteration knows what to address
+
+## Learning Capture
+If E2E testing revealed issues worth remembering, append to @.ralph/LEARNINGS.md:
+- Flaky test patterns -> Add under "## Anti-Patterns" > "E2E Pitfalls"
+- Useful Playwright techniques -> Add under "## Tool Usage"
+- Timing issues or race conditions -> Add under "## Anti-Patterns"
+
+Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`

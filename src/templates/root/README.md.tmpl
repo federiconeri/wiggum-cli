@@ -1,0 +1,61 @@
+# .ralph - AI Development Configuration
+
+This directory contains configuration and guidance for AI-assisted development of **{{projectName}}**.
+
+## Structure
+
+```
+.ralph/
+|-- AGENTS.md          # Commands, patterns, and coding rules
+|-- LEARNINGS.md       # Accumulated knowledge from iterations
+|-- prompts/           # Task-specific prompts
+|   |-- PROMPT.md          # Main implementation prompt
+|   |-- PROMPT_feature.md  # Feature planning prompt
+|   |-- PROMPT_e2e.md      # E2E testing prompt
+|   |-- PROMPT_verify.md   # Verification prompt
+|   |-- PROMPT_review.md   # PR review prompt
+|-- guides/            # Reference documentation
+|   |-- FRONTEND.md        # UI/UX patterns and checklist
+|   |-- SECURITY.md        # Security review checklist
+|   |-- PERFORMANCE.md     # Performance patterns
+|-- specs/             # Feature specifications
+|   |-- README.md          # Spec template and index
+|   |-- _example.md        # Example specification
+|-- scripts/           # Automation scripts
+```
+
+## Usage
+
+### For Claude Code / AI Assistants
+
+Reference these files in your prompts:
+- `@.ralph/AGENTS.md` - Stack info, commands, coding rules
+- `@.ralph/prompts/PROMPT.md` - Implementation workflow
+- `@.ralph/guides/FRONTEND.md` - UI development guide
+
+### Feature Loop
+
+1. **Plan**: Use `PROMPT_feature.md` to create implementation plan
+2. **Implement**: Use `PROMPT.md` for iterative task completion
+3. **Test**: Use `PROMPT_e2e.md` for browser-based testing
+4. **Verify**: Use `PROMPT_verify.md` to verify spec requirements
+5. **Review**: Use `PROMPT_review.md` to create PR and get review
+
+### Specs
+
+Add new feature specs to `.ralph/specs/`:
+1. Copy `_example.md` as starting point
+2. Fill in requirements and acceptance criteria
+3. Use `PROMPT_feature.md` to create implementation plan
+
+## Detected Stack
+
+- **Framework:** {{framework}}{{#if frameworkVersion}} {{frameworkVersion}}{{/if}}{{#if frameworkVariant}} ({{frameworkVariant}}){{/if}}
+- **Package Manager:** {{packageManager}}
+- **Styling:** {{styling}}
+{{#if unitTest}}- **Unit Testing:** {{unitTest}}{{/if}}
+{{#if e2eTest}}- **E2E Testing:** {{e2eTest}}{{/if}}
+
+## Configuration
+
+See `ralph.config.js` in project root for full configuration.

@@ -1,0 +1,38 @@
+module.exports = {
+  name: '{{projectName}}',
+  stack: {
+    framework: {
+      name: '{{framework}}',
+      version: '{{frameworkVersion}}',
+      variant: '{{frameworkVariant}}',
+    },
+    packageManager: '{{packageManager}}',
+    testing: {
+      unit: '{{unitTest}}',
+      e2e: '{{e2eTest}}',
+    },
+    styling: '{{styling}}',
+  },
+  commands: {
+    dev: '{{devCommand}}',
+    build: '{{buildCommand}}',
+    test: '{{testCommand}}',
+    lint: '{{lintCommand}}',
+    typecheck: '{{typecheckCommand}}',
+  },
+  paths: {
+    root: '.ralph',
+    prompts: '.ralph/prompts',
+    guides: '.ralph/guides',
+    specs: '.ralph/specs',
+    scripts: '.ralph/scripts',
+    learnings: '.ralph/LEARNINGS.md',
+    agents: '.ralph/AGENTS.md',
+  },
+  loop: {
+    maxIterations: 10,
+    maxE2eAttempts: 5,
+    defaultModel: 'sonnet',
+    planningModel: 'opus',
+  },
+};

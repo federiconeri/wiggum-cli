@@ -1,0 +1,264 @@
+# Performance Patterns
+
+{{framework}} performance best practices for implementation phases.
+Reference when writing new components, data fetching, or optimizing existing code.
+
+## Critical: Eliminate Waterfalls
+
+The #1 performance killer. Sequential awaits add full network latency per request.
+
+### Bad: Sequential Fetches
+```typescript
+// 3 round trips = 3x latency
+const user = await getUser(id);
+const posts = await getPosts(user.id);
+const comments = await getComments(posts[0].id);
+```
+
+### Good: Parallel Fetches
+```typescript
+// 1 round trip for independent data
+const [user, posts, settings] = await Promise.all([
+  getUser(id),
+  getPosts(id),
+  getSettings(id),
+]);
+```
+
+### Good: Defer Awaits
+```typescript
+// Start fetch immediately, await when needed
+const dataPromise = fetchData(); // no await
+// ... do other work ...
+const data = await dataPromise; // await at usage
+```
+
+### Good: Suspense Boundaries
+```tsx
+// Show UI before data loads
+<Suspense fallback={<Skeleton />}>
+  <DataComponent /> {/* fetches inside */}
+</Suspense>
+```
+
+## Critical: Bundle Size
+
+Reduces Time to Interactive and Largest Contentful Paint.
+
+### Bad: Barrel Imports
+```typescript
+// Imports entire library, 200-800ms cold start penalty
+import { Button } from '@/components/ui';
+```
+
+### Good: Direct Imports
+```typescript
+// Import only what's needed
+import { Button } from '@/components/ui/button';
+```
+
+### Good: Lazy Load Heavy Components
+```typescript
+// Defer Monaco Editor (~300KB) until needed
+const Editor = dynamic(() => import('@/components/editor'), {
+  loading: () => <Skeleton />,
+  ssr: false,
+});
+```
+
+### Good: Defer Third-Party Scripts
+```typescript
+// Load analytics after hydration
+useEffect(() => {
+  import('posthog-js').then((posthog) => posthog.init(...));
+}, []);
+```
+
+## High: Server-Side Performance
+
+### Use React.cache() for Request Deduplication
+```typescript
+// Same data fetched by multiple components = 1 request
+import { cache } from 'react';
+
+export const getUser = cache(async (id: string) => {
+  return db.user.findUnique({ where: { id } });
+});
+```
+
+### Minimize RSC Serialization
+```typescript
+// Bad: Pass entire object
+<ClientComponent user={user} /> // serializes all fields
+
+// Good: Pass only needed fields
+<ClientComponent name={user.name} avatar={user.avatar} />
+```
+
+### Use after() for Non-Blocking Work
+```typescript
+import { after } from 'next/server';
+
+export async function POST(request: Request) {
+  const data = await request.json();
+
+  // Respond immediately
+  after(async () => {
+    // Analytics, logging - doesn't block response
+    await trackEvent('form_submit', data);
+  });
+
+  return Response.json({ success: true });
+}
+```
+
+## Medium: Re-render Optimization
+
+### Defer useSearchParams
+```typescript
+// Bad: Subscribes entire component to URL changes
+function Page() {
+  const searchParams = useSearchParams(); // triggers re-render on any URL change
+  return <Child params={searchParams} />;
+}
+
+// Good: Read in child that needs it
+function Page() {
+  return <Child />; // no subscription here
+}
+function Child() {
+  const searchParams = useSearchParams(); // only this re-renders
+}
+```
+
+### Use Functional setState
+```typescript
+// Bad: Stale closure risk, recreates callback
+const increment = useCallback(() => {
+  setCount(count + 1);
+}, [count]);
+
+// Good: Always fresh, stable callback
+const increment = useCallback(() => {
+  setCount((c) => c + 1);
+}, []);
+```
+
+### Lazy Initialize Expensive State
+```typescript
+// Bad: Runs on every render
+const [data, setData] = useState(expensiveComputation());
+
+// Good: Runs only on mount
+const [data, setData] = useState(() => expensiveComputation());
+```
+
+### Use Transitions for Non-Urgent Updates
+```typescript
+const [isPending, startTransition] = useTransition();
+
+function handleSearch(query: string) {
+  // Urgent: update input immediately
+  setQuery(query);
+
+  // Non-urgent: can be interrupted
+  startTransition(() => {
+    setFilteredResults(filterResults(query));
+  });
+}
+```
+
+## Medium: Rendering Performance
+
+### Hoist Static JSX
+```typescript
+// Bad: Recreated every render
+function Component() {
+  const icon = <Icon size={24} />; // new object each time
+  return <Button icon={icon} />;
+}
+
+// Good: Created once
+const icon = <Icon size={24} />;
+function Component() {
+  return <Button icon={icon} />;
+}
+```
+
+### Use content-visibility for Long Lists
+```css
+.list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: 0 80px; /* estimated height */
+}
+```
+Skips layout/paint for off-screen items. 1000-item list renders 10x faster.
+
+### Prevent Hydration Mismatches
+```tsx
+// For theme/locale that differs server vs client
+// Use inline script to set data attribute before React hydrates
+<script>
+  {`document.documentElement.dataset.theme = localStorage.getItem('theme') || 'light'`}
+</script>
+```
+
+## Low-Medium: JavaScript Optimizations
+
+### Build Index Maps for Repeated Lookups
+```typescript
+// Bad: O(n) per lookup
+users.find((u) => u.id === id);
+
+// Good: O(1) per lookup
+const userMap = new Map(users.map((u) => [u.id, u]));
+userMap.get(id);
+```
+
+### Use Set for Membership Checks
+```typescript
+// Bad: O(n) per check
+const isSelected = selectedIds.includes(id);
+
+// Good: O(1) per check
+const selectedSet = new Set(selectedIds);
+const isSelected = selectedSet.has(id);
+```
+
+### Single-Pass for Min/Max
+```typescript
+// Bad: O(n log n)
+const latest = items.sort((a, b) => b.date - a.date)[0];
+
+// Good: O(n)
+const latest = items.reduce((max, item) =>
+  item.date > max.date ? item : max
+);
+```
+
+### Use .toSorted() to Avoid Mutation
+```typescript
+// Bad: Mutates original array (breaks React)
+items.sort((a, b) => a.name.localeCompare(b.name));
+
+// Good: Returns new sorted array
+items.toSorted((a, b) => a.name.localeCompare(b.name));
+```
+
+## Quick Reference
+
+| Issue | Solution |
+|-------|----------|
+| Sequential fetches | `Promise.all()` or defer awaits |
+| Large bundle | Direct imports, `next/dynamic` |
+| Duplicate requests | `React.cache()`, SWR |
+| Unnecessary re-renders | Functional setState, transitions |
+| Slow lists | `content-visibility: auto` |
+| Repeated lookups | Map/Set indexes |
+
+## When to Apply
+
+- **New components**: Check waterfall and bundle patterns
+- **Data fetching**: Use parallel fetches, React.cache()
+- **Performance issues**: Profile first, then apply relevant patterns
+- **Code review**: Flag sequential awaits and barrel imports

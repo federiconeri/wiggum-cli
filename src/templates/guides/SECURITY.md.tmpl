@@ -1,0 +1,100 @@
+# Security Review Checklist
+
+Red-team security review for each task. Check before committing.
+
+## Quick Scan (Every Task)
+
+Run through these checks for any code you've written or modified:
+
+### Input Validation
+- [ ] User inputs are validated and sanitized
+- [ ] File uploads check type, size, and content
+- [ ] URL parameters are validated before use
+- [ ] JSON/form data is schema-validated
+
+### Injection Prevention
+- [ ] SQL: Using parameterized queries (Supabase client handles this)
+- [ ] XSS: User content is escaped before rendering
+- [ ] Command injection: No shell commands with user input
+- [ ] Path traversal: File paths are validated, no `../` allowed
+
+### Authentication & Authorization
+- [ ] Protected routes check authentication
+- [ ] API endpoints verify user permissions
+- [ ] Sensitive actions require re-authentication
+- [ ] No secrets in client-side code
+
+### Data Exposure
+- [ ] API responses don't leak sensitive fields
+- [ ] Error messages don't expose internals
+- [ ] Logs don't contain PII or secrets
+- [ ] Database queries filter by user ownership
+
+## Deep Scan (Sensitive Features)
+
+For auth, payments, data export, admin features:
+
+### OWASP Top 10 Check
+| Risk | Check |
+|------|-------|
+| Injection | Parameterized queries, no dynamic code execution |
+| Broken Auth | Session handling, token expiry |
+| Sensitive Data | Encryption at rest/transit |
+| XXE | Disable external entities in XML parsers |
+| Broken Access | Row-level security, ownership checks |
+| Misconfig | No debug mode, secure headers |
+| XSS | Content-Security-Policy, output encoding |
+| Insecure Deserialization | Validate before deserialize |
+| Vulnerable Components | Check {{packageManager}} audit |
+| Logging | Audit trail, no sensitive data logged |
+
+### Supabase-Specific
+- [ ] RLS policies enabled on tables with user data
+- [ ] RLS policies test both SELECT and INSERT/UPDATE/DELETE
+- [ ] Service role key only used server-side
+- [ ] Anon key permissions are minimal
+
+### {{framework}}-Specific
+- [ ] Server actions validate input
+- [ ] API routes check authentication
+- [ ] No sensitive data in client components
+- [ ] Environment variables not exposed to client (no NEXT_PUBLIC_ for secrets)
+
+## Red Team Prompts
+
+Ask yourself:
+1. **Can I bypass auth?** Try accessing protected routes/APIs without login
+2. **Can I access other users' data?** Change IDs in requests
+3. **Can I inject malicious content?** Try `<script>`, SQL fragments, `../`
+4. **Can I cause a DoS?** Large payloads, infinite loops, resource exhaustion
+5. **Can I exfiltrate data?** Check what the API returns, console logs
+
+## Commands
+
+```bash
+# Check for vulnerable dependencies
+cd {{appDir}} && {{packageManager}} audit
+
+# Check for secrets in code (should return nothing)
+cd {{appDir}} && grep -r "sk_live\|password=\|secret=" --include="*.ts" --include="*.tsx" .
+
+# Check RLS policies
+# Use Supabase MCP: mcp__supabase__get_advisors with type: "security"
+```
+
+## When to Flag
+
+Stop and investigate if you find:
+- Direct SQL string concatenation
+- Dynamic code execution with user data
+- Hardcoded credentials or API keys
+- Missing authentication on sensitive endpoints
+- User IDs accepted from client without verification
+- File operations with user-controlled paths
+
+## Fixing Issues
+
+1. **Document** the vulnerability in the implementation plan
+2. **Fix** before committing (don't leave for later)
+3. **Test** the fix (try to exploit it)
+4. **Learn** - add to LEARNINGS.md if it's a new pattern
