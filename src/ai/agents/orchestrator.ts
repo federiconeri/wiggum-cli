@@ -3,7 +3,7 @@
  * Coordinates the multi-agent analysis and merges results
  */
 
-import { generateText, type LanguageModel } from 'ai';
+import type { LanguageModel } from 'ai';
 import type {
   CodebaseAnalysis,
   StackResearch,
@@ -15,6 +15,7 @@ import type { DetectedStack } from '../../scanner/types.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
 import { parseJsonSafe } from '../../utils/json-repair.js';
+import { getTracedAI } from '../../utils/tracing.js';
 
 /**
  * System prompt for the Orchestrator
@@ -68,12 +69,18 @@ export async function runOrchestrator(
   const prompt = createOrchestratorPrompt(input);
 
   try {
+    const { generateText } = getTracedAI();
+
     const result = await generateText({
       model,
       system: ORCHESTRATOR_SYSTEM_PROMPT,
       prompt,
       maxOutputTokens: 1000,
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.2 }),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: { agent: 'orchestrator', projectType: input.codebaseAnalysis.projectContext.projectType },
+      },
     });
 
     const mcpServers = parseMcpRecommendations(result.text, input.stack, verbose);

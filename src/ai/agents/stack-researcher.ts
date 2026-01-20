@@ -4,7 +4,7 @@
  * Gracefully degrades when optional services are unavailable
  */
 
-import { generateText, stepCountIs, type LanguageModel, type Tool } from 'ai';
+import { stepCountIs, type LanguageModel, type Tool } from 'ai';
 import type { StackResearch, StackResearcherInput, AgentCapabilities } from './types.js';
 import type { DetectedStack } from '../../scanner/types.js';
 import { createTavilySearchTool } from '../tools/tavily.js';
@@ -12,6 +12,7 @@ import { createContext7Tool } from '../tools/context7.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
 import { parseJsonSafe } from '../../utils/json-repair.js';
+import { getTracedAI } from '../../utils/tracing.js';
 
 /**
  * System prompt for Stack Researcher with tools
@@ -201,6 +202,8 @@ export async function runStackResearcher(
   const prompt = createResearchPrompt(input.stack, input.projectType, hasTools);
 
   try {
+    const { generateText } = getTracedAI();
+
     const result = await generateText({
       model,
       system: systemPrompt,
@@ -208,6 +211,10 @@ export async function runStackResearcher(
       ...(hasTools ? { tools, stopWhen: stepCountIs(8) } : {}),
       maxOutputTokens: 2000,
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: { agent: 'stack-researcher', researchMode, projectType: input.projectType },
+      },
     });
 
     // Parse the response

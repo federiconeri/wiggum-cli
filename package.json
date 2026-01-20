@@ -28,8 +28,10 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.15",
     "@ai-sdk/openai": "^3.0.12",
+    "@braintrust/otel": "^0.2.0",
     "@clack/prompts": "^0.7.0",
     "ai": "^6.0.41",
+    "braintrust": "^2.0.2",
     "cfonts": "^3.2.0",
     "commander": "^12.1.0",
     "picocolors": "^1.0.0",

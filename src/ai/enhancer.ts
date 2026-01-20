@@ -3,7 +3,7 @@
  * Uses AI to analyze the codebase for deeper insights
  */
 
-import { generateText, stepCountIs } from 'ai';
+import { stepCountIs } from 'ai';
 import type { ScanResult, DetectedStack, DetectionResult } from '../scanner/types.js';
 import { getModel, type AIProvider, hasApiKey, getApiKeyEnvVar, isReasoningModel } from './providers.js';
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_AGENTIC, createAnalysisPrompt } from './prompts.js';
@@ -11,6 +11,7 @@ import { createExplorationTools } from './tools.js';
 import { runMultiAgentAnalysis, type MultiAgentAnalysis } from './agents/index.js';
 import { logger } from '../utils/logger.js';
 import { parseJsonSafe } from '../utils/json-repair.js';
+import { getTracedAI, traced } from '../utils/tracing.js';
 
 /**
  * Project context from AI analysis - key structure information
@@ -291,6 +292,7 @@ export class AIEnhancer {
     scanResult: ScanResult
   ): Promise<AIAnalysisResult | null> {
     const prompt = createAnalysisPrompt(scanResult);
+    const { generateText } = getTracedAI();
 
     const { text } = await generateText({
       model,
@@ -299,6 +301,10 @@ export class AIEnhancer {
       maxOutputTokens: 2000,
       // Reasoning models don't support temperature
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: { phase: 'simple-analysis', projectRoot: scanResult.projectRoot },
+      },
     });
 
     return parseAIResponse(text);
@@ -342,6 +348,7 @@ export class AIEnhancer {
     scanResult: ScanResult
   ): Promise<AIAnalysisResult | null> {
     const tools = createExplorationTools(scanResult.projectRoot);
+    const { generateText } = getTracedAI();
 
     const prompt = `Analyze this codebase and produce configuration for AI-assisted development.
 
@@ -382,6 +389,10 @@ When done exploring, output your final analysis as valid JSON matching this stru
       stopWhen: stepCountIs(10),
       maxOutputTokens: 4000,
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: { phase: 'legacy-agentic', projectRoot: scanResult.projectRoot },
+      },
     });
 
     // Try to get text from the result

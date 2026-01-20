@@ -3,12 +3,13 @@
  * Explores the codebase to understand its structure and patterns
  */
 
-import { generateText, stepCountIs, type LanguageModel } from 'ai';
+import { stepCountIs, type LanguageModel } from 'ai';
 import type { CodebaseAnalysis, CodebaseAnalystInput } from './types.js';
 import { createExplorationTools } from '../tools.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
 import { parseJsonSafe } from '../../utils/json-repair.js';
+import { getTracedAI } from '../../utils/tracing.js';
 
 /**
  * System prompt for the Codebase Analyst agent
@@ -83,6 +84,8 @@ Project: ${input.projectRoot}
 Start by exploring the directory structure and package.json, then produce your analysis as JSON.`;
 
   try {
+    const { generateText } = getTracedAI();
+
     const result = await generateText({
       model,
       system: CODEBASE_ANALYST_SYSTEM_PROMPT,
@@ -91,6 +94,10 @@ Start by exploring the directory structure and package.json, then produce your a
       stopWhen: stepCountIs(12),
       maxOutputTokens: 3000,
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: { agent: 'codebase-analyst', projectRoot: input.projectRoot },
+      },
     });
 
     // Extract JSON from response
