@@ -61,7 +61,7 @@ export async function runMultiAgentAnalysis(
     logger.info('Running Codebase Analyst...');
   }
 
-  const codebaseAnalysis = await runCodebaseAnalyst(
+  let codebaseAnalysis = await runCodebaseAnalyst(
     model,
     modelId,
     {
@@ -75,7 +75,8 @@ export async function runMultiAgentAnalysis(
     if (verbose) {
       logger.warn('Codebase Analyst failed, using defaults');
     }
-    return null;
+    // Use defaults instead of aborting the pipeline
+    codebaseAnalysis = getDefaultCodebaseAnalysis(scanResult);
   }
 
   // Run Stack Researcher
@@ -130,6 +131,40 @@ export async function runMultiAgentAnalysis(
   }
 
   return finalResult;
+}
+
+/**
+ * Get default codebase analysis when agent fails
+ */
+function getDefaultCodebaseAnalysis(scanResult: ScanResult) {
+  // Detect project type from scan result
+  let projectType = 'Unknown';
+  if (scanResult.stack.mcp?.isProject) {
+    projectType = 'MCP Server';
+  } else if (scanResult.stack.framework?.name.includes('Next')) {
+    projectType = 'Next.js App';
+  } else if (scanResult.stack.framework?.name.includes('React')) {
+    projectType = 'React SPA';
+  } else if (scanResult.stack.framework?.name) {
+    projectType = `${scanResult.stack.framework.name} Project`;
+  }
+
+  return {
+    projectContext: {
+      entryPoints: ['src/index.ts'],
+      keyDirectories: { 'src': 'Source code' },
+      namingConventions: 'camelCase',
+      projectType,
+    },
+    commands: {
+      test: 'npm test',
+      lint: 'npm run lint',
+      build: 'npm run build',
+      dev: 'npm run dev',
+    },
+    implementationGuidelines: ['Follow existing patterns', 'Run tests after changes'],
+    possibleMissedTechnologies: [],
+  };
 }
 
 /**
