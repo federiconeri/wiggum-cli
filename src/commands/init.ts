@@ -259,6 +259,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
   const apiKeys = await collectApiKeys(projectRoot, options);
 
   if (!apiKeys) {
+    // In --yes mode, null means missing API key (hard failure)
+    // In interactive mode, null means user cancelled
+    if (options.yes) {
+      process.exit(1);
+    }
     logger.info('Initialization cancelled');
     return;
   }
