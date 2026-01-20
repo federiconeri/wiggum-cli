@@ -4,6 +4,53 @@
  */
 
 /**
+ * Fix mismatched brackets in JSON
+ * AI sometimes writes } instead of ] or vice versa
+ */
+function fixMismatchedBrackets(text: string): string {
+  const chars = text.split('');
+  const stack: Array<{ char: string; index: number }> = [];
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = 0; i < chars.length; i++) {
+    const char = chars[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (char === '{' || char === '[') {
+      stack.push({ char, index: i });
+    } else if (char === '}' || char === ']') {
+      if (stack.length > 0) {
+        const last = stack.pop()!;
+        const expected = last.char === '{' ? '}' : ']';
+        if (char !== expected) {
+          // Mismatch! Fix it
+          chars[i] = expected;
+        }
+      }
+    }
+  }
+
+  return chars.join('');
+}
+
+/**
  * Attempt to repair malformed JSON from AI responses
  */
 export function repairJson(text: string): string {
@@ -11,6 +58,9 @@ export function repairJson(text: string): string {
 
   // Remove any leading/trailing whitespace
   json = json.trim();
+
+  // Fix mismatched brackets (AI writes } instead of ] or vice versa)
+  json = fixMismatchedBrackets(json);
 
   // Remove trailing commas before ] or }
   json = json.replace(/,(\s*[\]}])/g, '$1');
