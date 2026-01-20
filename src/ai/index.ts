@@ -17,18 +17,23 @@ export {
 export {
   formatStackForPrompt,
   SYSTEM_PROMPT,
+  SYSTEM_PROMPT_AGENTIC,
   createAnalysisPrompt,
   createValidationPrompt,
   createRecommendationsPrompt,
 } from './prompts.js';
 
+// Tools for agentic exploration
+export {
+  createExplorationTools,
+  RIPGREP_SKILL,
+} from './tools.js';
+
 // AI enhancer
 export {
-  type FrameworkInsights,
-  type ArchitecturalPattern,
-  type CodingConvention,
-  type McpRecommendation,
-  type AdditionalDetections,
+  type ProjectContext,
+  type DetectedCommands,
+  type McpRecommendations,
   type AIAnalysisResult,
   type EnhancedScanResult,
   type EnhancerOptions,

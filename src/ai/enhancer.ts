@@ -3,64 +3,61 @@
  * Uses AI to analyze the codebase for deeper insights
  */
 
-import { generateText } from 'ai';
+import { generateText, stepCountIs } from 'ai';
 import type { ScanResult, DetectedStack, DetectionResult } from '../scanner/types.js';
 import { getModel, type AIProvider, hasApiKey, getApiKeyEnvVar } from './providers.js';
-import { SYSTEM_PROMPT, createAnalysisPrompt } from './prompts.js';
+import { SYSTEM_PROMPT, SYSTEM_PROMPT_AGENTIC, createAnalysisPrompt } from './prompts.js';
+import { createExplorationTools } from './tools.js';
 import { logger } from '../utils/logger.js';
 
 /**
- * Framework insights from AI analysis
+ * Project context from AI analysis - key structure information
  */
-export interface FrameworkInsights {
-  variant?: string;
-  confidence: 'high' | 'medium' | 'low';
-  notes?: string;
+export interface ProjectContext {
+  /** Key entry point files */
+  entryPoints?: string[];
+  /** Important directories and their purposes */
+  keyDirectories?: Record<string, string>;
+  /** Naming conventions used in the project */
+  namingConventions?: string;
 }
 
 /**
- * Architectural pattern detected by AI
+ * Detected commands from package.json scripts or common patterns
  */
-export interface ArchitecturalPattern {
-  pattern: string;
-  confidence: 'high' | 'medium' | 'low';
-  evidence: string;
+export interface DetectedCommands {
+  test?: string;
+  lint?: string;
+  typecheck?: string;
+  build?: string;
+  dev?: string;
+  format?: string;
 }
 
 /**
- * Coding convention detected by AI
+ * MCP server recommendations (categorized)
  */
-export interface CodingConvention {
-  convention: string;
-  suggestion: string;
+export interface McpRecommendations {
+  /** Essential MCP servers for this stack */
+  essential?: string[];
+  /** Recommended but optional MCP servers */
+  recommended?: string[];
 }
 
 /**
- * MCP server recommendation
- */
-export interface McpRecommendation {
-  name: string;
-  reason: string;
-}
-
-/**
- * Additional detection suggestions
- */
-export interface AdditionalDetections {
-  possibleMissed?: string[];
-  refinements?: string[];
-}
-
-/**
- * AI analysis result
+ * AI analysis result - focused on actionable outputs
  */
 export interface AIAnalysisResult {
-  frameworkInsights?: FrameworkInsights;
-  architecturalPatterns?: ArchitecturalPattern[];
-  codingConventions?: CodingConvention[];
-  recommendedMcpServers?: McpRecommendation[];
-  customPromptSuggestions?: string[];
-  additionalDetections?: AdditionalDetections;
+  /** Project structure and context */
+  projectContext?: ProjectContext;
+  /** Detected commands from package.json */
+  commands?: DetectedCommands;
+  /** Short, actionable implementation guidelines */
+  implementationGuidelines?: string[];
+  /** MCP server recommendations */
+  mcpServers?: McpRecommendations;
+  /** Additional technologies that may have been missed */
+  possibleMissedTechnologies?: string[];
 }
 
 /**
@@ -80,6 +77,8 @@ export interface EnhancerOptions {
   provider?: AIProvider;
   model?: string;
   verbose?: boolean;
+  /** Use agentic mode with tools for deeper codebase exploration */
+  agentic?: boolean;
 }
 
 /**
@@ -119,35 +118,22 @@ function applyEnhancements(
 ): DetectedStack {
   const enhanced = { ...stack };
 
-  // Enhance framework detection with AI insights
-  if (analysis.frameworkInsights && enhanced.framework) {
-    // If AI detected a more specific variant with high confidence
-    if (
-      analysis.frameworkInsights.variant &&
-      analysis.frameworkInsights.confidence === 'high'
-    ) {
-      enhanced.framework = {
-        ...enhanced.framework,
-        variant: analysis.frameworkInsights.variant,
-        evidence: [
-          ...enhanced.framework.evidence,
-          `AI: ${analysis.frameworkInsights.notes || 'variant detected'}`,
+  // Enhance MCP recommendations from AI analysis
+  if (analysis.mcpServers) {
+    const aiRecommended = [
+      ...(analysis.mcpServers.essential || []),
+      ...(analysis.mcpServers.recommended || []),
+    ];
+
+    if (aiRecommended.length > 0) {
+      enhanced.mcp = {
+        ...enhanced.mcp,
+        recommended: [
+          ...(enhanced.mcp?.recommended || []),
+          ...aiRecommended.filter(r => !enhanced.mcp?.recommended?.includes(r)),
         ],
       };
     }
-  }
-
-  // Enhance MCP recommendations
-  if (analysis.recommendedMcpServers && analysis.recommendedMcpServers.length > 0) {
-    const aiRecommended = analysis.recommendedMcpServers.map(r => r.name);
-
-    enhanced.mcp = {
-      ...enhanced.mcp,
-      recommended: [
-        ...(enhanced.mcp?.recommended || []),
-        ...aiRecommended.filter(r => !enhanced.mcp?.recommended?.includes(r)),
-      ],
-    };
   }
 
   return enhanced;
@@ -161,11 +147,13 @@ export class AIEnhancer {
   private provider: AIProvider;
   private model?: string;
   private verbose: boolean;
+  private agentic: boolean;
 
   constructor(options: EnhancerOptions = {}) {
     this.provider = options.provider || 'anthropic';
     this.model = options.model;
     this.verbose = options.verbose || false;
+    this.agentic = options.agentic || false;
   }
 
   /**
@@ -202,22 +190,20 @@ export class AIEnhancer {
 
       if (this.verbose) {
         logger.info(`Using AI provider: ${provider} (${modelId})`);
+        if (this.agentic) {
+          logger.info('Agentic mode enabled - AI will explore the codebase with tools');
+        }
       }
 
-      // Create the analysis prompt
-      const prompt = createAnalysisPrompt(scanResult);
+      let analysis: AIAnalysisResult | null;
 
-      // Call the AI model
-      const { text } = await generateText({
-        model,
-        system: SYSTEM_PROMPT,
-        prompt,
-        maxOutputTokens: 2000,
-        temperature: 0.3, // Lower temperature for more consistent output
-      });
-
-      // Parse the response
-      const analysis = parseAIResponse(text);
+      if (this.agentic) {
+        // Agentic mode: use tools to explore codebase
+        analysis = await this.enhanceAgentic(model, scanResult);
+      } else {
+        // Simple mode: just analyze detected stack
+        analysis = await this.enhanceSimple(model, scanResult);
+      }
 
       if (!analysis) {
         return {
@@ -250,6 +236,80 @@ export class AIEnhancer {
       };
     }
   }
+
+  /**
+   * Simple enhancement mode - analyze detected stack without tools
+   */
+  private async enhanceSimple(
+    model: ReturnType<typeof getModel>['model'],
+    scanResult: ScanResult
+  ): Promise<AIAnalysisResult | null> {
+    const prompt = createAnalysisPrompt(scanResult);
+
+    const { text } = await generateText({
+      model,
+      system: SYSTEM_PROMPT,
+      prompt,
+      maxOutputTokens: 2000,
+      temperature: 0.3,
+    });
+
+    return parseAIResponse(text);
+  }
+
+  /**
+   * Agentic enhancement mode - use tools to explore codebase
+   */
+  private async enhanceAgentic(
+    model: ReturnType<typeof getModel>['model'],
+    scanResult: ScanResult
+  ): Promise<AIAnalysisResult | null> {
+    const tools = createExplorationTools(scanResult.projectRoot);
+
+    const prompt = `Analyze this codebase and produce configuration for AI-assisted development.
+
+Project: ${scanResult.projectRoot}
+
+Start by exploring the codebase structure, then produce your analysis.
+When done exploring, output your final analysis as valid JSON matching this structure:
+
+{
+  "projectContext": {
+    "entryPoints": ["src/index.ts"],
+    "keyDirectories": {"src/routes": "API routes"},
+    "namingConventions": "camelCase files, PascalCase components"
+  },
+  "commands": {
+    "test": "npm test",
+    "lint": "npm run lint",
+    "build": "npm run build",
+    "dev": "npm run dev"
+  },
+  "implementationGuidelines": [
+    "Run npm test after changes",
+    "Use Zod for validation"
+  ],
+  "mcpServers": {
+    "essential": ["filesystem", "git"],
+    "recommended": ["docker"]
+  },
+  "possibleMissedTechnologies": ["Redis"]
+}`;
+
+    // Use agentic loop - AI will call tools until it has enough info
+    // stopWhen: stepCountIs(10) allows up to 10 tool-calling steps
+    const { text } = await generateText({
+      model,
+      system: SYSTEM_PROMPT_AGENTIC,
+      prompt,
+      tools,
+      stopWhen: stepCountIs(10),
+      maxOutputTokens: 4000,
+      temperature: 0.3,
+    });
+
+    return parseAIResponse(text);
+  }
 }
 
 /**
@@ -269,84 +329,72 @@ export async function enhanceWithAI(
 export function formatAIAnalysis(analysis: AIAnalysisResult): string {
   const lines: string[] = [];
 
-  lines.push('=== AI Analysis ===');
-  lines.push('');
+  // Project context
+  if (analysis.projectContext) {
+    const ctx = analysis.projectContext;
 
-  // Framework insights
-  if (analysis.frameworkInsights) {
-    lines.push('Framework Insights:');
-    if (analysis.frameworkInsights.variant) {
-      lines.push(`  Variant: ${analysis.frameworkInsights.variant}`);
-    }
-    lines.push(`  Confidence: ${analysis.frameworkInsights.confidence}`);
-    if (analysis.frameworkInsights.notes) {
-      lines.push(`  Notes: ${analysis.frameworkInsights.notes}`);
-    }
-    lines.push('');
-  }
-
-  // Architectural patterns
-  if (analysis.architecturalPatterns && analysis.architecturalPatterns.length > 0) {
-    lines.push('Architectural Patterns:');
-    for (const pattern of analysis.architecturalPatterns) {
-      lines.push(`  - ${pattern.pattern} [${pattern.confidence}]`);
-      lines.push(`    Evidence: ${pattern.evidence}`);
-    }
-    lines.push('');
-  }
-
-  // Coding conventions
-  if (analysis.codingConventions && analysis.codingConventions.length > 0) {
-    lines.push('Coding Conventions:');
-    for (const convention of analysis.codingConventions) {
-      lines.push(`  - ${convention.convention}`);
-      lines.push(`    Suggestion: ${convention.suggestion}`);
-    }
-    lines.push('');
-  }
-
-  // MCP recommendations
-  if (analysis.recommendedMcpServers && analysis.recommendedMcpServers.length > 0) {
-    lines.push('Recommended MCP Servers:');
-    for (const server of analysis.recommendedMcpServers) {
-      lines.push(`  - ${server.name}`);
-      lines.push(`    Reason: ${server.reason}`);
-    }
-    lines.push('');
-  }
-
-  // Custom prompt suggestions
-  if (analysis.customPromptSuggestions && analysis.customPromptSuggestions.length > 0) {
-    lines.push('Custom Prompt Suggestions:');
-    for (const suggestion of analysis.customPromptSuggestions) {
-      lines.push(`  - ${suggestion}`);
-    }
-    lines.push('');
-  }
-
-  // Additional detections
-  if (analysis.additionalDetections) {
-    if (
-      analysis.additionalDetections.possibleMissed &&
-      analysis.additionalDetections.possibleMissed.length > 0
-    ) {
-      lines.push('Possibly Missed Technologies:');
-      for (const tech of analysis.additionalDetections.possibleMissed) {
-        lines.push(`  - ${tech}`);
+    if (ctx.entryPoints && ctx.entryPoints.length > 0) {
+      lines.push('Entry Points:');
+      for (const entry of ctx.entryPoints) {
+        lines.push(`  ${entry}`);
       }
       lines.push('');
     }
 
-    if (
-      analysis.additionalDetections.refinements &&
-      analysis.additionalDetections.refinements.length > 0
-    ) {
-      lines.push('Detection Refinements:');
-      for (const refinement of analysis.additionalDetections.refinements) {
-        lines.push(`  - ${refinement}`);
+    if (ctx.keyDirectories && Object.keys(ctx.keyDirectories).length > 0) {
+      lines.push('Key Directories:');
+      for (const [dir, purpose] of Object.entries(ctx.keyDirectories)) {
+        lines.push(`  ${dir} → ${purpose}`);
       }
       lines.push('');
     }
+
+    if (ctx.namingConventions) {
+      lines.push(`Naming: ${ctx.namingConventions}`);
+      lines.push('');
+    }
+  }
+
+  // Detected commands
+  if (analysis.commands) {
+    const cmds = analysis.commands;
+    const cmdList = Object.entries(cmds).filter(([_, v]) => v);
+
+    if (cmdList.length > 0) {
+      lines.push('Commands:');
+      for (const [name, cmd] of cmdList) {
+        lines.push(`  ${name}: ${cmd}`);
+      }
+      lines.push('');
+    }
+  }
+
+  // Implementation guidelines (the most important part)
+  if (analysis.implementationGuidelines && analysis.implementationGuidelines.length > 0) {
+    lines.push('Implementation Guidelines:');
+    for (const guideline of analysis.implementationGuidelines) {
+      lines.push(`  • ${guideline}`);
+    }
+    lines.push('');
+  }
+
+  // MCP servers
+  if (analysis.mcpServers) {
+    if (analysis.mcpServers.essential && analysis.mcpServers.essential.length > 0) {
+      lines.push(`MCP (essential): ${analysis.mcpServers.essential.join(', ')}`);
+    }
+    if (analysis.mcpServers.recommended && analysis.mcpServers.recommended.length > 0) {
+      lines.push(`MCP (optional): ${analysis.mcpServers.recommended.join(', ')}`);
+    }
+    if (analysis.mcpServers.essential?.length || analysis.mcpServers.recommended?.length) {
+      lines.push('');
+    }
+  }
+
+  // Possibly missed technologies (brief)
+  if (analysis.possibleMissedTechnologies && analysis.possibleMissedTechnologies.length > 0) {
+    lines.push(`May also use: ${analysis.possibleMissedTechnologies.join(', ')}`);
+    lines.push('');
   }
 
   return lines.join('\n');

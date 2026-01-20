@@ -23,6 +23,8 @@ export interface InitOptions {
   ai?: boolean;
   provider?: AIProvider;
   yes?: boolean;
+  /** Use agentic mode for deep codebase exploration */
+  agentic?: boolean;
 }
 
 /**
@@ -175,13 +177,31 @@ export async function initCommand(options: InitOptions): Promise<void> {
       const selectedModel = modelChoice as string;
       const modelLabel = modelOptions.find(m => m.value === selectedModel)?.label || selectedModel;
 
+      // Ask about agentic mode (deep exploration)
+      let useAgentic = options.agentic;
+      if (useAgentic === undefined && !options.yes) {
+        const wantAgentic = await prompts.confirm({
+          message: 'Enable deep codebase exploration? (AI will search files and directories)',
+          initialValue: true,
+        });
+
+        if (prompts.isCancel(wantAgentic)) {
+          logger.info('Initialization cancelled');
+          return;
+        }
+
+        useAgentic = wantAgentic;
+      }
+
       console.log('');
-      console.log(simpson.yellow(`─── AI Enhancement (${provider} / ${modelLabel}) ───`));
+      const modeLabel = useAgentic ? 'agentic' : 'simple';
+      console.log(simpson.yellow(`─── AI Enhancement (${provider} / ${modelLabel} / ${modeLabel}) ───`));
 
       const aiEnhancer = new AIEnhancer({
         provider,
         model: selectedModel,
         verbose: true,
+        agentic: useAgentic,
       });
 
       spinner.start('Running AI analysis...');

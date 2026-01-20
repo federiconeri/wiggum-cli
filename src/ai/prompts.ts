@@ -4,6 +4,7 @@
  */
 
 import type { ScanResult, DetectedStack } from '../scanner/types.js';
+import { RIPGREP_SKILL } from './tools.js';
 
 /**
  * Format the detected stack for inclusion in prompts
@@ -87,20 +88,52 @@ export function formatStackForPrompt(stack: DetectedStack): string {
 }
 
 /**
- * System prompt for codebase analysis
+ * System prompt for codebase analysis (agentic mode)
  */
-export const SYSTEM_PROMPT = `You are an expert software architect analyzing a codebase to provide insights for AI-assisted development.
+export const SYSTEM_PROMPT_AGENTIC = `You are an expert codebase analyst with tools to explore the project.
 
-Your role is to:
-1. Analyze the detected tech stack and provide deeper insights
-2. Identify architectural patterns and coding conventions
-3. Suggest improvements to the detection results
-4. Recommend MCP servers that would benefit this project
-5. Generate custom prompt suggestions for AI coding assistants
+Your goal is to thoroughly understand the codebase structure and produce actionable configuration for AI-assisted development.
 
-Be concise and actionable. Focus on practical insights that help developers work more effectively with AI tools.
+## Exploration Strategy
+1. First, list the root directory to understand project structure
+2. Read package.json to understand scripts and dependencies
+3. Search for key patterns: entry points, routes, components, tests
+4. Identify naming conventions by examining existing files
+5. Look for existing documentation (.md files, README)
 
-Respond in valid JSON format only.`;
+## Tools Available
+You have these tools to explore the codebase:
+- searchCode: Search using ripgrep patterns
+- readFile: Read file contents
+- listDirectory: List directory structure
+- getPackageInfo: Get package.json info
+
+${RIPGREP_SKILL}
+
+## Output Requirements
+After exploration, output valid JSON with:
+- projectContext: entry points, key directories, naming conventions
+- commands: test, lint, build, dev commands from package.json
+- implementationGuidelines: short actionable rules (5-10 words each, max 7)
+- mcpServers: essential and recommended servers
+- possibleMissedTechnologies: technologies that might be in use
+
+Be concise. Focus on WHAT TO DO, not what exists.`;
+
+/**
+ * System prompt for codebase analysis (simple mode - no tools)
+ */
+export const SYSTEM_PROMPT = `You are analyzing a codebase to help configure AI-assisted development tools.
+
+Your goal is to produce SHORT, ACTIONABLE output that helps AI coding assistants work effectively on this codebase.
+
+Rules:
+- Output valid JSON only
+- Be extremely concise (5-10 words per item max)
+- Focus on WHAT TO DO, not what exists
+- Include specific file paths and commands
+- Max 5-7 items per array
+- No explanations, just actionable rules`;
 
 /**
  * Create the codebase analysis prompt
@@ -108,49 +141,48 @@ Respond in valid JSON format only.`;
 export function createAnalysisPrompt(scanResult: ScanResult): string {
   const stackInfo = formatStackForPrompt(scanResult.stack);
 
-  return `Analyze this codebase and provide enhanced insights.
+  return `Analyze this codebase for AI-assisted development configuration.
 
-Project Root: ${scanResult.projectRoot}
+Project: ${scanResult.projectRoot}
 
 Detected Stack:
 ${stackInfo || 'No technologies detected'}
 
-Based on this stack, provide analysis in the following JSON format:
+Respond with this JSON structure (keep values SHORT - 5-10 words max per item):
 {
-  "frameworkInsights": {
-    "variant": "more specific variant if detectable (e.g., 'app-router', 'pages-router', 'spa', 'ssr')",
-    "confidence": "high/medium/low",
-    "notes": "any additional observations about framework usage"
+  "projectContext": {
+    "entryPoints": ["src/index.ts", "src/server.ts"],
+    "keyDirectories": {
+      "src/routes": "API route handlers",
+      "src/models": "Database models"
+    },
+    "namingConventions": "camelCase files, PascalCase components"
   },
-  "architecturalPatterns": [
-    {
-      "pattern": "pattern name",
-      "confidence": "high/medium/low",
-      "evidence": "why you think this pattern is used"
-    }
+  "commands": {
+    "test": "npm test",
+    "lint": "npm run lint",
+    "typecheck": "npm run typecheck",
+    "build": "npm run build",
+    "dev": "npm run dev"
+  },
+  "implementationGuidelines": [
+    "Run npm test after every change",
+    "Use Zod for request validation",
+    "Place routes in src/routes/<resource>.ts",
+    "Follow error pattern in src/utils/errors.ts"
   ],
-  "codingConventions": [
-    {
-      "convention": "convention name",
-      "suggestion": "how to follow this convention"
-    }
-  ],
-  "recommendedMcpServers": [
-    {
-      "name": "server name",
-      "reason": "why this would be useful"
-    }
-  ],
-  "customPromptSuggestions": [
-    "Specific prompt suggestions tailored to this codebase"
-  ],
-  "additionalDetections": {
-    "possibleMissed": ["technologies that might be in use but weren't detected"],
-    "refinements": ["suggestions to improve existing detections"]
-  }
+  "mcpServers": {
+    "essential": ["filesystem", "git"],
+    "recommended": ["docker", "postgres"]
+  },
+  "possibleMissedTechnologies": ["Redis", "WebSockets"]
 }
 
-Only include sections where you have meaningful insights. Keep responses focused and actionable.`;
+Important:
+- implementationGuidelines should be short rules (not analysis prompts)
+- Include actual file paths from this project
+- Infer commands from package.json patterns
+- Max 5-7 items per array`;
 }
 
 /**
