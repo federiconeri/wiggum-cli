@@ -17,6 +17,7 @@ import * as prompts from '@clack/prompts';
 import pc from 'picocolors';
 import fs from 'fs';
 import path from 'path';
+import { simpson, sectionHeader, drawLine } from '../utils/colors.js';
 
 export interface InitOptions {
   ai?: boolean;
@@ -53,7 +54,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   // Display scan results
   console.log('');
-  console.log(pc.cyan('--- Scan Results ---'));
+  console.log(simpson.yellow('─── Scan Results ───'));
   console.log(formatScanResult(scanResult));
   console.log('');
 
@@ -84,7 +85,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     // If no API key found, prompt for one
     if (!hasKey) {
       console.log('');
-      console.log(pc.yellow('No API key found for AI enhancement.'));
+      console.log(simpson.pink('No API key found for AI enhancement.'));
       console.log('');
 
       // Ask which provider to use
@@ -175,7 +176,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
       const modelLabel = modelOptions.find(m => m.value === selectedModel)?.label || selectedModel;
 
       console.log('');
-      console.log(pc.cyan(`--- AI Enhancement (${provider} / ${modelLabel}) ---`));
+      console.log(simpson.yellow(`─── AI Enhancement (${provider} / ${modelLabel}) ───`));
 
       const aiEnhancer = new AIEnhancer({
         provider,
@@ -236,7 +237,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     spinner.stop('Configuration files generated');
 
     console.log('');
-    console.log(pc.cyan('--- Generation Results ---'));
+    console.log(simpson.yellow('─── Generation Results ───'));
     console.log(formatGenerationResult(generationResult));
 
     if (generationResult.success) {
