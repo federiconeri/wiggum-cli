@@ -1,14 +1,15 @@
-# ralph-cli
+# wiggum-cli
 
 **AI-powered feature development loop CLI** - Auto-detect your tech stack and generate intelligent development environments.
 
 ```
- ██████╗   █████╗  ██╗      ██████╗  ██╗  ██╗
- ██╔══██╗ ██╔══██╗ ██║      ██╔══██╗ ██║  ██║
- ██████╔╝ ███████║ ██║      ██████╔╝ ███████║
- ██╔══██╗ ██╔══██║ ██║      ██╔═══╝  ██╔══██║
- ██║  ██║ ██║  ██║ ███████╗ ██║      ██║  ██║
- ╚═╝  ╚═╝ ╚═╝  ╚═╝ ╚══════╝ ╚═╝      ╚═╝  ╚═╝
+ ██╗    ██╗ ██╗  ██████╗   ██████╗  ██╗   ██╗ ███╗   ███╗
+ ██║    ██║ ██║ ██╔════╝  ██╔════╝  ██║   ██║ ████╗ ████║
+ ██║ █╗ ██║ ██║ ██║  ███╗ ██║  ███╗ ██║   ██║ ██╔████╔██║
+ ██║███╗██║ ██║ ██║   ██║ ██║   ██║ ██║   ██║ ██║╚██╔╝██║
+ ╚███╔███╔╝ ██║ ╚██████╔╝ ╚██████╔╝ ╚██████╔╝ ██║ ╚═╝ ██║
+  ╚══╝╚══╝  ╚═╝  ╚═════╝   ╚═════╝   ╚═════╝  ╚═╝     ╚═╝
+                        C  L  I
 ```
 *Simpson Yellow (#FED90F) branding*
 
@@ -16,68 +17,67 @@
 
 ```bash
 # Initialize in your project (recommended)
-npx ralph-cli init
+npx wiggum-cli init
 
 # Or install globally
-npm install -g ralph-cli
+npm install -g wiggum-cli
 ```
 
 ## Quick Start
 
 ```bash
-# 1. Initialize Ralph in your project
-npx ralph-cli init
+# 1. Initialize Wiggum in your project
+npx wiggum-cli init
 
 # 2. Create a new feature specification
-ralph new my-feature
+wiggum new my-feature
 
 # 3. Edit the spec file (opens in your editor)
-ralph new my-feature --edit
+wiggum new my-feature --edit
 
 # 4. Run the feature development loop
-ralph run my-feature
+wiggum run my-feature
 
 # 5. Monitor progress in real-time
-ralph monitor my-feature
+wiggum monitor my-feature
 ```
 
 ## Commands
 
-### `ralph init`
+### `wiggum init`
 
-Initialize Ralph in the current project. Scans your codebase to detect the tech stack and generates configuration files.
+Initialize Wiggum in the current project. Uses AI to analyze your codebase, detect the tech stack, and generate intelligent configuration files.
 
 ```bash
-ralph init [options]
+wiggum init [options]
 ```
 
 **Options:**
 | Flag | Description |
 |------|-------------|
-| `--ai` | Enable AI-enhanced analysis for deeper insights |
 | `--provider <name>` | AI provider: `anthropic`, `openai`, or `openrouter` (default: `anthropic`) |
 | `-y, --yes` | Accept defaults and skip confirmations |
 
 **Examples:**
 ```bash
-# Basic initialization with interactive prompts
-ralph init
+# Initialize with AI analysis (interactive)
+wiggum init
 
-# Initialize with AI enhancement using Anthropic
-ralph init --ai
+# Initialize with OpenAI provider
+wiggum init --provider openai
 
-# Initialize with OpenAI provider, skip confirmations
-ralph init --ai --provider openai --yes
+# Non-interactive mode (for CI/scripts)
+wiggum init --yes
 ```
 
 ---
 
-### `ralph run <feature>`
+### `wiggum run <feature>`
 
 Run the feature development loop for a specific feature. Executes the AI-driven implementation workflow.
 
 ```bash
-ralph run <feature> [options]
+wiggum run <feature> [options]
 ```
 
 **Options:**
@@ -92,26 +92,26 @@ ralph run <feature> [options]
 **Examples:**
 ```bash
 # Run the feature loop
-ralph run user-authentication
+wiggum run user-authentication
 
 # Run with git worktree isolation
-ralph run payment-flow --worktree
+wiggum run payment-flow --worktree
 
 # Resume an interrupted session
-ralph run payment-flow --resume
+wiggum run payment-flow --resume
 
 # Use specific model with iteration limits
-ralph run my-feature --model opus --max-iterations 30
+wiggum run my-feature --model opus --max-iterations 30
 ```
 
 ---
 
-### `ralph monitor <feature>`
+### `wiggum monitor <feature>`
 
 Launch the monitoring dashboard to track feature development progress in real-time.
 
 ```bash
-ralph monitor <feature> [options]
+wiggum monitor <feature> [options]
 ```
 
 **Options:**
@@ -124,23 +124,23 @@ ralph monitor <feature> [options]
 **Examples:**
 ```bash
 # Monitor with default settings
-ralph monitor user-authentication
+wiggum monitor user-authentication
 
 # Monitor with faster refresh rate
-ralph monitor my-feature --interval 2
+wiggum monitor my-feature --interval 2
 
 # Use bash monitor script
-ralph monitor my-feature --bash
+wiggum monitor my-feature --bash
 ```
 
 ---
 
-### `ralph new <feature>`
+### `wiggum new <feature>`
 
 Create a new feature specification from template.
 
 ```bash
-ralph new <feature> [options]
+wiggum new <feature> [options]
 ```
 
 **Options:**
@@ -154,21 +154,21 @@ ralph new <feature> [options]
 **Examples:**
 ```bash
 # Create a new spec with interactive prompts
-ralph new user-dashboard
+wiggum new user-dashboard
 
 # Create and open in VS Code
-ralph new user-dashboard --edit
+wiggum new user-dashboard --edit
 
 # Create with vim, skip confirmations
-ralph new user-dashboard --edit --editor vim --yes
+wiggum new user-dashboard --edit --editor vim --yes
 
 # Overwrite existing spec
-ralph new user-dashboard --force
+wiggum new user-dashboard --force
 ```
 
 ## Generated Files Structure
 
-After running `ralph init`, the following structure is created:
+After running `wiggum init`, the following structure is created:
 
 ```
 .ralph/
@@ -189,7 +189,7 @@ After running `ralph init`, the following structure is created:
 
 ## Detection Capabilities
 
-Ralph automatically detects and configures support for:
+Wiggum automatically detects and configures support for:
 
 ### Core
 - **Frameworks:** Next.js (App/Pages Router), React, Vue, Nuxt, Svelte, SvelteKit, Remix, Astro
@@ -224,27 +224,33 @@ Ralph automatically detects and configures support for:
 
 ## AI Enhancement
 
-Ralph supports AI-enhanced analysis for deeper project insights:
+Wiggum uses a multi-agent AI system for deep project analysis:
 
 ```bash
-ralph init --ai --provider anthropic
+wiggum init --provider anthropic
 ```
 
 ### Supported Providers
 
-| Provider | Environment Variable | Description |
-|----------|---------------------|-------------|
-| Anthropic | `ANTHROPIC_API_KEY` | Claude models (recommended) |
-| OpenAI | `OPENAI_API_KEY` | GPT models |
-| OpenRouter | `OPENROUTER_API_KEY` | Multiple model providers |
+| Provider | Environment Variable |
+|----------|---------------------|
+| Anthropic | `ANTHROPIC_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
+| OpenRouter | `OPENROUTER_API_KEY` |
+
+### Optional Services
+
+| Service | Environment Variable | Description |
+|---------|---------------------|-------------|
+| Tavily | `TAVILY_API_KEY` | Web search for current best practices |
+| Context7 | `CONTEXT7_API_KEY` | Documentation lookup for your stack |
 
 ### AI Analysis Features
 
-When AI enhancement is enabled, Ralph provides:
-- **Architecture Analysis:** Understanding of project structure and patterns
-- **Code Quality Insights:** Best practices and potential improvements
-- **Dependency Review:** Security and update recommendations
-- **Custom Recommendations:** Tailored suggestions for your stack
+Wiggum's multi-agent system provides:
+- **Codebase Analyst:** Explores project structure, entry points, and patterns
+- **Stack Researcher:** Finds best practices, testing tools, and anti-patterns
+- **Orchestrator:** Merges results and recommends MCP servers
 
 ## Configuration
 
@@ -270,7 +276,6 @@ export default {
   // AI settings
   ai: {
     provider: 'anthropic',
-    enhance: false,
   },
 
   // Detected stack (auto-populated)
@@ -298,6 +303,8 @@ export default {
 | `ANTHROPIC_API_KEY` | For AI features | Anthropic API key |
 | `OPENAI_API_KEY` | For OpenAI provider | OpenAI API key |
 | `OPENROUTER_API_KEY` | For OpenRouter provider | OpenRouter API key |
+| `TAVILY_API_KEY` | Optional | Tavily API key for web search |
+| `CONTEXT7_API_KEY` | Optional | Context7 API key for doc lookup |
 | `EDITOR` | Optional | Default editor for `--edit` flag |
 | `DEBUG` | Optional | Enable debug logging |
 
@@ -309,8 +316,8 @@ Contributions are welcome! Please read our contributing guidelines before submit
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/ralph-cli.git
-cd ralph-cli
+git clone https://github.com/federiconeri/wiggum-cli.git
+cd wiggum-cli
 
 # Install dependencies
 npm install
@@ -338,4 +345,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-Built with Simpson Yellow (#FED90F) by the Ralph team.
+Built with Simpson Yellow (#FED90F) by the Wiggum team.
