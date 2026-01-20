@@ -3,7 +3,20 @@
 ## Stack
 {{framework}}{{#if frameworkVersion}} {{frameworkVersion}}{{/if}}{{#if frameworkVariant}} ({{frameworkVariant}}){{/if}}, TypeScript, {{styling || css}}{{#if unitTest}}, {{unitTest}}{{/if}}{{#if e2eTest}}, {{e2eTest}}{{/if}}
 
+{{#if aiEntryPoints}}## Entry Points
+{{aiEntryPoints}}
+
+{{/if}}
 ## Commands
+{{#if hasAiAnalysis}}
+| Action | Command |
+|--------|---------|
+| Dev | `{{devCommand}}` |
+| Build | `{{buildCommand}}` |
+| Test | `{{testCommand}}` |
+| Lint | `{{lintCommand}}` |
+| Typecheck | `{{typecheckCommand}}` |
+{{else}}
 All commands run from `{{appDir}}/` directory:
 
 | Action | Command |
@@ -16,19 +29,20 @@ All commands run from `{{appDir}}/` directory:
 | Typecheck | `cd {{appDir}} && {{typecheckCommand}}` |
 {{#if unitTest}}| Test | `cd {{appDir}} && {{testCommand}}` |
 | Test watch | `cd {{appDir}} && {{testCommand}} -- --watch` |{{/if}}
+{{/if}}
 
 ## Validation (run before commit)
 ```bash
-cd {{appDir}} && {{lintCommand}} -- --fix && {{typecheckCommand}}{{#if unitTest}} && {{testCommand}}{{/if}} && {{buildCommand}}
+{{lintCommand}} && {{typecheckCommand}}{{#if unitTest}} && {{testCommand}}{{/if}} && {{buildCommand}}
 ```
 
-## Security Review (run before commit)
-```bash
-cd {{appDir}} && {{packageManager}} audit                    # Check vulnerable dependencies
-```
-Then review changes against @.ralph/guides/SECURITY.md checklist.
-Use `mcp__supabase__get_advisors` with type "security" to check RLS policies.
+{{#if aiKeyDirectories}}## Project Structure
 
+| Directory | Purpose |
+|-----------|---------|
+{{aiKeyDirectories}}
+
+{{else}}
 ## Patterns
 - Pages: `{{appDir}}/app/` - Next.js App Router
 - Components: `{{appDir}}/components/` - see ui/, ai-elements/, survey-editor/
@@ -36,27 +50,30 @@ Use `mcp__supabase__get_advisors` with type "security" to check RLS policies.
 - Store: `{{appDir}}/store/` - State management
 - Server Actions: `{{appDir}}/app/actions.ts` and `{{appDir}}/app/actions/`
 - Libs: `{{appDir}}/lib/` - utilities and integrations
+{{/if}}
 
+{{#if aiImplementationGuidelines}}## Implementation Guidelines
+{{aiImplementationGuidelines}}
+
+{{/if}}
 ## Search Tools
 - **Codebase search**: Use `mgrep "query"` (preferred over Grep/Glob)
 - **Documentation lookup**: Use Context7 MCP for library/framework docs
 - **Web search**: Use `mgrep --web "query"` for general web lookups
 
 ## Code Rules
-- Explicit return types on functions
+{{#if aiNamingConventions}}- Naming: {{aiNamingConventions}}
+{{/if}}- Explicit return types on functions
 - No `any` - use `unknown` if truly unknown
 - Early returns over nested conditionals
 - Named exports, not default exports
 - Path alias `@/` maps to `{{appDir}}/` root
-- Follow patterns in existing components
+- Follow patterns in existing code
 - 2-space indentation, single quotes
-- PascalCase for components, `use` prefix for hooks
-- kebab-case for folder names (e.g., `survey-editor`)
 
 {{#if unitTest}}## Testing
 - Framework: {{unitTest}}{{#if unitTestVersion}} {{unitTestVersion}}{{/if}}
-- Test location: next to component as `*.test.tsx` or in `__tests__/`
-- Run: `cd {{appDir}} && {{testCommand}}`
+- Run: `{{testCommand}}`
 - Each feature task should include tests
 - Validation fails if tests fail
 {{/if}}
@@ -71,30 +88,30 @@ Use `mcp__supabase__get_advisors` with type "security" to check RLS policies.
 - After changes: validate, commit, push
 
 ## MCP Servers Available
-- **Supabase**: Query DB, manage migrations, generate types
+{{#if aiMcpEssential}}- **Essential**: {{aiMcpEssential}}
+{{/if}}{{#if aiMcpRecommended}}- **Recommended**: {{aiMcpRecommended}}
+{{/if}}- **Supabase**: Query DB, manage migrations, generate types
 - **PostHog**: Analytics, feature flags, experiments
 - **Playwright**: Browser automation for E2E testing
   - Navigate: `browser_navigate`, `browser_snapshot`
   - Interact: `browser_click`, `browser_type`, `browser_fill_form`
   - Verify: `browser_wait_for`, `browser_console_messages`
   - Debug: `browser_take_screenshot`
-- **Codex CLI** (shell command, not MCP): PR review
-  - Command: `echo "prompt" | codex exec --full-auto -`
-  - For reviews: `codex review --base main` (interactive mode)
-  - Location: `/opt/homebrew/bin/codex`
-  - Use for: code review, PR feedback before merge
 - **Context7**: Documentation lookup for libraries/frameworks
 
+{{#if aiMissedTechnologies}}## May Also Use
+{{aiMissedTechnologies}}
+
+{{/if}}
 ## Quick Triggers
 | Keywords | Action |
 |----------|--------|
 | type error, ts | Run typecheck |
-| lint, format | Run lint --fix and prettier |
+| lint, format | Run lint --fix |
 | deploy, build | Run full build |
-| error, debug | Check PostHog logs or console |
+| error, debug | Check logs or console |
 | database, table | Use Supabase MCP |
 | e2e, browser test | Use Playwright MCP |
 
 ## Detailed Docs
-- Architecture: `{{appDir}}/.claude/CLAUDE.md` - comprehensive codebase details
 - Frontend: `.ralph/guides/FRONTEND.md` - design patterns, component usage, quality checklist

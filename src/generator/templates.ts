@@ -39,7 +39,7 @@ export interface TemplateVariables {
   stylingVersion: string;
   stylingVariant: string;
 
-  // Commands (derived from package manager)
+  // Commands (derived from package manager or AI detected)
   devCommand: string;
   buildCommand: string;
   testCommand: string;
@@ -49,6 +49,16 @@ export interface TemplateVariables {
 
   // Paths
   appDir: string;
+
+  // AI Analysis (optional - populated when AI enhancement is used)
+  aiEntryPoints: string;
+  aiKeyDirectories: string;
+  aiNamingConventions: string;
+  aiImplementationGuidelines: string;
+  aiMcpEssential: string;
+  aiMcpRecommended: string;
+  aiMissedTechnologies: string;
+  hasAiAnalysis: string;
 
   // Custom variables
   [key: string]: string;
@@ -94,6 +104,115 @@ function deriveCommands(packageManager: string): Pick<
 }
 
 /**
+ * AI analysis template variables
+ */
+type AiTemplateVars = Pick<TemplateVariables,
+  'hasAiAnalysis' | 'aiEntryPoints' | 'aiKeyDirectories' | 'aiNamingConventions' |
+  'aiImplementationGuidelines' | 'aiMcpEssential' | 'aiMcpRecommended' | 'aiMissedTechnologies'
+>;
+
+/**
+ * Format AI analysis data for templates
+ */
+function formatAiAnalysisForTemplates(scanResult: ScanResult): AiTemplateVars {
+  // Check if this is an EnhancedScanResult with aiAnalysis
+  const aiAnalysis = (scanResult as { aiAnalysis?: {
+    projectContext?: {
+      entryPoints?: string[];
+      keyDirectories?: Record<string, string>;
+      namingConventions?: string;
+    };
+    commands?: Record<string, string>;
+    implementationGuidelines?: string[];
+    mcpServers?: {
+      essential?: string[];
+      recommended?: string[];
+    };
+    possibleMissedTechnologies?: string[];
+  } }).aiAnalysis;
+
+  if (!aiAnalysis) {
+    return {
+      hasAiAnalysis: '',
+      aiEntryPoints: '',
+      aiKeyDirectories: '',
+      aiNamingConventions: '',
+      aiImplementationGuidelines: '',
+      aiMcpEssential: '',
+      aiMcpRecommended: '',
+      aiMissedTechnologies: '',
+    };
+  }
+
+  // Format entry points as bullet list
+  const entryPoints = aiAnalysis.projectContext?.entryPoints || [];
+  const aiEntryPoints = entryPoints.length > 0
+    ? entryPoints.map(e => `- \`${e}\``).join('\n')
+    : '';
+
+  // Format key directories as table rows
+  const keyDirs = aiAnalysis.projectContext?.keyDirectories || {};
+  const aiKeyDirectories = Object.keys(keyDirs).length > 0
+    ? Object.entries(keyDirs).map(([dir, purpose]) => `| \`${dir}/\` | ${purpose} |`).join('\n')
+    : '';
+
+  // Naming conventions
+  const aiNamingConventions = aiAnalysis.projectContext?.namingConventions || '';
+
+  // Implementation guidelines as bullet list
+  const guidelines = aiAnalysis.implementationGuidelines || [];
+  const aiImplementationGuidelines = guidelines.length > 0
+    ? guidelines.map(g => `- ${g}`).join('\n')
+    : '';
+
+  // MCP servers
+  const aiMcpEssential = (aiAnalysis.mcpServers?.essential || []).join(', ');
+  const aiMcpRecommended = (aiAnalysis.mcpServers?.recommended || []).join(', ');
+
+  // Missed technologies
+  const aiMissedTechnologies = (aiAnalysis.possibleMissedTechnologies || []).join(', ');
+
+  return {
+    hasAiAnalysis: 'true',
+    aiEntryPoints,
+    aiKeyDirectories,
+    aiNamingConventions,
+    aiImplementationGuidelines,
+    aiMcpEssential,
+    aiMcpRecommended,
+    aiMissedTechnologies,
+  };
+}
+
+/**
+ * Extract AI-detected commands or fall back to derived commands
+ */
+function getCommands(
+  scanResult: ScanResult,
+  packageManager: string
+): Pick<TemplateVariables, 'devCommand' | 'buildCommand' | 'testCommand' | 'lintCommand' | 'typecheckCommand' | 'formatCommand'> {
+  // Check for AI-detected commands
+  const aiCommands = (scanResult as { aiAnalysis?: { commands?: Record<string, string> } }).aiAnalysis?.commands;
+
+  // Derive default commands from package manager
+  const derived = deriveCommands(packageManager);
+
+  if (!aiCommands) {
+    return derived;
+  }
+
+  // Use AI-detected commands where available, fall back to derived
+  return {
+    devCommand: aiCommands.dev || derived.devCommand,
+    buildCommand: aiCommands.build || derived.buildCommand,
+    testCommand: aiCommands.test || derived.testCommand,
+    lintCommand: aiCommands.lint || derived.lintCommand,
+    typecheckCommand: aiCommands.typecheck || derived.typecheckCommand,
+    formatCommand: aiCommands.format || derived.formatCommand,
+  };
+}
+
+/**
  * Extract template variables from scan result
  */
 export function extractVariables(scanResult: ScanResult, customVars: Record<string, string> = {}): TemplateVariables {
@@ -122,11 +241,24 @@ export function extractVariables(scanResult: ScanResult, customVars: Record<stri
   const stylingVersion = stack.styling?.version || DEFAULT_VARIABLES.stylingVersion!;
   const stylingVariant = stack.styling?.variant || DEFAULT_VARIABLES.stylingVariant!;
 
-  // Derive commands
-  const commands = deriveCommands(packageManager);
+  // Get commands (AI-detected or derived)
+  const commands = getCommands(scanResult, packageManager);
 
-  // Determine app directory
-  const appDir = frameworkVariant === 'app-router' || framework.toLowerCase().includes('next') ? 'app' : 'src';
+  // Extract AI analysis data
+  const aiData = formatAiAnalysisForTemplates(scanResult);
+
+  // Determine app directory - use AI entry points if available
+  let appDir = 'src';
+  if (frameworkVariant === 'app-router' || framework.toLowerCase().includes('next')) {
+    appDir = 'app';
+  } else if (aiData.aiEntryPoints) {
+    // Try to extract common directory from entry points
+    const entryPoints = (scanResult as { aiAnalysis?: { projectContext?: { entryPoints?: string[] } } })
+      .aiAnalysis?.projectContext?.entryPoints || [];
+    if (entryPoints.length > 0 && entryPoints[0].startsWith('src/')) {
+      appDir = 'src';
+    }
+  }
 
   return {
     projectName,
@@ -145,6 +277,7 @@ export function extractVariables(scanResult: ScanResult, customVars: Record<stri
     stylingVariant,
     appDir,
     ...commands,
+    ...aiData,
     ...customVars,
   };
 }
