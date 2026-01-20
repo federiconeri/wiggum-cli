@@ -84,7 +84,14 @@ export interface EnhancerOptions {
 /**
  * Parse AI response JSON safely
  */
-function parseAIResponse(text: string): AIAnalysisResult | null {
+function parseAIResponse(text: string, verbose: boolean = false): AIAnalysisResult | null {
+  if (!text || text.trim() === '') {
+    if (verbose) {
+      logger.warn('AI response text is empty');
+    }
+    return null;
+  }
+
   try {
     // Try to extract JSON from the response
     // The AI might wrap it in markdown code blocks
@@ -96,15 +103,33 @@ function parseAIResponse(text: string): AIAnalysisResult | null {
       jsonText = jsonMatch[1];
     }
 
-    // Try to find JSON object
+    // Try to find JSON object - use greedy match for the outermost braces
+    // This handles cases where there's text before/after the JSON
     const objectMatch = jsonText.match(/\{[\s\S]*\}/);
     if (objectMatch) {
       jsonText = objectMatch[0];
     }
 
-    return JSON.parse(jsonText) as AIAnalysisResult;
+    // Try to parse JSON
+    const result = JSON.parse(jsonText) as AIAnalysisResult;
+
+    // Validate that we got the expected structure
+    if (!result || typeof result !== 'object') {
+      if (verbose) {
+        logger.warn('AI response parsed but is not an object');
+      }
+      return null;
+    }
+
+    return result;
   } catch (error) {
-    logger.warn('Failed to parse AI response as JSON');
+    if (verbose) {
+      logger.warn(`Failed to parse AI response as JSON: ${error instanceof Error ? error.message : String(error)}`);
+      // Log first 500 chars of response for debugging
+      logger.warn(`Response preview: ${text.substring(0, 500)}...`);
+    } else {
+      logger.warn('Failed to parse AI response as JSON');
+    }
     return null;
   }
 }
@@ -301,7 +326,7 @@ When done exploring, output your final analysis as valid JSON matching this stru
 
     // Use agentic loop - AI will call tools until it has enough info
     // stopWhen: stepCountIs(10) allows up to 10 tool-calling steps
-    const { text } = await generateText({
+    const result = await generateText({
       model,
       system: SYSTEM_PROMPT_AGENTIC,
       prompt,
@@ -312,7 +337,34 @@ When done exploring, output your final analysis as valid JSON matching this stru
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
     });
 
-    return parseAIResponse(text);
+    // Try to get text from the result
+    let textToParse = result.text;
+
+    // If text is empty, try to extract from steps
+    if (!textToParse || textToParse.trim() === '') {
+      if (this.verbose) {
+        logger.info(`No direct text output, checking ${result.steps?.length || 0} steps...`);
+      }
+
+      // Look through steps for text content (from last to first)
+      const steps = result.steps || [];
+      for (let i = steps.length - 1; i >= 0; i--) {
+        const step = steps[i];
+        if (step.text && step.text.trim() !== '') {
+          textToParse = step.text;
+          if (this.verbose) {
+            logger.info(`Found text in step ${i + 1}`);
+          }
+          break;
+        }
+      }
+    }
+
+    if (this.verbose && (!textToParse || textToParse.trim() === '')) {
+      logger.warn('No text output found in response or steps');
+    }
+
+    return parseAIResponse(textToParse, this.verbose);
   }
 }
 
