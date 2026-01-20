@@ -166,3 +166,21 @@ export function getAvailableProvider(): AIProvider | null {
 export function getApiKeyEnvVar(provider: AIProvider): string {
   return API_KEY_ENV_VARS[provider];
 }
+
+/**
+ * Models that don't support temperature parameter (reasoning models)
+ */
+const REASONING_MODELS = [
+  // OpenAI reasoning models
+  'o1', 'o1-mini', 'o1-preview',
+  'o3', 'o3-mini',
+  'gpt-5', 'gpt-5.1', 'gpt-5-mini',
+  'gpt-5.1-codex', 'gpt-5.1-codex-max',
+];
+
+/**
+ * Check if a model is a reasoning model that doesn't support temperature
+ */
+export function isReasoningModel(modelId: string): boolean {
+  return REASONING_MODELS.some(m => modelId.startsWith(m));
+}

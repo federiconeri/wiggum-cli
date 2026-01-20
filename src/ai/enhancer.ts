@@ -5,7 +5,7 @@
 
 import { generateText, stepCountIs } from 'ai';
 import type { ScanResult, DetectedStack, DetectionResult } from '../scanner/types.js';
-import { getModel, type AIProvider, hasApiKey, getApiKeyEnvVar } from './providers.js';
+import { getModel, type AIProvider, hasApiKey, getApiKeyEnvVar, isReasoningModel } from './providers.js';
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_AGENTIC, createAnalysisPrompt } from './prompts.js';
 import { createExplorationTools } from './tools.js';
 import { logger } from '../utils/logger.js';
@@ -199,10 +199,10 @@ export class AIEnhancer {
 
       if (this.agentic) {
         // Agentic mode: use tools to explore codebase
-        analysis = await this.enhanceAgentic(model, scanResult);
+        analysis = await this.enhanceAgentic(model, modelId, scanResult);
       } else {
         // Simple mode: just analyze detected stack
-        analysis = await this.enhanceSimple(model, scanResult);
+        analysis = await this.enhanceSimple(model, modelId, scanResult);
       }
 
       if (!analysis) {
@@ -242,6 +242,7 @@ export class AIEnhancer {
    */
   private async enhanceSimple(
     model: ReturnType<typeof getModel>['model'],
+    modelId: string,
     scanResult: ScanResult
   ): Promise<AIAnalysisResult | null> {
     const prompt = createAnalysisPrompt(scanResult);
@@ -251,7 +252,8 @@ export class AIEnhancer {
       system: SYSTEM_PROMPT,
       prompt,
       maxOutputTokens: 2000,
-      temperature: 0.3,
+      // Reasoning models don't support temperature
+      ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
     });
 
     return parseAIResponse(text);
@@ -262,6 +264,7 @@ export class AIEnhancer {
    */
   private async enhanceAgentic(
     model: ReturnType<typeof getModel>['model'],
+    modelId: string,
     scanResult: ScanResult
   ): Promise<AIAnalysisResult | null> {
     const tools = createExplorationTools(scanResult.projectRoot);
@@ -305,7 +308,8 @@ When done exploring, output your final analysis as valid JSON matching this stru
       tools,
       stopWhen: stepCountIs(10),
       maxOutputTokens: 4000,
-      temperature: 0.3,
+      // Reasoning models don't support temperature
+      ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
     });
 
     return parseAIResponse(text);
