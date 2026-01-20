@@ -27,8 +27,7 @@ export function createCli(): Command {
       'after',
       `
 Examples:
-  $ ralph init                    Initialize Ralph in your project
-  $ ralph init --ai               Initialize with AI-enhanced analysis
+  $ ralph init                    Initialize Ralph with AI analysis
   $ ralph new my-feature          Create a new feature specification
   $ ralph run my-feature          Run the feature development loop
   $ ralph monitor my-feature      Monitor progress in real-time
@@ -43,10 +42,9 @@ Documentation:
     .command('init')
     .description(
       'Initialize Ralph in the current project.\n\n' +
-        'Scans your codebase to detect the tech stack (framework, testing,\n' +
-        'database, auth, etc.) and generates configuration files in .ralph/'
+        'Uses AI to analyze your codebase, detect the tech stack, and generate\n' +
+        'intelligent configuration files in .ralph/'
     )
-    .option('--ai', 'Enable AI-enhanced analysis for deeper project insights')
     .option(
       '--provider <name>',
       'AI provider to use (anthropic, openai, openrouter)',
@@ -57,15 +55,19 @@ Documentation:
       'after',
       `
 Examples:
-  $ ralph init                           Basic initialization
-  $ ralph init --ai                      With AI-enhanced analysis (Anthropic)
-  $ ralph init --ai --provider openai    With OpenAI provider
+  $ ralph init                           Initialize with AI analysis
+  $ ralph init --provider openai         Use OpenAI provider
   $ ralph init --yes                     Non-interactive mode
 
-Environment Variables:
-  ANTHROPIC_API_KEY    Required for --ai with anthropic provider
-  OPENAI_API_KEY       Required for --ai with openai provider
-  OPENROUTER_API_KEY   Required for --ai with openrouter provider
+API Keys (BYOK - Bring Your Own Keys):
+  Required (one of):
+    ANTHROPIC_API_KEY    For Anthropic (Claude) provider
+    OPENAI_API_KEY       For OpenAI provider
+    OPENROUTER_API_KEY   For OpenRouter provider
+
+  Optional (for enhanced research):
+    TAVILY_API_KEY       Enable web search for best practices
+    CONTEXT7_API_KEY     Enable documentation lookup
 `
     )
     .action(async (options) => {

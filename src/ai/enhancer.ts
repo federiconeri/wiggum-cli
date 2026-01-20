@@ -8,6 +8,7 @@ import type { ScanResult, DetectedStack, DetectionResult } from '../scanner/type
 import { getModel, type AIProvider, hasApiKey, getApiKeyEnvVar, isReasoningModel } from './providers.js';
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_AGENTIC, createAnalysisPrompt } from './prompts.js';
 import { createExplorationTools } from './tools.js';
+import { runMultiAgentAnalysis, type MultiAgentAnalysis } from './agents/index.js';
 import { logger } from '../utils/logger.js';
 
 /**
@@ -45,6 +46,32 @@ export interface McpRecommendations {
 }
 
 /**
+ * Technology-specific testing and debugging tools
+ */
+export interface TechnologyTools {
+  /** Testing commands specific to the detected technologies */
+  testing?: string[];
+  /** Debugging/inspection tools for the stack */
+  debugging?: string[];
+  /** Linting/validation tools beyond the standard ones */
+  validation?: string[];
+}
+
+/**
+ * Technology-specific best practices
+ */
+export interface TechnologyPractices {
+  /** The primary project type (e.g., "MCP Server", "REST API", "React SPA") */
+  projectType?: string;
+  /** Practices specific to the detected technologies */
+  practices?: string[];
+  /** Anti-patterns to avoid for this stack */
+  antiPatterns?: string[];
+  /** Links to relevant documentation (optional) */
+  documentationHints?: string[];
+}
+
+/**
  * AI analysis result - focused on actionable outputs
  */
 export interface AIAnalysisResult {
@@ -58,6 +85,10 @@ export interface AIAnalysisResult {
   mcpServers?: McpRecommendations;
   /** Additional technologies that may have been missed */
   possibleMissedTechnologies?: string[];
+  /** Technology-specific tools for testing/debugging */
+  technologyTools?: TechnologyTools;
+  /** Technology-specific best practices based on detected stack */
+  technologyPractices?: TechnologyPractices;
 }
 
 /**
@@ -79,6 +110,10 @@ export interface EnhancerOptions {
   verbose?: boolean;
   /** Use agentic mode with tools for deeper codebase exploration */
   agentic?: boolean;
+  /** Tavily API key for web search (optional) */
+  tavilyApiKey?: string;
+  /** Context7 API key for documentation lookup (optional) */
+  context7ApiKey?: string;
 }
 
 /**
@@ -173,12 +208,16 @@ export class AIEnhancer {
   private model?: string;
   private verbose: boolean;
   private agentic: boolean;
+  private tavilyApiKey?: string;
+  private context7ApiKey?: string;
 
   constructor(options: EnhancerOptions = {}) {
     this.provider = options.provider || 'anthropic';
     this.model = options.model;
     this.verbose = options.verbose || false;
     this.agentic = options.agentic || false;
+    this.tavilyApiKey = options.tavilyApiKey;
+    this.context7ApiKey = options.context7ApiKey;
   }
 
   /**
@@ -285,9 +324,38 @@ export class AIEnhancer {
   }
 
   /**
-   * Agentic enhancement mode - use tools to explore codebase
+   * Agentic enhancement mode - use multi-agent system to explore codebase
    */
   private async enhanceAgentic(
+    model: ReturnType<typeof getModel>['model'],
+    modelId: string,
+    scanResult: ScanResult
+  ): Promise<AIAnalysisResult | null> {
+    // Use the multi-agent system for deeper analysis
+    const multiAgentResult = await runMultiAgentAnalysis(
+      model,
+      modelId,
+      scanResult,
+      {
+        tavilyApiKey: this.tavilyApiKey,
+        context7ApiKey: this.context7ApiKey,
+        verbose: this.verbose,
+      }
+    );
+
+    if (!multiAgentResult) {
+      // Fall back to simple agentic mode
+      return this.enhanceLegacyAgentic(model, modelId, scanResult);
+    }
+
+    // Convert MultiAgentAnalysis to AIAnalysisResult for backward compatibility
+    return convertMultiAgentToAIAnalysis(multiAgentResult);
+  }
+
+  /**
+   * Legacy agentic mode (fallback when multi-agent fails)
+   */
+  private async enhanceLegacyAgentic(
     model: ReturnType<typeof getModel>['model'],
     modelId: string,
     scanResult: ScanResult
@@ -325,7 +393,6 @@ When done exploring, output your final analysis as valid JSON matching this stru
 }`;
 
     // Use agentic loop - AI will call tools until it has enough info
-    // stopWhen: stepCountIs(10) allows up to 10 tool-calling steps
     const result = await generateText({
       model,
       system: SYSTEM_PROMPT_AGENTIC,
@@ -333,7 +400,6 @@ When done exploring, output your final analysis as valid JSON matching this stru
       tools,
       stopWhen: stepCountIs(10),
       maxOutputTokens: 4000,
-      // Reasoning models don't support temperature
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
     });
 
@@ -346,7 +412,6 @@ When done exploring, output your final analysis as valid JSON matching this stru
         logger.info(`No direct text output, checking ${result.steps?.length || 0} steps...`);
       }
 
-      // Look through steps for text content (from last to first)
       const steps = result.steps || [];
       for (let i = steps.length - 1; i >= 0; i--) {
         const step = steps[i];
@@ -366,6 +431,39 @@ When done exploring, output your final analysis as valid JSON matching this stru
 
     return parseAIResponse(textToParse, this.verbose);
   }
+}
+
+/**
+ * Convert MultiAgentAnalysis to AIAnalysisResult for backward compatibility
+ */
+function convertMultiAgentToAIAnalysis(multiAgent: MultiAgentAnalysis): AIAnalysisResult {
+  const { codebaseAnalysis, stackResearch, mcpServers } = multiAgent;
+
+  return {
+    projectContext: {
+      entryPoints: codebaseAnalysis.projectContext.entryPoints,
+      keyDirectories: codebaseAnalysis.projectContext.keyDirectories,
+      namingConventions: codebaseAnalysis.projectContext.namingConventions,
+    },
+    commands: codebaseAnalysis.commands,
+    implementationGuidelines: codebaseAnalysis.implementationGuidelines,
+    mcpServers: {
+      essential: mcpServers.essential,
+      recommended: mcpServers.recommended,
+    },
+    possibleMissedTechnologies: codebaseAnalysis.possibleMissedTechnologies,
+    technologyTools: {
+      testing: stackResearch.testingTools,
+      debugging: stackResearch.debuggingTools,
+      validation: [],
+    },
+    technologyPractices: {
+      projectType: codebaseAnalysis.projectContext.projectType,
+      practices: stackResearch.bestPractices,
+      antiPatterns: stackResearch.antiPatterns,
+      documentationHints: stackResearch.documentationHints,
+    },
+  };
 }
 
 /**

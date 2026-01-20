@@ -31,6 +31,16 @@ const API_KEY_ENV_VARS: Record<AIProvider, string> = {
 };
 
 /**
+ * Environment variable names for optional services
+ */
+export const OPTIONAL_SERVICE_ENV_VARS = {
+  tavily: 'TAVILY_API_KEY',
+  context7: 'CONTEXT7_API_KEY',
+} as const;
+
+export type OptionalService = keyof typeof OPTIONAL_SERVICE_ENV_VARS;
+
+/**
  * Model option with label and value
  */
 export interface ModelOption {
@@ -183,4 +193,42 @@ const REASONING_MODELS = [
  */
 export function isReasoningModel(modelId: string): boolean {
   return REASONING_MODELS.some(m => modelId.startsWith(m));
+}
+
+/**
+ * Check if Tavily API key is available
+ */
+export function hasTavilyKey(): boolean {
+  return !!process.env[OPTIONAL_SERVICE_ENV_VARS.tavily];
+}
+
+/**
+ * Get the Tavily API key
+ */
+export function getTavilyKey(): string | undefined {
+  return process.env[OPTIONAL_SERVICE_ENV_VARS.tavily];
+}
+
+/**
+ * Check if Context7 API key is available
+ */
+export function hasContext7Key(): boolean {
+  return !!process.env[OPTIONAL_SERVICE_ENV_VARS.context7];
+}
+
+/**
+ * Get the Context7 API key
+ */
+export function getContext7Key(): string | undefined {
+  return process.env[OPTIONAL_SERVICE_ENV_VARS.context7];
+}
+
+/**
+ * Get the status of all optional services
+ */
+export function getOptionalServicesStatus(): Record<OptionalService, boolean> {
+  return {
+    tavily: hasTavilyKey(),
+    context7: hasContext7Key(),
+  };
 }

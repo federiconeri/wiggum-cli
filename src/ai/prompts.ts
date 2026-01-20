@@ -100,6 +100,8 @@ Your goal is to thoroughly understand the codebase structure and produce actiona
 3. Search for key patterns: entry points, routes, components, tests
 4. Identify naming conventions by examining existing files
 5. Look for existing documentation (.md files, README)
+6. Determine the PROJECT TYPE (e.g., MCP server, REST API, React SPA, CLI tool, library)
+7. Based on project type, include TECHNOLOGY-SPECIFIC testing/debugging tools
 
 ## Tools Available
 You have these tools to explore the codebase:
@@ -110,6 +112,30 @@ You have these tools to explore the codebase:
 
 ${RIPGREP_SKILL}
 
+## Technology-Specific Guidance
+
+When you detect specific project types, include their specialized tools:
+
+**MCP Server Projects** (detected by @modelcontextprotocol dependencies):
+- Testing: "npx @anthropic-ai/mcp-inspector" for interactive debugging
+- Practices: Follow MCP protocol spec, validate tool schemas, handle resources properly
+
+**REST APIs** (Express, Fastify, Hono, etc.):
+- Testing: API testing tools (supertest, httpie, curl examples)
+- Debugging: Request logging, OpenAPI validation
+
+**React/Next.js Projects**:
+- Testing: React Testing Library patterns, Storybook for components
+- Debugging: React DevTools, component isolation
+
+**CLI Tools**:
+- Testing: Integration tests with actual CLI invocation
+- Debugging: --verbose flags, debug logging patterns
+
+**Libraries/Packages**:
+- Testing: Unit tests with high coverage, type checking
+- Practices: Semantic versioning, changelog maintenance
+
 ## Output Requirements
 After exploration, output valid JSON with:
 - projectContext: entry points, key directories, naming conventions
@@ -117,8 +143,11 @@ After exploration, output valid JSON with:
 - implementationGuidelines: short actionable rules (5-10 words each, max 7)
 - mcpServers: essential and recommended servers
 - possibleMissedTechnologies: technologies that might be in use
+- technologyTools: testing, debugging, and validation tools specific to this project type
+- technologyPractices: projectType, practices, antiPatterns, documentationHints
 
-Be concise. Focus on WHAT TO DO, not what exists.`;
+Be concise. Focus on WHAT TO DO, not what exists.
+Include SPECIFIC testing/debugging commands for the detected project type.`;
 
 /**
  * System prompt for codebase analysis (simple mode - no tools)
@@ -133,7 +162,16 @@ Rules:
 - Focus on WHAT TO DO, not what exists
 - Include specific file paths and commands
 - Max 5-7 items per array
-- No explanations, just actionable rules`;
+- No explanations, just actionable rules
+- CRITICAL: Include technology-specific testing and debugging tools
+- Identify the PROJECT TYPE and provide stack-specific practices
+
+Technology-specific tools to consider:
+- MCP servers: "npx @anthropic-ai/mcp-inspector" for testing
+- REST APIs: supertest, curl examples, OpenAPI validation
+- React apps: React Testing Library, Storybook, DevTools
+- CLI tools: integration tests, --verbose flags
+- Libraries: high coverage unit tests, semantic versioning`;
 
 /**
  * Create the codebase analysis prompt
@@ -175,15 +213,40 @@ Respond with this JSON structure (keep values SHORT - 5-10 words max per item):
     "essential": ["filesystem", "git"],
     "recommended": ["docker", "postgres"]
   },
-  "possibleMissedTechnologies": ["Redis", "WebSockets"]
+  "possibleMissedTechnologies": ["Redis", "WebSockets"],
+  "technologyTools": {
+    "testing": ["npx @anthropic-ai/mcp-inspector", "node test/test-*.js"],
+    "debugging": ["--verbose flag", "DEBUG=* env var"],
+    "validation": ["npx tsc --noEmit", "npm run lint"]
+  },
+  "technologyPractices": {
+    "projectType": "MCP Server",
+    "practices": [
+      "Validate tool input schemas with Zod",
+      "Return structured JSON from tools",
+      "Handle errors with proper MCP error codes"
+    ],
+    "antiPatterns": [
+      "Don't expose internal errors to clients",
+      "Avoid blocking operations in tool handlers"
+    ],
+    "documentationHints": [
+      "MCP spec: modelcontextprotocol.io/docs",
+      "Inspector: modelcontextprotocol.io/docs/tools/inspector"
+    ]
+  }
 }
 
-Important:
+CRITICAL:
+- Identify the PROJECT TYPE first (MCP Server, REST API, React SPA, CLI, Library, etc.)
+- Include technology-specific testing tools (e.g., MCP Inspector for MCP projects)
+- Include technology-specific debugging approaches
 - implementationGuidelines should be short rules (not analysis prompts)
 - Include actual file paths from this project
 - Infer commands from package.json patterns
 - Max 5-7 items per array`;
 }
+
 
 /**
  * Prompt for validating and improving scanner results
