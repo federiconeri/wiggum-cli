@@ -14,6 +14,7 @@ import type {
 import type { DetectedStack } from '../../scanner/types.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
+import { parseJsonSafe } from '../../utils/json-repair.js';
 
 /**
  * System prompt for the Orchestrator
@@ -130,36 +131,24 @@ function parseMcpRecommendations(
     return getDefaultMcpRecommendations('Unknown', stack);
   }
 
-  try {
-    // Remove markdown code blocks
-    let jsonText = text;
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonText = jsonMatch[1];
-    }
+  // Use safe JSON parser with repair capabilities
+  const parsed = parseJsonSafe<{ mcpServers?: McpRecommendations }>(text);
 
-    // Find JSON object
-    const objectMatch = jsonText.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      jsonText = objectMatch[0];
-    }
-
-    const parsed = JSON.parse(jsonText) as { mcpServers?: McpRecommendations };
-
-    if (parsed.mcpServers) {
-      return {
-        essential: parsed.mcpServers.essential || ['filesystem', 'git'],
-        recommended: parsed.mcpServers.recommended || [],
-      };
-    }
-
-    return getDefaultMcpRecommendations('Unknown', stack);
-  } catch (error) {
+  if (!parsed) {
     if (verbose) {
-      logger.warn(`Orchestrator: Failed to parse JSON - ${error instanceof Error ? error.message : String(error)}`);
+      logger.warn('Orchestrator: Failed to parse JSON response');
     }
     return getDefaultMcpRecommendations('Unknown', stack);
   }
+
+  if (parsed.mcpServers) {
+    return {
+      essential: parsed.mcpServers.essential || ['filesystem', 'git'],
+      recommended: parsed.mcpServers.recommended || [],
+    };
+  }
+
+  return getDefaultMcpRecommendations('Unknown', stack);
 }
 
 /**

@@ -11,6 +11,7 @@ import { createTavilySearchTool } from '../tools/tavily.js';
 import { createContext7Tool } from '../tools/context7.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
+import { parseJsonSafe } from '../../utils/json-repair.js';
 
 /**
  * System prompt for Stack Researcher with tools
@@ -250,37 +251,25 @@ function parseStackResearch(
     return getDefaultStackResearch(researchMode);
   }
 
-  try {
-    // Remove markdown code blocks if present
-    let jsonText = textToParse;
-    const jsonMatch = textToParse.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonText = jsonMatch[1];
-    }
+  // Use safe JSON parser with repair capabilities
+  const parsed = parseJsonSafe<Partial<StackResearch>>(textToParse);
 
-    // Find JSON object
-    const objectMatch = jsonText.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      jsonText = objectMatch[0];
-    }
-
-    const parsed = JSON.parse(jsonText) as Partial<StackResearch>;
-
-    // Build result with defaults for missing fields
-    return {
-      bestPractices: parsed.bestPractices || [],
-      antiPatterns: parsed.antiPatterns || [],
-      testingTools: parsed.testingTools || [],
-      debuggingTools: parsed.debuggingTools || [],
-      documentationHints: parsed.documentationHints || [],
-      researchMode: researchMode,
-    };
-  } catch (error) {
+  if (!parsed) {
     if (verbose) {
-      logger.warn(`Stack Researcher: Failed to parse JSON - ${error instanceof Error ? error.message : String(error)}`);
+      logger.warn('Stack Researcher: Failed to parse JSON response');
     }
     return getDefaultStackResearch(researchMode);
   }
+
+  // Build result with defaults for missing fields
+  return {
+    bestPractices: parsed.bestPractices || [],
+    antiPatterns: parsed.antiPatterns || [],
+    testingTools: parsed.testingTools || [],
+    debuggingTools: parsed.debuggingTools || [],
+    documentationHints: parsed.documentationHints || [],
+    researchMode: researchMode,
+  };
 }
 
 /**

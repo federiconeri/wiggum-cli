@@ -8,6 +8,7 @@ import type { CodebaseAnalysis, CodebaseAnalystInput } from './types.js';
 import { createExplorationTools } from '../tools.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
+import { parseJsonSafe } from '../../utils/json-repair.js';
 
 /**
  * System prompt for the Codebase Analyst agent
@@ -133,40 +134,29 @@ function parseCodebaseAnalysis(
     return null;
   }
 
-  try {
-    // Remove markdown code blocks if present
-    let jsonText = textToParse;
-    const jsonMatch = textToParse.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonText = jsonMatch[1];
-    }
+  // Use safe JSON parser with repair capabilities
+  const parsed = parseJsonSafe<CodebaseAnalysis>(textToParse);
 
-    // Find JSON object
-    const objectMatch = jsonText.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      jsonText = objectMatch[0];
-    }
-
-    const parsed = JSON.parse(jsonText) as CodebaseAnalysis;
-
-    // Validate required fields
-    if (!parsed.projectContext || !parsed.commands) {
-      if (verbose) {
-        logger.warn('Codebase Analyst: Missing required fields in response');
-      }
-      return null;
-    }
-
-    // Ensure projectType is set
-    if (!parsed.projectContext.projectType) {
-      parsed.projectContext.projectType = 'Unknown';
-    }
-
-    return parsed;
-  } catch (error) {
+  if (!parsed) {
     if (verbose) {
-      logger.warn(`Codebase Analyst: Failed to parse JSON - ${error instanceof Error ? error.message : String(error)}`);
+      logger.warn('Codebase Analyst: Failed to parse JSON response');
+      logger.warn(`Response preview: ${textToParse.substring(0, 200)}...`);
     }
     return null;
   }
+
+  // Validate required fields
+  if (!parsed.projectContext || !parsed.commands) {
+    if (verbose) {
+      logger.warn('Codebase Analyst: Missing required fields in response');
+    }
+    return null;
+  }
+
+  // Ensure projectType is set
+  if (!parsed.projectContext.projectType) {
+    parsed.projectContext.projectType = 'Unknown';
+  }
+
+  return parsed;
 }

@@ -10,6 +10,7 @@ import { SYSTEM_PROMPT, SYSTEM_PROMPT_AGENTIC, createAnalysisPrompt } from './pr
 import { createExplorationTools } from './tools.js';
 import { runMultiAgentAnalysis, type MultiAgentAnalysis } from './agents/index.js';
 import { logger } from '../utils/logger.js';
+import { parseJsonSafe } from '../utils/json-repair.js';
 
 /**
  * Project context from AI analysis - key structure information
@@ -127,46 +128,26 @@ function parseAIResponse(text: string, verbose: boolean = false): AIAnalysisResu
     return null;
   }
 
-  try {
-    // Try to extract JSON from the response
-    // The AI might wrap it in markdown code blocks
-    let jsonText = text;
+  // Use safe JSON parser with repair capabilities
+  const result = parseJsonSafe<AIAnalysisResult>(text);
 
-    // Remove markdown code blocks if present
-    const jsonMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (jsonMatch) {
-      jsonText = jsonMatch[1];
-    }
-
-    // Try to find JSON object - use greedy match for the outermost braces
-    // This handles cases where there's text before/after the JSON
-    const objectMatch = jsonText.match(/\{[\s\S]*\}/);
-    if (objectMatch) {
-      jsonText = objectMatch[0];
-    }
-
-    // Try to parse JSON
-    const result = JSON.parse(jsonText) as AIAnalysisResult;
-
-    // Validate that we got the expected structure
-    if (!result || typeof result !== 'object') {
-      if (verbose) {
-        logger.warn('AI response parsed but is not an object');
-      }
-      return null;
-    }
-
-    return result;
-  } catch (error) {
+  if (!result) {
     if (verbose) {
-      logger.warn(`Failed to parse AI response as JSON: ${error instanceof Error ? error.message : String(error)}`);
-      // Log first 500 chars of response for debugging
-      logger.warn(`Response preview: ${text.substring(0, 500)}...`);
-    } else {
       logger.warn('Failed to parse AI response as JSON');
+      logger.warn(`Response preview: ${text.substring(0, 500)}...`);
     }
     return null;
   }
+
+  // Validate that we got the expected structure
+  if (typeof result !== 'object') {
+    if (verbose) {
+      logger.warn('AI response parsed but is not an object');
+    }
+    return null;
+  }
+
+  return result;
 }
 
 /**
