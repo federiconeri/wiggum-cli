@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "ralph": "./bin/ralph.js"
+    "wiggum": "./bin/ralph.js"
   },
   "scripts": {
     "build": "tsc && npm run copy-templates",
@@ -23,7 +23,7 @@
     "code-generation",
     "tech-stack-detection"
   ],
-  "author": "Ralph CLI Contributors",
+  "author": "Wiggum CLI Contributors",
   "license": "MIT",
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.15",
