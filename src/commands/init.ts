@@ -65,6 +65,15 @@ function saveKeysToEnvLocal(
 }
 
 /**
+ * Get the default model for a provider (the one marked as 'recommended' or first)
+ */
+function getDefaultModel(provider: AIProvider): string {
+  const models = AVAILABLE_MODELS[provider];
+  const recommended = models.find(m => m.hint?.includes('recommended'));
+  return recommended?.value || models[0].value;
+}
+
+/**
  * BYOK Flow: Collect API keys from user
  */
 async function collectApiKeys(
@@ -78,10 +87,18 @@ async function collectApiKeys(
 } | null> {
   // Check if we already have an LLM key
   let provider: AIProvider = options.provider || 'anthropic';
-  let hasLlmKey = options.provider ? hasApiKey(options.provider) : !!getAvailableProvider();
+  const existingProvider = getAvailableProvider();
+  let hadLlmKeyBefore = options.provider ? hasApiKey(options.provider) : !!existingProvider;
+  let llmKeyEnteredThisSession = false;
 
-  if (!hasLlmKey || !getAvailableProvider()) {
-    // Need to collect LLM API key
+  if (!hadLlmKeyBefore) {
+    // In --yes mode, fail if no API key is available
+    if (options.yes) {
+      logger.error('No API key found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.');
+      return null;
+    }
+
+    // Need to collect LLM API key interactively
     console.log('');
     console.log(simpson.yellow('─── API Key Setup ───'));
     console.log('');
@@ -117,32 +134,42 @@ async function collectApiKeys(
 
     // Set in process.env for this session
     process.env[envVar] = apiKeyInput;
-    hasLlmKey = true;
+    llmKeyEnteredThisSession = true;
   } else if (!options.provider) {
     // Use the available provider
-    provider = getAvailableProvider() || 'anthropic';
+    provider = existingProvider || 'anthropic';
   }
 
-  // Select model
-  const modelOptions = AVAILABLE_MODELS[provider];
-  const modelChoice = await prompts.select({
-    message: 'Select model:',
-    options: modelOptions.map(m => ({
-      value: m.value,
-      label: m.label,
-      hint: m.hint,
-    })),
-  });
+  // Select model (skip in --yes mode, use default)
+  let selectedModel: string;
 
-  if (prompts.isCancel(modelChoice)) {
-    return null;
+  if (options.yes) {
+    selectedModel = getDefaultModel(provider);
+  } else {
+    const modelOptions = AVAILABLE_MODELS[provider];
+    const modelChoice = await prompts.select({
+      message: 'Select model:',
+      options: modelOptions.map(m => ({
+        value: m.value,
+        label: m.label,
+        hint: m.hint,
+      })),
+    });
+
+    if (prompts.isCancel(modelChoice)) {
+      return null;
+    }
+
+    selectedModel = modelChoice as string;
   }
 
-  const selectedModel = modelChoice as string;
-
-  // Collect optional Tavily API key
+  // Collect optional Tavily API key (skip in --yes mode)
   let tavilyKey: string | undefined;
-  if (!hasTavilyKey()) {
+  let tavilyKeyEnteredThisSession = false;
+
+  if (hasTavilyKey()) {
+    tavilyKey = process.env[OPTIONAL_SERVICE_ENV_VARS.tavily];
+  } else if (!options.yes) {
     console.log('');
     console.log(pc.dim('Tavily enables web search for current best practices (optional)'));
 
@@ -152,15 +179,18 @@ async function collectApiKeys(
 
     if (!prompts.isCancel(tavilyInput) && tavilyInput) {
       tavilyKey = tavilyInput;
+      tavilyKeyEnteredThisSession = true;
       process.env[OPTIONAL_SERVICE_ENV_VARS.tavily] = tavilyInput;
     }
-  } else {
-    tavilyKey = process.env[OPTIONAL_SERVICE_ENV_VARS.tavily];
   }
 
-  // Collect optional Context7 API key
+  // Collect optional Context7 API key (skip in --yes mode)
   let context7Key: string | undefined;
-  if (!hasContext7Key()) {
+  let context7KeyEnteredThisSession = false;
+
+  if (hasContext7Key()) {
+    context7Key = process.env[OPTIONAL_SERVICE_ENV_VARS.context7];
+  } else if (!options.yes) {
     console.log(pc.dim('Context7 enables documentation lookup for your stack (optional)'));
 
     const context7Input = await prompts.password({
@@ -169,37 +199,40 @@ async function collectApiKeys(
 
     if (!prompts.isCancel(context7Input) && context7Input) {
       context7Key = context7Input;
+      context7KeyEnteredThisSession = true;
       process.env[OPTIONAL_SERVICE_ENV_VARS.context7] = context7Input;
     }
-  } else {
-    context7Key = process.env[OPTIONAL_SERVICE_ENV_VARS.context7];
   }
 
-  // Save all keys to .env.local
+  // Save keys entered this session to .env.local
   const keysToSave: Record<string, string> = {};
 
-  // Only save LLM key if we collected it this session
-  const llmEnvVar = getApiKeyEnvVar(provider);
-  if (process.env[llmEnvVar] && !hasApiKey(provider)) {
+  if (llmKeyEnteredThisSession) {
+    const llmEnvVar = getApiKeyEnvVar(provider);
     keysToSave[llmEnvVar] = process.env[llmEnvVar]!;
   }
-
-  if (tavilyKey) {
+  if (tavilyKeyEnteredThisSession && tavilyKey) {
     keysToSave[OPTIONAL_SERVICE_ENV_VARS.tavily] = tavilyKey;
   }
-  if (context7Key) {
+  if (context7KeyEnteredThisSession && context7Key) {
     keysToSave[OPTIONAL_SERVICE_ENV_VARS.context7] = context7Key;
   }
 
   if (Object.keys(keysToSave).length > 0) {
-    const saveKeys = await prompts.confirm({
-      message: 'Save API keys to .env.local?',
-      initialValue: true,
-    });
-
-    if (!prompts.isCancel(saveKeys) && saveKeys) {
+    // In --yes mode, auto-save keys
+    if (options.yes) {
       saveKeysToEnvLocal(projectRoot, keysToSave);
       logger.success('API keys saved to .env.local');
+    } else {
+      const saveKeys = await prompts.confirm({
+        message: 'Save API keys to .env.local?',
+        initialValue: true,
+      });
+
+      if (!prompts.isCancel(saveKeys) && saveKeys) {
+        saveKeysToEnvLocal(projectRoot, keysToSave);
+        logger.success('API keys saved to .env.local');
+      }
     }
   }
 
