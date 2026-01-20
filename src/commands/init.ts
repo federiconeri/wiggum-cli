@@ -1,10 +1,10 @@
 /**
  * Init Command
- * Initialize Ralph in the current project - scans and generates configuration
+ * Initialize Ralph in the current project - BYOK multi-agent AI analysis
  */
 
 import { logger } from '../utils/logger.js';
-import { Scanner, formatScanResult, type ScanResult } from '../scanner/index.js';
+import { Scanner, type ScanResult } from '../scanner/index.js';
 import { Generator, formatGenerationResult } from '../generator/index.js';
 import {
   AIEnhancer,
@@ -12,7 +12,15 @@ import {
   type AIProvider,
   type EnhancedScanResult,
 } from '../ai/index.js';
-import { hasApiKey, getApiKeyEnvVar, getAvailableProvider, AVAILABLE_MODELS } from '../ai/providers.js';
+import {
+  hasApiKey,
+  getApiKeyEnvVar,
+  getAvailableProvider,
+  AVAILABLE_MODELS,
+  OPTIONAL_SERVICE_ENV_VARS,
+  hasTavilyKey,
+  hasContext7Key,
+} from '../ai/providers.js';
 import * as prompts from '@clack/prompts';
 import pc from 'picocolors';
 import fs from 'fs';
@@ -20,16 +28,192 @@ import path from 'path';
 import { simpson, sectionHeader, drawLine } from '../utils/colors.js';
 
 export interface InitOptions {
-  ai?: boolean;
   provider?: AIProvider;
   yes?: boolean;
-  /** Use agentic mode for deep codebase exploration */
-  agentic?: boolean;
+}
+
+/**
+ * Save API keys to .env.local file
+ */
+function saveKeysToEnvLocal(
+  projectRoot: string,
+  keys: Record<string, string>
+): void {
+  const envLocalPath = path.join(projectRoot, '.env.local');
+  let envContent = '';
+
+  // Read existing content if file exists
+  if (fs.existsSync(envLocalPath)) {
+    envContent = fs.readFileSync(envLocalPath, 'utf-8');
+  }
+
+  // Update or add each key
+  for (const [envVar, value] of Object.entries(keys)) {
+    if (!value) continue;
+
+    const keyRegex = new RegExp(`^${envVar}=.*$`, 'm');
+    if (keyRegex.test(envContent)) {
+      // Replace existing key
+      envContent = envContent.replace(keyRegex, `${envVar}=${value}`);
+    } else {
+      // Append new key
+      envContent = envContent.trimEnd() + (envContent ? '\n' : '') + `${envVar}=${value}\n`;
+    }
+  }
+
+  fs.writeFileSync(envLocalPath, envContent);
+}
+
+/**
+ * BYOK Flow: Collect API keys from user
+ */
+async function collectApiKeys(
+  projectRoot: string,
+  options: InitOptions
+): Promise<{
+  provider: AIProvider;
+  model: string;
+  tavilyKey?: string;
+  context7Key?: string;
+} | null> {
+  // Check if we already have an LLM key
+  let provider: AIProvider = options.provider || 'anthropic';
+  let hasLlmKey = options.provider ? hasApiKey(options.provider) : !!getAvailableProvider();
+
+  if (!hasLlmKey || !getAvailableProvider()) {
+    // Need to collect LLM API key
+    console.log('');
+    console.log(simpson.yellow('─── API Key Setup ───'));
+    console.log('');
+    console.log('Ralph uses AI to analyze your codebase and generate configuration.');
+    console.log('');
+
+    // Select provider
+    const providerChoice = await prompts.select({
+      message: 'Select your AI provider:',
+      options: [
+        { value: 'anthropic', label: 'Anthropic (Claude)', hint: 'recommended' },
+        { value: 'openai', label: 'OpenAI (GPT-4/5)' },
+        { value: 'openrouter', label: 'OpenRouter', hint: 'multiple providers' },
+      ],
+    });
+
+    if (prompts.isCancel(providerChoice)) {
+      return null;
+    }
+
+    provider = providerChoice as AIProvider;
+    const envVar = getApiKeyEnvVar(provider);
+
+    // Get API key
+    const apiKeyInput = await prompts.password({
+      message: `Enter your ${envVar}:`,
+    });
+
+    if (prompts.isCancel(apiKeyInput) || !apiKeyInput) {
+      logger.error('LLM API key is required to use Ralph.');
+      return null;
+    }
+
+    // Set in process.env for this session
+    process.env[envVar] = apiKeyInput;
+    hasLlmKey = true;
+  } else if (!options.provider) {
+    // Use the available provider
+    provider = getAvailableProvider() || 'anthropic';
+  }
+
+  // Select model
+  const modelOptions = AVAILABLE_MODELS[provider];
+  const modelChoice = await prompts.select({
+    message: 'Select model:',
+    options: modelOptions.map(m => ({
+      value: m.value,
+      label: m.label,
+      hint: m.hint,
+    })),
+  });
+
+  if (prompts.isCancel(modelChoice)) {
+    return null;
+  }
+
+  const selectedModel = modelChoice as string;
+
+  // Collect optional Tavily API key
+  let tavilyKey: string | undefined;
+  if (!hasTavilyKey()) {
+    console.log('');
+    console.log(pc.dim('Tavily enables web search for current best practices (optional)'));
+
+    const tavilyInput = await prompts.password({
+      message: `Enter ${OPTIONAL_SERVICE_ENV_VARS.tavily} (press Enter to skip):`,
+    });
+
+    if (!prompts.isCancel(tavilyInput) && tavilyInput) {
+      tavilyKey = tavilyInput;
+      process.env[OPTIONAL_SERVICE_ENV_VARS.tavily] = tavilyInput;
+    }
+  } else {
+    tavilyKey = process.env[OPTIONAL_SERVICE_ENV_VARS.tavily];
+  }
+
+  // Collect optional Context7 API key
+  let context7Key: string | undefined;
+  if (!hasContext7Key()) {
+    console.log(pc.dim('Context7 enables documentation lookup for your stack (optional)'));
+
+    const context7Input = await prompts.password({
+      message: `Enter ${OPTIONAL_SERVICE_ENV_VARS.context7} (press Enter to skip):`,
+    });
+
+    if (!prompts.isCancel(context7Input) && context7Input) {
+      context7Key = context7Input;
+      process.env[OPTIONAL_SERVICE_ENV_VARS.context7] = context7Input;
+    }
+  } else {
+    context7Key = process.env[OPTIONAL_SERVICE_ENV_VARS.context7];
+  }
+
+  // Save all keys to .env.local
+  const keysToSave: Record<string, string> = {};
+
+  // Only save LLM key if we collected it this session
+  const llmEnvVar = getApiKeyEnvVar(provider);
+  if (process.env[llmEnvVar] && !hasApiKey(provider)) {
+    keysToSave[llmEnvVar] = process.env[llmEnvVar]!;
+  }
+
+  if (tavilyKey) {
+    keysToSave[OPTIONAL_SERVICE_ENV_VARS.tavily] = tavilyKey;
+  }
+  if (context7Key) {
+    keysToSave[OPTIONAL_SERVICE_ENV_VARS.context7] = context7Key;
+  }
+
+  if (Object.keys(keysToSave).length > 0) {
+    const saveKeys = await prompts.confirm({
+      message: 'Save API keys to .env.local?',
+      initialValue: true,
+    });
+
+    if (!prompts.isCancel(saveKeys) && saveKeys) {
+      saveKeysToEnvLocal(projectRoot, keysToSave);
+      logger.success('API keys saved to .env.local');
+    }
+  }
+
+  return {
+    provider,
+    model: selectedModel,
+    tavilyKey,
+    context7Key,
+  };
 }
 
 /**
  * Initialize Ralph in the current project
- * Scans the project and generates configuration
+ * Uses BYOK (Bring Your Own Keys) model with multi-agent AI analysis
  */
 export async function initCommand(options: InitOptions): Promise<void> {
   const projectRoot = process.cwd();
@@ -38,7 +222,15 @@ export async function initCommand(options: InitOptions): Promise<void> {
   logger.info(`Project: ${projectRoot}`);
   console.log('');
 
-  // Step 1: Scan the project
+  // Step 1: Collect API keys (BYOK)
+  const apiKeys = await collectApiKeys(projectRoot, options);
+
+  if (!apiKeys) {
+    logger.info('Initialization cancelled');
+    return;
+  }
+
+  // Step 2: Scan the project (background)
   const spinner = prompts.spinner();
   spinner.start('Scanning project...');
 
@@ -47,189 +239,64 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   try {
     scanResult = await scanner.scan(projectRoot);
-    spinner.stop('Project scanned successfully');
+    spinner.stop('Project scanned');
   } catch (error) {
     spinner.stop('Scan failed');
     logger.error(`Failed to scan project: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 
-  // Display scan results
+  // Step 3: Run multi-agent AI analysis
   console.log('');
-  console.log(simpson.yellow('─── Scan Results ───'));
-  console.log(formatScanResult(scanResult));
+  const modelLabel = AVAILABLE_MODELS[apiKeys.provider].find(m => m.value === apiKeys.model)?.label || apiKeys.model;
+
+  // Show capabilities status
+  const capabilities: string[] = ['Codebase Analysis'];
+  if (apiKeys.tavilyKey) capabilities.push('Web Research');
+  if (apiKeys.context7Key) capabilities.push('Doc Lookup');
+
+  console.log(simpson.yellow(`─── AI Analysis (${apiKeys.provider} / ${modelLabel}) ───`));
+  console.log(pc.dim(`Capabilities: ${capabilities.join(' • ')}`));
   console.log('');
 
-  // Step 2: AI Enhancement
-  let enhancedResult: EnhancedScanResult | undefined;
-  let useAI = options.ai;
-  let provider: AIProvider = options.provider || 'anthropic';
+  spinner.start('Running AI analysis...');
 
-  // Ask about AI enhancement if not specified via --ai flag and not in --yes mode
-  if (!options.ai && !options.yes) {
-    const wantAI = await prompts.confirm({
-      message: 'Enable AI-enhanced analysis?',
-      initialValue: true,
-    });
+  const aiEnhancer = new AIEnhancer({
+    provider: apiKeys.provider,
+    model: apiKeys.model,
+    verbose: true,
+    agentic: true, // Always use agentic mode for deeper analysis
+    tavilyApiKey: apiKeys.tavilyKey,
+    context7ApiKey: apiKeys.context7Key,
+  });
 
-    if (prompts.isCancel(wantAI)) {
-      logger.info('Initialization cancelled');
-      return;
+  let enhancedResult: EnhancedScanResult;
+
+  try {
+    enhancedResult = await aiEnhancer.enhance(scanResult);
+
+    if (enhancedResult.aiEnhanced && enhancedResult.aiAnalysis) {
+      spinner.stop('AI analysis complete');
+      console.log('');
+      console.log(formatAIAnalysis(enhancedResult.aiAnalysis));
+    } else if (enhancedResult.aiError) {
+      spinner.stop('AI analysis failed');
+      logger.warn(`AI error: ${enhancedResult.aiError}`);
+      console.log('');
+
+      // Fall back to basic scan result
+      enhancedResult = { ...scanResult, aiEnhanced: false };
     }
+  } catch (error) {
+    spinner.stop('AI analysis failed');
+    logger.warn(`AI error: ${error instanceof Error ? error.message : String(error)}`);
+    console.log('');
 
-    useAI = wantAI;
+    // Fall back to basic scan result
+    enhancedResult = { ...scanResult, aiEnhanced: false };
   }
 
-  if (useAI) {
-    // Check if we have an API key for the selected provider or any provider
-    let hasKey = options.provider ? hasApiKey(options.provider) : !!getAvailableProvider();
-
-    // If no API key found, prompt for one
-    if (!hasKey) {
-      console.log('');
-      console.log(simpson.pink('No API key found for AI enhancement.'));
-      console.log('');
-
-      // Ask which provider to use
-      const providerChoice = await prompts.select({
-        message: 'Which AI provider would you like to use?',
-        options: [
-          { value: 'anthropic', label: 'Anthropic (Claude)', hint: 'recommended' },
-          { value: 'openai', label: 'OpenAI (GPT-4)' },
-          { value: 'openrouter', label: 'OpenRouter' },
-        ],
-      });
-
-      if (prompts.isCancel(providerChoice)) {
-        logger.info('Initialization cancelled');
-        return;
-      }
-
-      provider = providerChoice as AIProvider;
-      const envVar = getApiKeyEnvVar(provider);
-
-      // Prompt for API key
-      const apiKeyInput = await prompts.password({
-        message: `Enter your ${envVar}:`,
-      });
-
-      if (prompts.isCancel(apiKeyInput) || !apiKeyInput) {
-        logger.warn('No API key provided, skipping AI enhancement');
-        useAI = false;
-      } else {
-        // Set the API key in process.env for current session
-        process.env[envVar] = apiKeyInput;
-        hasKey = true;
-
-        // Offer to save to .env.local
-        const saveKey = await prompts.confirm({
-          message: 'Save API key to .env.local?',
-          initialValue: true,
-        });
-
-        if (!prompts.isCancel(saveKey) && saveKey) {
-          const envLocalPath = path.join(projectRoot, '.env.local');
-          let envContent = '';
-
-          // Read existing content if file exists
-          if (fs.existsSync(envLocalPath)) {
-            envContent = fs.readFileSync(envLocalPath, 'utf-8');
-            // Check if key already exists
-            const keyRegex = new RegExp(`^${envVar}=.*$`, 'm');
-            if (keyRegex.test(envContent)) {
-              // Replace existing key
-              envContent = envContent.replace(keyRegex, `${envVar}=${apiKeyInput}`);
-            } else {
-              // Append new key
-              envContent = envContent.trimEnd() + '\n' + `${envVar}=${apiKeyInput}\n`;
-            }
-          } else {
-            envContent = `${envVar}=${apiKeyInput}\n`;
-          }
-
-          fs.writeFileSync(envLocalPath, envContent);
-          logger.success(`API key saved to .env.local`);
-        }
-      }
-    } else if (!options.provider) {
-      // If we have a key but no provider specified, use the available one
-      provider = getAvailableProvider() || 'anthropic';
-    }
-
-    // Run AI enhancement if we have a key
-    if (useAI && hasKey) {
-      // Ask which model to use
-      const modelOptions = AVAILABLE_MODELS[provider];
-      const modelChoice = await prompts.select({
-        message: 'Which model would you like to use?',
-        options: modelOptions.map(m => ({
-          value: m.value,
-          label: m.label,
-          hint: m.hint,
-        })),
-      });
-
-      if (prompts.isCancel(modelChoice)) {
-        logger.info('Initialization cancelled');
-        return;
-      }
-
-      const selectedModel = modelChoice as string;
-      const modelLabel = modelOptions.find(m => m.value === selectedModel)?.label || selectedModel;
-
-      // Ask about agentic mode (deep exploration)
-      let useAgentic = options.agentic;
-      if (useAgentic === undefined && !options.yes) {
-        const wantAgentic = await prompts.confirm({
-          message: 'Enable deep codebase exploration? (AI will search files and directories)',
-          initialValue: true,
-        });
-
-        if (prompts.isCancel(wantAgentic)) {
-          logger.info('Initialization cancelled');
-          return;
-        }
-
-        useAgentic = wantAgentic;
-      }
-
-      console.log('');
-      const modeLabel = useAgentic ? 'agentic' : 'simple';
-      console.log(simpson.yellow(`─── AI Enhancement (${provider} / ${modelLabel} / ${modeLabel}) ───`));
-
-      const aiEnhancer = new AIEnhancer({
-        provider,
-        model: selectedModel,
-        verbose: true,
-        agentic: useAgentic,
-      });
-
-      spinner.start('Running AI analysis...');
-
-      try {
-        enhancedResult = await aiEnhancer.enhance(scanResult);
-
-        if (enhancedResult.aiEnhanced && enhancedResult.aiAnalysis) {
-          spinner.stop('AI analysis complete');
-          console.log('');
-          console.log(formatAIAnalysis(enhancedResult.aiAnalysis));
-
-          // Use enhanced result for generation
-          scanResult = enhancedResult;
-        } else if (enhancedResult.aiError) {
-          spinner.stop('AI analysis failed');
-          logger.warn(`AI enhancement error: ${enhancedResult.aiError}`);
-          console.log('');
-        }
-      } catch (error) {
-        spinner.stop('AI analysis failed');
-        logger.warn(`AI enhancement error: ${error instanceof Error ? error.message : String(error)}`);
-        console.log('');
-      }
-    }
-  }
-
-  // Step 3: Confirm with user (unless --yes)
+  // Step 4: Confirm with user (unless --yes)
   if (!options.yes) {
     const shouldContinue = await prompts.confirm({
       message: 'Generate Ralph configuration files?',
@@ -242,7 +309,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
   }
 
-  // Step 4: Generate configuration files
+  // Step 5: Generate configuration files
   console.log('');
   spinner.start('Generating configuration files...');
 
@@ -253,7 +320,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   });
 
   try {
-    const generationResult = await generator.generate(scanResult);
+    const generationResult = await generator.generate(enhancedResult);
     spinner.stop('Configuration files generated');
 
     console.log('');
