@@ -73,15 +73,23 @@ export function drawLine(width: number = 50): string {
 }
 
 /**
+ * Strip ANSI escape codes from text to get visible length
+ */
+function stripAnsi(text: string): string {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
+/**
  * Draw a box around text
  */
 export function drawBox(text: string, padding: number = 1): string {
   const paddedText = ' '.repeat(padding) + text + ' '.repeat(padding);
-  const width = paddedText.length;
+  const visibleWidth = stripAnsi(paddedText).length;
 
-  const top = simpson.brown(box.topLeft + box.horizontal.repeat(width) + box.topRight);
+  const top = simpson.brown(box.topLeft + box.horizontal.repeat(visibleWidth) + box.topRight);
   const middle = simpson.brown(box.vertical) + paddedText + simpson.brown(box.vertical);
-  const bottom = simpson.brown(box.bottomLeft + box.horizontal.repeat(width) + box.bottomRight);
+  const bottom = simpson.brown(box.bottomLeft + box.horizontal.repeat(visibleWidth) + box.bottomRight);
 
   return `${top}\n${middle}\n${bottom}`;
 }

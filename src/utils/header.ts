@@ -2,11 +2,11 @@ import cfonts from 'cfonts';
 import { simpson, drawBox, SIMPSON_COLORS } from './colors.js';
 
 /**
- * Display the RALPH ASCII header with welcome box
+ * Display the WIGGUM CLI ASCII header with welcome box
  */
 export function displayHeader(): void {
   // Welcome box like Claude Code
-  const welcomeText = simpson.pink('*') + ' Welcome to ' + simpson.yellow('Ralph') + '🍩';
+  const welcomeText = '🍩 Welcome to ' + simpson.yellow('Wiggum CLI') + ': AI-powered Ralph development loop CLI 🍩';
   console.log('');
   console.log(drawBox(welcomeText, 2));
   console.log('');
@@ -27,6 +27,6 @@ export function displayHeader(): void {
  */
 export function displayMinimalHeader(): void {
   console.log('');
-  console.log(simpson.yellow('Ralph') + simpson.brown(' │ ') + 'AI-powered loop development');
+  console.log(simpson.yellow('Wiggum CLI') + simpson.brown(' │ ') + 'AI-powered Ralph development loop');
   console.log('');
 }
