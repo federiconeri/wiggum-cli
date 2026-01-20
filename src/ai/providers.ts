@@ -31,13 +31,45 @@ const API_KEY_ENV_VARS: Record<AIProvider, string> = {
 };
 
 /**
+ * Model option with label and value
+ */
+export interface ModelOption {
+  value: string;
+  label: string;
+  hint?: string;
+}
+
+/**
+ * Available models for each provider
+ */
+export const AVAILABLE_MODELS: Record<AIProvider, ModelOption[]> = {
+  anthropic: [
+    { value: 'claude-opus-4-5-20250514', label: 'Claude Opus 4.5', hint: 'most capable' },
+    { value: 'claude-sonnet-4-5-20250514', label: 'Claude Sonnet 4.5', hint: 'recommended' },
+    { value: 'claude-haiku-4-5-20250514', label: 'Claude Haiku 4.5', hint: 'fastest' },
+  ],
+  openai: [
+    { value: 'gpt-5.1', label: 'GPT-5.1', hint: 'most capable' },
+    { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max', hint: 'best for code' },
+    { value: 'gpt-5-mini', label: 'GPT-5 Mini', hint: 'fastest' },
+  ],
+  openrouter: [
+    { value: 'google/gemini-3-pro-preview', label: 'Gemini 3 Pro', hint: 'Google' },
+    { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash', hint: 'fast' },
+    { value: 'deepseek/deepseek-v3.2', label: 'DeepSeek v3.2', hint: 'efficient' },
+    { value: 'z-ai/glm-4.7', label: 'GLM 4.7', hint: 'Z-AI' },
+    { value: 'minimax/minimax-m2.1', label: 'MiniMax M2.1', hint: 'MiniMax' },
+  ],
+};
+
+/**
  * Default models for each provider
- * Using fast/cost-effective models for speed
+ * Using balanced models for good results
  */
 const DEFAULT_MODELS: Record<AIProvider, string> = {
-  anthropic: 'claude-sonnet-4-20250514',
-  openai: 'gpt-4o-mini',
-  openrouter: 'anthropic/claude-3.5-sonnet',
+  anthropic: 'claude-sonnet-4-5-20250514',
+  openai: 'gpt-5.1',
+  openrouter: 'google/gemini-3-pro-preview',
 };
 
 /**
@@ -68,8 +100,8 @@ function getApiKey(provider: AIProvider): string {
 /**
  * Get a configured AI model for the specified provider
  */
-export function getModel(provider: AIProvider = 'anthropic'): ProviderConfig {
-  const modelId = DEFAULT_MODELS[provider];
+export function getModel(provider: AIProvider = 'anthropic', customModelId?: string): ProviderConfig {
+  const modelId = customModelId || DEFAULT_MODELS[provider];
 
   switch (provider) {
     case 'anthropic': {

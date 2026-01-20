@@ -78,6 +78,7 @@ export interface EnhancedScanResult extends ScanResult {
  */
 export interface EnhancerOptions {
   provider?: AIProvider;
+  model?: string;
   verbose?: boolean;
 }
 
@@ -158,10 +159,12 @@ function applyEnhancements(
  */
 export class AIEnhancer {
   private provider: AIProvider;
+  private model?: string;
   private verbose: boolean;
 
   constructor(options: EnhancerOptions = {}) {
     this.provider = options.provider || 'anthropic';
+    this.model = options.model;
     this.verbose = options.verbose || false;
   }
 
@@ -195,7 +198,7 @@ export class AIEnhancer {
 
     try {
       // Get the configured model
-      const { model, provider, modelId } = getModel(this.provider);
+      const { model, provider, modelId } = getModel(this.provider, this.model);
 
       if (this.verbose) {
         logger.info(`Using AI provider: ${provider} (${modelId})`);

@@ -12,7 +12,7 @@ import {
   type AIProvider,
   type EnhancedScanResult,
 } from '../ai/index.js';
-import { hasApiKey, getApiKeyEnvVar, getAvailableProvider } from '../ai/providers.js';
+import { hasApiKey, getApiKeyEnvVar, getAvailableProvider, AVAILABLE_MODELS } from '../ai/providers.js';
 import * as prompts from '@clack/prompts';
 import pc from 'picocolors';
 import fs from 'fs';
@@ -155,11 +155,31 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
     // Run AI enhancement if we have a key
     if (useAI && hasKey) {
+      // Ask which model to use
+      const modelOptions = AVAILABLE_MODELS[provider];
+      const modelChoice = await prompts.select({
+        message: 'Which model would you like to use?',
+        options: modelOptions.map(m => ({
+          value: m.value,
+          label: m.label,
+          hint: m.hint,
+        })),
+      });
+
+      if (prompts.isCancel(modelChoice)) {
+        logger.info('Initialization cancelled');
+        return;
+      }
+
+      const selectedModel = modelChoice as string;
+      const modelLabel = modelOptions.find(m => m.value === selectedModel)?.label || selectedModel;
+
       console.log('');
-      console.log(pc.cyan(`--- AI Enhancement (${provider}) ---`));
+      console.log(pc.cyan(`--- AI Enhancement (${provider} / ${modelLabel}) ---`));
 
       const aiEnhancer = new AIEnhancer({
         provider,
+        model: selectedModel,
         verbose: true,
       });
 
