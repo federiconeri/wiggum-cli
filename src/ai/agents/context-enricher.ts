@@ -121,13 +121,32 @@ Start by exploring the specified areas, then answer the questions and produce yo
   try {
     const { generateText } = getTracedAI();
 
+    const MAX_TOOL_CALLS = 15; // Limit total tool calls to prevent token exhaustion
+
     const result = await generateText({
       model,
       system: CONTEXT_ENRICHER_SYSTEM_PROMPT,
       prompt,
       tools,
-      stopWhen: stepCountIs(5), // Reduced from 7 to limit token consumption
-      maxOutputTokens: 8000, // Increased to handle many parallel tool calls from GPT-5.1
+      stopWhen: stepCountIs(5),
+      maxOutputTokens: 4000, // Reduced since prepareStep now limits tool calls
+      prepareStep: async ({ steps }) => {
+        // Count total tool calls across all steps
+        const totalToolCalls = steps.reduce(
+          (sum, step) => sum + (step.toolCalls?.length || 0),
+          0
+        );
+
+        // If too many tool calls, force the model to stop calling tools and output JSON
+        if (totalToolCalls >= MAX_TOOL_CALLS) {
+          if (verbose) {
+            logger.info(`Context Enricher: Reached ${totalToolCalls} tool calls, forcing output`);
+          }
+          return { toolChoice: 'none' as const };
+        }
+
+        return {};
+      },
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
       experimental_telemetry: {
         isEnabled: true,
