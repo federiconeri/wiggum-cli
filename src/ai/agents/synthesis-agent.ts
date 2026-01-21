@@ -156,7 +156,7 @@ function buildMultiAgentAnalysis(
   };
 
   // Merge tech research into StackResearch format
-  const stackResearch: StackResearch = mergeTeackResearch(input.techResearch);
+  const stackResearch: StackResearch = mergeTechResearch(input.techResearch);
 
   // Convert MCP servers to legacy format
   const mcpServers: McpRecommendations = convertToLegacyMcpRecommendations(input.mcpServers);
@@ -171,7 +171,7 @@ function buildMultiAgentAnalysis(
 /**
  * Merge multiple TechResearchResult into a single StackResearch
  */
-function mergeTeackResearch(techResearch: SynthesisInput['techResearch']): StackResearch {
+function mergeTechResearch(techResearch: SynthesisInput['techResearch']): StackResearch {
   if (techResearch.length === 0) {
     return {
       bestPractices: ['Follow project conventions'],
