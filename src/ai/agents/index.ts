@@ -162,8 +162,8 @@ export async function runMultiAgentAnalysis(
     // ═══════════════════════════════════════════════════════════════
     report('Phase 3/4: Synthesizing');
 
-    // Detect MCPs (pure function, no LLM)
-    const mcpServers = detectRalphMcpServers(scanResult.stack);
+    // Detect MCPs (pure function, no LLM) - pass project type for context-aware recommendations
+    const mcpServers = detectRalphMcpServers(scanResult.stack, enrichedContext.projectType);
 
     // Run synthesis agent
     const synthesizedResult = await runSynthesisAgent(
@@ -238,6 +238,7 @@ function getDefaultMultiAgentAnalysis(scanResult: ScanResult): MultiAgentAnalysi
       antiPatterns: ['Avoid skipping tests'],
       testingTools: ['npm test'],
       debuggingTools: ['console.log'],
+      validationTools: ['npm run lint', 'npx tsc --noEmit'],
       documentationHints: ['Check official docs'],
       researchMode: 'knowledge-only',
     },

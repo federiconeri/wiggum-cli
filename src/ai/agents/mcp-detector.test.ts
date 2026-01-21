@@ -28,9 +28,60 @@ function createStack(overrides: Partial<DetectedStack> = {}): DetectedStack {
 
 describe('detectRalphMcpServers', () => {
   describe('e2eTesting', () => {
-    it('always returns playwright for e2eTesting', () => {
+    it('returns playwright by default', () => {
       const result = detectRalphMcpServers(createStack());
       expect(result.e2eTesting).toBe('playwright');
+    });
+
+    it('returns mcp-inspector for MCP projects via stack.mcp.isProject', () => {
+      const stack = createStack({
+        mcp: { isProject: true },
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('mcp-inspector');
+    });
+
+    it('returns mcp-inspector for MCP projects via projectType parameter', () => {
+      const result = detectRalphMcpServers(createStack(), 'MCP Server');
+      expect(result.e2eTesting).toBe('mcp-inspector');
+    });
+
+    it('returns mcp-inspector when projectType contains "mcp" (case-insensitive)', () => {
+      const result = detectRalphMcpServers(createStack(), 'mcp tool');
+      expect(result.e2eTesting).toBe('mcp-inspector');
+    });
+
+    it('returns playwright for Next.js projects', () => {
+      const stack = createStack({
+        framework: detection('Next.js'),
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('playwright');
+    });
+
+    it('returns playwright for React projects', () => {
+      const stack = createStack({
+        framework: detection('React'),
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('playwright');
+    });
+
+    it('returns playwright for Vue projects', () => {
+      const stack = createStack({
+        framework: detection('Vue'),
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('playwright');
+    });
+
+    it('prefers MCP detection over web framework detection', () => {
+      const stack = createStack({
+        mcp: { isProject: true },
+        framework: detection('Next.js'),
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('mcp-inspector');
     });
   });
 
@@ -242,13 +293,16 @@ describe('detectRalphMcpServers', () => {
 });
 
 describe('convertToLegacyMcpRecommendations', () => {
-  it('always includes filesystem and git as essential', () => {
+  // Note: filesystem and git are assumed available in Claude Code, so not included
+  it('only includes e2eTesting in essential (no filesystem/git)', () => {
     const result = convertToLegacyMcpRecommendations({
       e2eTesting: 'playwright',
       additional: [],
     });
-    expect(result.essential).toContain('filesystem');
-    expect(result.essential).toContain('git');
+    // Ralph loop focuses on essentials only - filesystem/git assumed available
+    expect(result.essential).toEqual(['playwright']);
+    expect(result.essential).not.toContain('filesystem');
+    expect(result.essential).not.toContain('git');
   });
 
   it('includes playwright in essential', () => {
@@ -268,13 +322,13 @@ describe('convertToLegacyMcpRecommendations', () => {
     expect(result.essential).toContain('supabase');
   });
 
-  it('moves additional MCPs to recommended', () => {
+  it('keeps recommended empty to focus on Ralph loop essentials', () => {
     const result = convertToLegacyMcpRecommendations({
       e2eTesting: 'playwright',
       additional: ['docker', 'vercel'],
     });
-    expect(result.recommended).toContain('docker');
-    expect(result.recommended).toContain('vercel');
+    // Additional MCPs are not moved to recommended - keeping focus on essentials
+    expect(result.recommended).toEqual([]);
   });
 
   it('returns correct structure for full stack', () => {
@@ -284,7 +338,8 @@ describe('convertToLegacyMcpRecommendations', () => {
       additional: ['docker', 'stripe'],
     });
 
-    expect(result.essential).toEqual(['filesystem', 'git', 'playwright', 'postgres']);
-    expect(result.recommended).toEqual(['docker', 'stripe']);
+    // Only e2eTesting and database in essential, no recommended MCPs
+    expect(result.essential).toEqual(['playwright', 'postgres']);
+    expect(result.recommended).toEqual([]);
   });
 });

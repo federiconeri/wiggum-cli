@@ -70,6 +70,13 @@ Based on the analysis plan, explore the codebase to:
   - Map each real directory to its purpose based on file contents
   - Example: {"src/commands": "CLI commands", "app": "Next.js app router"}
 
+## Architecture Discovery
+Identify the data/control flow and include in answeredQuestions:
+- For CLI tools: "CLI entry → command parser → handlers → output"
+- For MCP servers: "Transport → request router → tool handlers → API client"
+- For web apps: "Routes → controllers → services → database"
+- For APIs: "HTTP server → middleware → routes → handlers → data layer"
+
 ## Output Format
 Output ONLY valid JSON with discovered facts, not exploration instructions:
 {
@@ -81,7 +88,10 @@ Output ONLY valid JSON with discovered facts, not exploration instructions:
   },
   "namingConventions": "camelCase files, PascalCase components",
   "commands": {"test": "npm test", "build": "npm run build"},
-  "answeredQuestions": {"What is the auth strategy?": "NextAuth with JWT"},
+  "answeredQuestions": {
+    "What is the auth strategy?": "NextAuth with JWT",
+    "architecture": "CLI parses commands via commander → calls API handlers → outputs results"
+  },
   "projectType": "CLI Tool"
 }`;
 
@@ -187,15 +197,69 @@ function parseEnrichedContext(
     return getDefaultEnrichedContext(input);
   }
 
+  // Derive commands from package.json as fallback if AI didn't find them
+  const derivedCommands = input ? deriveCommandsFromScripts(input.scanResult.projectRoot) : {};
+  const commands = parsed.commands && Object.keys(parsed.commands).length > 0
+    ? parsed.commands
+    : derivedCommands;
+
   // Build result with empty defaults for missing fields (don't guess)
   return {
     entryPoints: parsed.entryPoints || [],  // Empty = not found, not guessed
     keyDirectories: parsed.keyDirectories || {},  // Empty = not found
     namingConventions: parsed.namingConventions || 'unknown',
-    commands: parsed.commands || {},
+    commands,  // Derived from package.json if AI didn't find them
     answeredQuestions: parsed.answeredQuestions || {},
     projectType: parsed.projectType || 'Unknown',
   };
+}
+
+/**
+ * Script name patterns for command detection
+ * Exported for testing
+ */
+export const SCRIPT_MAPPINGS: Record<string, string[]> = {
+  test: ['test', 'test:unit', 'vitest', 'jest'],
+  lint: ['lint', 'eslint', 'lint:fix'],
+  typecheck: ['typecheck', 'tsc', 'type-check', 'types'],
+  build: ['build', 'compile'],
+  dev: ['dev', 'start:dev', 'develop', 'watch'],
+  format: ['format', 'prettier', 'fmt'],
+};
+
+/**
+ * Derive commands from package.json scripts when AI fails to discover them
+ * Exported for testing
+ */
+export function deriveCommandsFromScripts(projectRoot: string): Record<string, string> {
+  const commands: Record<string, string> = {};
+  const packageJsonPath = join(projectRoot, 'package.json');
+
+  if (!existsSync(packageJsonPath)) {
+    return commands;
+  }
+
+  try {
+    const content = readFileSync(packageJsonPath, 'utf-8');
+    const pkg = JSON.parse(content) as Record<string, unknown>;
+    const scripts = pkg.scripts as Record<string, string> | undefined;
+
+    if (!scripts) {
+      return commands;
+    }
+
+    for (const [command, patterns] of Object.entries(SCRIPT_MAPPINGS)) {
+      for (const pattern of patterns) {
+        if (scripts[pattern]) {
+          commands[command] = `npm run ${pattern}`;
+          break;
+        }
+      }
+    }
+    return commands;
+  } catch {
+    return commands;
+  }
 }
 
 /**
@@ -239,17 +303,18 @@ function deriveEntryPointsFromPackageJson(projectRoot: string): string[] {
 
 /**
  * Get default enriched context when parsing fails
- * Returns empty arrays instead of guesses, but derives entry points from package.json
+ * Returns empty arrays instead of guesses, but derives entry points and commands from package.json
  */
 function getDefaultEnrichedContext(input?: ContextEnricherInput): EnrichedContext {
   const projectType = detectProjectType(input?.scanResult.stack);
   const entryPoints = input ? deriveEntryPointsFromPackageJson(input.scanResult.projectRoot) : [];
+  const commands = input ? deriveCommandsFromScripts(input.scanResult.projectRoot) : {};
 
   return {
     entryPoints,  // Derived from package.json, not guessed
     keyDirectories: {},  // Empty = not discovered
     namingConventions: 'unknown',
-    commands: {},  // Empty = not discovered
+    commands,  // Derived from package.json scripts
     answeredQuestions: {},
     projectType,
   };

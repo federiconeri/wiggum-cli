@@ -66,13 +66,33 @@ const SERVICE_MCP_MAP: Record<string, string> = {
  * Detect ralph-essential MCP servers from the stack
  *
  * Ralph loop essentials:
- * - Playwright: Always recommended for E2E testing
+ * - For MCP Server projects: mcp-inspector for testing
+ * - For web apps with E2E: playwright for E2E testing
  * - Database MCP: If database is detected
  * - Additional MCPs based on services and deployment
  */
-export function detectRalphMcpServers(stack: DetectedStack): RalphMcpServers {
+export function detectRalphMcpServers(stack: DetectedStack, projectType?: string): RalphMcpServers {
+  // Determine appropriate E2E testing tool based on project type
+  const isMcpProject = stack.mcp?.isProject || projectType?.toLowerCase().includes('mcp');
+  const isWebApp = stack.framework?.name?.toLowerCase().includes('next') ||
+                   stack.framework?.name?.toLowerCase().includes('react') ||
+                   stack.framework?.name?.toLowerCase().includes('vue') ||
+                   stack.framework?.name?.toLowerCase().includes('svelte') ||
+                   stack.framework?.name?.toLowerCase().includes('nuxt') ||
+                   stack.framework?.name?.toLowerCase().includes('remix');
+
+  // Choose E2E testing tool based on project type
+  let e2eTesting: string;
+  if (isMcpProject) {
+    e2eTesting = 'mcp-inspector'; // MCP projects use MCP Inspector
+  } else if (isWebApp) {
+    e2eTesting = 'playwright'; // Web apps use Playwright
+  } else {
+    e2eTesting = 'playwright'; // Default to Playwright for CLI/other projects
+  }
+
   const result: RalphMcpServers = {
-    e2eTesting: 'playwright', // Always recommend Playwright for ralph loop
+    e2eTesting,
     additional: [],
   };
 

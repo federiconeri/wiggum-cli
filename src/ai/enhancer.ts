@@ -452,7 +452,7 @@ function convertMultiAgentToAIAnalysis(multiAgent: MultiAgentAnalysis): AIAnalys
     technologyTools: {
       testing: stackResearch.testingTools,
       debugging: stackResearch.debuggingTools,
-      validation: [],
+      validation: stackResearch.validationTools,
     },
     technologyPractices: {
       projectType: codebaseAnalysis.projectContext.projectType,
