@@ -121,28 +121,29 @@ Start by exploring the specified areas, then answer the questions and produce yo
   try {
     const { generateText } = getTracedAI();
 
-    const MAX_TOOL_CALLS = 15; // Limit total tool calls to prevent token exhaustion
+    const MAX_TOOL_CALLS = 10; // Limit total tool calls to prevent token exhaustion
 
     const result = await generateText({
       model,
       system: CONTEXT_ENRICHER_SYSTEM_PROMPT,
       prompt,
       tools,
-      stopWhen: stepCountIs(5),
-      maxOutputTokens: 4000, // Reduced since prepareStep now limits tool calls
-      prepareStep: async ({ steps }) => {
+      stopWhen: stepCountIs(8), // Allow more steps for model to output JSON after tools disabled
+      maxOutputTokens: 4000,
+      prepareStep: ({ steps, stepNumber }) => {
         // Count total tool calls across all steps
         const totalToolCalls = steps.reduce(
           (sum, step) => sum + (step.toolCalls?.length || 0),
           0
         );
 
-        // If too many tool calls, force the model to stop calling tools and output JSON
+        // If too many tool calls, disable all tools to force JSON output
         if (totalToolCalls >= MAX_TOOL_CALLS) {
           if (verbose) {
-            logger.info(`Context Enricher: Reached ${totalToolCalls} tool calls, forcing output`);
+            logger.info(`Context Enricher: Step ${stepNumber}, ${totalToolCalls} tool calls, disabling tools`);
           }
-          return { toolChoice: 'none' as const };
+          // Use both activeTools: [] AND toolChoice: 'none' for maximum enforcement
+          return { activeTools: [], toolChoice: 'none' as const };
         }
 
         return {};
