@@ -1,6 +1,10 @@
 /**
  * Planning Orchestrator Agent (Phase 1)
  * Creates an analysis plan that guides the parallel workers
+ *
+ * @deprecated v0.5.0 - No longer used in main pipeline.
+ * The unified codebase-analyzer.ts replaces this agent.
+ * Kept for backward compatibility and reference.
  */
 
 import { type LanguageModel } from 'ai';

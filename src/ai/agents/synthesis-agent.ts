@@ -1,6 +1,10 @@
 /**
  * Synthesis Agent (Phase 3)
  * Merges results from parallel workers and generates implementation guidelines
+ *
+ * @deprecated v0.5.0 - No longer used in main pipeline.
+ * The unified codebase-analyzer.ts outputs directly without synthesis.
+ * Kept for backward compatibility and reference.
  */
 
 import { type LanguageModel } from 'ai';

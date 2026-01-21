@@ -2,6 +2,10 @@
  * Tech Researcher Worker (Phase 2)
  * Researches best practices for a specific technology
  * Multiple instances run in parallel via runTechResearchPool
+ *
+ * @deprecated v0.5.0 - No longer used in main pipeline.
+ * Tech research is now handled by the model's built-in knowledge.
+ * Kept for backward compatibility and reference.
  */
 
 import { stepCountIs, type LanguageModel, type Tool } from 'ai';

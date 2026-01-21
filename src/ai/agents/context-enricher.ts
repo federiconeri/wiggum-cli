@@ -1,6 +1,10 @@
 /**
  * Context Enricher Worker (Phase 2)
  * Explores the codebase to gather enriched context based on the analysis plan
+ *
+ * @deprecated v0.5.0 - No longer used in main pipeline.
+ * The unified codebase-analyzer.ts replaces this agent.
+ * Kept for backward compatibility and reference.
  */
 
 import { existsSync, readFileSync } from 'node:fs';

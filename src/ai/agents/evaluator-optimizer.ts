@@ -2,6 +2,10 @@
  * Evaluator-Optimizer Agent (Phase 4)
  * QA loop that validates and improves the analysis result
  * Max 2 iterations to ensure quality without endless loops
+ *
+ * @deprecated v0.5.0 - No longer used in main pipeline.
+ * Quality is now handled by fallback derivation from package.json.
+ * Kept for backward compatibility and reference.
  */
 
 import { type LanguageModel } from 'ai';

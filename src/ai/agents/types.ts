@@ -256,7 +256,16 @@ export interface OrchestratorInput {
 // ============================================================
 
 /**
+ * Input for the Codebase Analyzer (v0.5.0 unified agent)
+ */
+export interface CodebaseAnalyzerInput {
+  /** The scan result from the scanner */
+  scanResult: ScanResult;
+}
+
+/**
  * Input for the Context Enricher worker
+ * @deprecated Use CodebaseAnalyzerInput with runCodebaseAnalyzer
  */
 export interface ContextEnricherInput {
   /** The scan result from the scanner */
