@@ -10,7 +10,6 @@ import type { ScanResult } from '../../scanner/types.js';
 import type { MultiAgentAnalysis, EvaluationResult } from './types.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
-import { parseJsonSafe } from '../../utils/json-repair.js';
 import { getTracedAI } from '../../utils/tracing.js';
 
 /**
