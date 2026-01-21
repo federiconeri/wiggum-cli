@@ -35,8 +35,8 @@ const evaluationSchema = z.object({
  */
 const optimizerOutputSchema = z.object({
   improvedGuidelines: z.array(z.string()).describe('Improved implementation guidelines'),
-  additionalEntryPoints: z.array(z.string()).optional().describe('Additional entry points to add'),
-  additionalMcpServers: z.array(z.string()).optional().describe('Additional MCP servers to recommend'),
+  additionalEntryPoints: z.array(z.string()).describe('Additional entry points to add (empty array if none)'),
+  additionalMcpServers: z.array(z.string()).describe('Additional MCP servers to recommend (empty array if none)'),
 });
 
 /**
@@ -248,14 +248,14 @@ Provide improved guidelines and any additional entry points or MCP servers.`;
           : result.codebaseAnalysis.implementationGuidelines,
         projectContext: {
           ...result.codebaseAnalysis.projectContext,
-          entryPoints: improvements.additionalEntryPoints
+          entryPoints: improvements.additionalEntryPoints.length > 0
             ? [...new Set([...result.codebaseAnalysis.projectContext.entryPoints, ...improvements.additionalEntryPoints])]
             : result.codebaseAnalysis.projectContext.entryPoints,
         },
       },
       mcpServers: {
         ...result.mcpServers,
-        recommended: improvements.additionalMcpServers
+        recommended: improvements.additionalMcpServers.length > 0
           ? [...new Set([...result.mcpServers.recommended, ...improvements.additionalMcpServers])]
           : result.mcpServers.recommended,
       },

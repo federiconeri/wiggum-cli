@@ -23,7 +23,7 @@ import { getTracedAI } from '../../utils/tracing.js';
  */
 const synthesisOutputSchema = z.object({
   implementationGuidelines: z.array(z.string()).describe('Short, actionable implementation guidelines'),
-  possibleMissedTechnologies: z.array(z.string()).optional().describe('Technologies that may have been missed'),
+  possibleMissedTechnologies: z.array(z.string()).describe('Technologies that may have been missed (empty array if none)'),
 });
 
 /**
