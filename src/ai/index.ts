@@ -44,19 +44,40 @@ export {
   canUseContext7,
 } from './tools/index.js';
 
-// Agents
+// Agents - New 4-phase architecture
 export {
+  // Main orchestration
   runMultiAgentAnalysis,
-  runCodebaseAnalyst,
-  runStackResearcher,
-  runOrchestrator,
-  mergeAgentResults,
+  // Phase 1: Planning
+  runPlanningOrchestrator,
+  // Phase 2: Parallel workers
+  runContextEnricher,
+  runTechResearcher,
+  runTechResearchPool,
+  // Phase 3: Synthesis + MCP detection
+  runSynthesisAgent,
+  detectRalphMcpServers,
+  convertToLegacyMcpRecommendations,
+  // Phase 4: QA loop
+  runEvaluatorOptimizer,
+  // New types
+  type AnalysisPlan,
+  type EnrichedContext,
+  type TechResearchResult,
+  type RalphMcpServers,
+  type EvaluationResult,
+  // Legacy types (backward compatibility)
   type CodebaseAnalysis,
   type StackResearch,
   type McpRecommendations,
   type MultiAgentAnalysis,
   type AgentCapabilities,
   type AgentOptions,
+  // Legacy agents (deprecated, kept for backward compatibility)
+  runCodebaseAnalyst,
+  runStackResearcher,
+  runOrchestrator,
+  mergeAgentResults,
 } from './agents/index.js';
 
 // AI enhancer
