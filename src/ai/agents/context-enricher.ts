@@ -27,17 +27,18 @@ Based on the analysis plan, explore the codebase to:
 4. Find available commands (from package.json)
 5. Answer the specific questions provided
 
-## IMPORTANT: Token Efficiency
-- Make at most 4-5 tool calls total, then produce output
-- Priority: package.json → root listing → one key directory
-- Don't explore every subdirectory - sample enough to understand structure
-- ALWAYS produce JSON output even with partial information
+## CRITICAL: You have a maximum of 6 tool calls before you MUST output JSON
+- Call getPackageInfo (no field) FIRST - this returns bin, main, scripts
+- Call listDirectory on root to see actual structure
+- Maybe explore ONE key directory if needed
+- After 3-4 tool calls, STOP exploring and OUTPUT your JSON
+- Better to have partial info than no output at all
 
 ## Tools Available
-- searchCode: Search using ripgrep patterns
-- readFile: Read file contents
+- getPackageInfo: Get package.json info - call with NO field parameter to get bin, main, scripts all at once
 - listDirectory: List directory structure
-- getPackageInfo: Get package.json info (use specific fields like "bin", "main", "scripts")
+- readFile: Read file contents
+- searchCode: Search using ripgrep patterns
 
 ## Exploration Strategy
 1. Read package.json FIRST for main/bin entries - these are authoritative entry points
@@ -115,7 +116,7 @@ Start by exploring the specified areas, then answer the questions and produce yo
       system: CONTEXT_ENRICHER_SYSTEM_PROMPT,
       prompt,
       tools,
-      stopWhen: stepCountIs(5), // Reduced from 8 to leave tokens for JSON output
+      stopWhen: stepCountIs(7), // Balance between exploration and ensuring JSON output
       maxOutputTokens: 3000,
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
       experimental_telemetry: {

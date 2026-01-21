@@ -201,12 +201,12 @@ Tips:
     }),
 
     /**
-     * Get package.json info including scripts
+     * Get package.json info including entry points and scripts
      */
     getPackageInfo: tool({
-      description: 'Get package.json contents including scripts, dependencies, and metadata.',
+      description: 'Get package.json contents. Call with no field parameter to get all key info (bin, main, scripts). Use field parameter for specific fields like "bin", "main", "scripts".',
       inputSchema: zodSchema(z.object({
-        field: z.string().optional().describe('Specific field to get (scripts, dependencies, etc.)'),
+        field: z.string().optional().describe('Specific field to get (bin, main, scripts, etc.). Omit to get all key fields.'),
       })),
       execute: async ({ field }) => {
         try {
@@ -219,12 +219,23 @@ Tips:
           const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
 
           if (field) {
-            return JSON.stringify(pkg[field], null, 2) || `Field "${field}" not found`;
+            // Handle wildcard request by returning all
+            if (field === '*' || field === 'all') {
+              return JSON.stringify(pkg, null, 2);
+            }
+            const value = pkg[field];
+            if (value === undefined) {
+              return `Field "${field}" not found in package.json`;
+            }
+            return JSON.stringify(value, null, 2);
           }
 
-          // Return relevant parts
+          // Return all relevant parts including entry points
           return JSON.stringify({
             name: pkg.name,
+            bin: pkg.bin,
+            main: pkg.main,
+            module: pkg.module,
             scripts: pkg.scripts,
             dependencies: Object.keys(pkg.dependencies || {}),
             devDependencies: Object.keys(pkg.devDependencies || {}),
