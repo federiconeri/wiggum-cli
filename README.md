@@ -253,10 +253,12 @@ wiggum init --provider anthropic
 
 ### AI Analysis Features
 
-Wiggum's multi-agent system provides:
-- **Codebase Analyst:** Explores project structure, entry points, and patterns
-- **Stack Researcher:** Finds best practices, testing tools, and anti-patterns
-- **Orchestrator:** Merges results and recommends MCP servers
+Wiggum uses a 4-phase multi-agent architecture:
+
+1. **Planning Orchestrator:** Creates a focused analysis plan based on the detected stack
+2. **Parallel Workers:** Context Enricher explores the codebase while Tech Researchers gather best practices (runs concurrently)
+3. **Synthesis:** Merges worker results and detects essential MCP servers (Playwright, database)
+4. **Evaluator-Optimizer:** QA loop that validates and improves the analysis (max 2 iterations)
 
 ## Configuration
 

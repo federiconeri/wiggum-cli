@@ -110,8 +110,8 @@ async function collectApiKeys(
     const providerChoice = await prompts.select({
       message: 'Select your AI provider:',
       options: [
-        { value: 'anthropic', label: 'Anthropic (Claude)', hint: 'recommended' },
-        { value: 'openai', label: 'OpenAI (GPT-4/5)' },
+        { value: 'anthropic', label: 'Anthropic', hint: 'recommended' },
+        { value: 'openai', label: 'OpenAI' },
         { value: 'openrouter', label: 'OpenRouter', hint: 'multiple providers' },
       ],
     });
