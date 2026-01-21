@@ -26,6 +26,7 @@ import pc from 'picocolors';
 import fs from 'fs';
 import path from 'path';
 import { simpson, sectionHeader, drawLine } from '../utils/colors.js';
+import { flushTracing } from '../utils/tracing.js';
 
 export interface InitOptions {
   provider?: AIProvider;
@@ -261,6 +262,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   if (!apiKeys) {
     // In --yes mode, null means missing API key (hard failure)
     // In interactive mode, null means user cancelled
+    await flushTracing();
     if (options.yes) {
       process.exit(1);
     }
@@ -281,6 +283,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   } catch (error) {
     spinner.stop('Scan failed');
     logger.error(`Failed to scan project: ${error instanceof Error ? error.message : String(error)}`);
+    await flushTracing();
     process.exit(1);
   }
 
@@ -342,6 +345,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
     });
 
     if (prompts.isCancel(shouldContinue) || !shouldContinue) {
+      await flushTracing();
       logger.info('Initialization cancelled');
       return;
     }
@@ -365,6 +369,9 @@ export async function initCommand(options: InitOptions): Promise<void> {
     console.log(simpson.yellow('─── Generation Results ───'));
     console.log(formatGenerationResult(generationResult));
 
+    // Flush tracing spans before completing
+    await flushTracing();
+
     if (generationResult.success) {
       console.log('');
       logger.success('Ralph initialized successfully!');
@@ -380,6 +387,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
   } catch (error) {
     spinner.stop('Generation failed');
     logger.error(`Failed to generate files: ${error instanceof Error ? error.message : String(error)}`);
+    await flushTracing();
     process.exit(1);
   }
 }
