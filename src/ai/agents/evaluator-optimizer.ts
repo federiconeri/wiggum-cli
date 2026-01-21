@@ -14,6 +14,12 @@ import { parseJsonSafe } from '../../utils/json-repair.js';
 import { getTracedAI } from '../../utils/tracing.js';
 
 /**
+ * Quality threshold for passing evaluation (1-10 scale)
+ * Results with score >= this value skip optimization
+ */
+const QUALITY_THRESHOLD = 7;
+
+/**
  * Schema for evaluation output
  */
 const evaluationSchema = z.object({
@@ -104,7 +110,7 @@ export async function runEvaluatorOptimizer(
 
     // Check if quality meets threshold
     if (
-      evaluation.qualityScore >= 7 &&
+      evaluation.qualityScore >= QUALITY_THRESHOLD &&
       evaluation.hasEntryPoints &&
       evaluation.hasImplementationGuidelines
     ) {

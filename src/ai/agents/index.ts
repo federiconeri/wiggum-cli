@@ -52,6 +52,7 @@ import type {
   MultiAgentAnalysis,
   AgentCapabilities,
   AgentOptions,
+  EnrichedContext,
 } from './types.js';
 import { runPlanningOrchestrator } from './planning-orchestrator.js';
 import { runContextEnricher } from './context-enricher.js';
@@ -109,8 +110,8 @@ export async function runMultiAgentAnalysis(
       logger.info('Phase 2: Running parallel workers...');
     }
 
-    // Run context enricher and tech researchers in parallel
-    const [enrichedContext, techResearch] = await Promise.all([
+    // Run context enricher and tech researchers in parallel with error recovery
+    const [contextResult, researchResult] = await Promise.allSettled([
       runContextEnricher(
         model,
         modelId,
@@ -129,6 +130,23 @@ export async function runMultiAgentAnalysis(
         verbose
       ),
     ]);
+
+    // Extract results with fallbacks for failed workers
+    const enrichedContext = contextResult.status === 'fulfilled'
+      ? contextResult.value
+      : getDefaultEnrichedContext(scanResult);
+
+    const techResearch = researchResult.status === 'fulfilled'
+      ? researchResult.value
+      : [];
+
+    // Log any worker failures
+    if (contextResult.status === 'rejected') {
+      logger.warn(`Context Enricher failed: ${contextResult.reason instanceof Error ? contextResult.reason.message : String(contextResult.reason)}`);
+    }
+    if (researchResult.status === 'rejected') {
+      logger.warn(`Tech Research Pool failed: ${researchResult.reason instanceof Error ? researchResult.reason.message : String(researchResult.reason)}`);
+    }
 
     if (verbose) {
       logger.info(`Context: ${enrichedContext.entryPoints.length} entry points, type=${enrichedContext.projectType}`);
@@ -243,5 +261,37 @@ function getDefaultMultiAgentAnalysis(scanResult: ScanResult): MultiAgentAnalysi
       essential: ['filesystem', 'git', 'playwright'],
       recommended: [],
     },
+  };
+}
+
+/**
+ * Get default enriched context when Context Enricher fails
+ */
+function getDefaultEnrichedContext(scanResult: ScanResult): EnrichedContext {
+  const stack = scanResult.stack;
+
+  // Detect project type
+  let projectType = 'Unknown';
+  if (stack.mcp?.isProject) {
+    projectType = 'MCP Server';
+  } else if (stack.framework?.name.includes('Next')) {
+    projectType = 'Next.js App';
+  } else if (stack.framework?.name.includes('React')) {
+    projectType = 'React SPA';
+  } else if (stack.framework?.name) {
+    projectType = `${stack.framework.name} Project`;
+  }
+
+  return {
+    entryPoints: ['src/index.ts'],
+    keyDirectories: { src: 'Source code' },
+    namingConventions: 'camelCase',
+    commands: {
+      test: 'npm test',
+      build: 'npm run build',
+      dev: 'npm run dev',
+    },
+    answeredQuestions: {},
+    projectType,
   };
 }
