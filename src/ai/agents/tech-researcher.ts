@@ -16,8 +16,9 @@ import { getTracedAI } from '../../utils/tracing.js';
 /**
  * Documentation hints mapping for common technologies
  * Used to provide useful links when AI research fails or as supplements
+ * Exported for testing
  */
-const DOCUMENTATION_HINTS: Record<string, string[]> = {
+export const DOCUMENTATION_HINTS: Record<string, string[]> = {
   // MCP ecosystem
   'MCP': ['https://modelcontextprotocol.io/docs', 'https://modelcontextprotocol.io/docs/tools/inspector'],
   'MCP Server': ['https://modelcontextprotocol.io/docs', 'https://modelcontextprotocol.io/docs/tools/inspector'],
@@ -60,11 +61,17 @@ const DOCUMENTATION_HINTS: Record<string, string[]> = {
 
 /**
  * Get documentation hints for a technology
+ * Exported for testing
  */
-function getDocumentationHints(technology: string): string[] {
+export function getDocumentationHints(technology: string): string[] {
   // Direct match
   if (DOCUMENTATION_HINTS[technology]) {
     return DOCUMENTATION_HINTS[technology];
+  }
+
+  // Empty string should return generic fallback
+  if (!technology.trim()) {
+    return [`Check official ${technology} documentation`];
   }
 
   // Case-insensitive partial match

@@ -28,9 +28,60 @@ function createStack(overrides: Partial<DetectedStack> = {}): DetectedStack {
 
 describe('detectRalphMcpServers', () => {
   describe('e2eTesting', () => {
-    it('always returns playwright for e2eTesting', () => {
+    it('returns playwright by default', () => {
       const result = detectRalphMcpServers(createStack());
       expect(result.e2eTesting).toBe('playwright');
+    });
+
+    it('returns mcp-inspector for MCP projects via stack.mcp.isProject', () => {
+      const stack = createStack({
+        mcp: { isProject: true },
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('mcp-inspector');
+    });
+
+    it('returns mcp-inspector for MCP projects via projectType parameter', () => {
+      const result = detectRalphMcpServers(createStack(), 'MCP Server');
+      expect(result.e2eTesting).toBe('mcp-inspector');
+    });
+
+    it('returns mcp-inspector when projectType contains "mcp" (case-insensitive)', () => {
+      const result = detectRalphMcpServers(createStack(), 'mcp tool');
+      expect(result.e2eTesting).toBe('mcp-inspector');
+    });
+
+    it('returns playwright for Next.js projects', () => {
+      const stack = createStack({
+        framework: detection('Next.js'),
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('playwright');
+    });
+
+    it('returns playwright for React projects', () => {
+      const stack = createStack({
+        framework: detection('React'),
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('playwright');
+    });
+
+    it('returns playwright for Vue projects', () => {
+      const stack = createStack({
+        framework: detection('Vue'),
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('playwright');
+    });
+
+    it('prefers MCP detection over web framework detection', () => {
+      const stack = createStack({
+        mcp: { isProject: true },
+        framework: detection('Next.js'),
+      });
+      const result = detectRalphMcpServers(stack);
+      expect(result.e2eTesting).toBe('mcp-inspector');
     });
   });
 

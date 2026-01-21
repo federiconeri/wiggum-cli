@@ -216,8 +216,9 @@ function parseEnrichedContext(
 
 /**
  * Script name patterns for command detection
+ * Exported for testing
  */
-const SCRIPT_MAPPINGS: Record<string, string[]> = {
+export const SCRIPT_MAPPINGS: Record<string, string[]> = {
   test: ['test', 'test:unit', 'vitest', 'jest'],
   lint: ['lint', 'eslint', 'lint:fix'],
   typecheck: ['typecheck', 'tsc', 'type-check', 'types'],
@@ -228,8 +229,9 @@ const SCRIPT_MAPPINGS: Record<string, string[]> = {
 
 /**
  * Derive commands from package.json scripts when AI fails to discover them
+ * Exported for testing
  */
-function deriveCommandsFromScripts(projectRoot: string): Record<string, string> {
+export function deriveCommandsFromScripts(projectRoot: string): Record<string, string> {
   const commands: Record<string, string> = {};
   const packageJsonPath = join(projectRoot, 'package.json');
 
