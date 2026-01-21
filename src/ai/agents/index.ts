@@ -20,6 +20,7 @@ export type {
   ContextEnricherInput,
   TechResearcherInput,
   SynthesisInput,
+  ProgressCallback,
   // Legacy types (backward compatibility)
   CodebaseAnalysis,
   StackResearch,
@@ -78,7 +79,16 @@ export async function runMultiAgentAnalysis(
   scanResult: ScanResult,
   options: AgentOptions = {}
 ): Promise<MultiAgentAnalysis | null> {
-  const { tavilyApiKey, context7ApiKey, verbose = false } = options;
+  const { tavilyApiKey, context7ApiKey, verbose = false, onProgress } = options;
+
+  // Helper to report progress (uses callback or falls back to logger)
+  const report = (phase: string, detail?: string) => {
+    if (onProgress) {
+      onProgress(phase, detail);
+    } else if (verbose) {
+      logger.info(detail ? `${phase}: ${detail}` : phase);
+    }
+  };
 
   // Determine capabilities
   const capabilities: AgentCapabilities = {
@@ -86,7 +96,7 @@ export async function runMultiAgentAnalysis(
     hasContext7: !!context7ApiKey,
   };
 
-  if (verbose) {
+  if (verbose && !onProgress) {
     logger.info('Starting multi-agent analysis (4-phase architecture)...');
     logger.info(`Capabilities: Tavily=${capabilities.hasTavily}, Context7=${capabilities.hasContext7}`);
   }
@@ -95,22 +105,17 @@ export async function runMultiAgentAnalysis(
     // ═══════════════════════════════════════════════════════════════
     // PHASE 1: Planning Orchestrator
     // ═══════════════════════════════════════════════════════════════
-    if (verbose) {
-      logger.info('Phase 1: Creating analysis plan...');
-    }
+    report('Phase 1/4: Planning');
 
-    const plan = await runPlanningOrchestrator(model, modelId, scanResult, verbose);
+    const plan = await runPlanningOrchestrator(model, modelId, scanResult, verbose && !onProgress);
 
-    if (verbose) {
-      logger.info(`Plan: ${plan.areasToExplore.length} areas, ${plan.technologiesToResearch.length} techs, complexity=${plan.estimatedComplexity}`);
-    }
+    report('Phase 1/4: Planning', `${plan.areasToExplore.length} areas, ${plan.technologiesToResearch.length} technologies`);
 
     // ═══════════════════════════════════════════════════════════════
     // PHASE 2: Parallel Workers
     // ═══════════════════════════════════════════════════════════════
-    if (verbose) {
-      logger.info('Phase 2: Running parallel workers...');
-    }
+    const workerCount = plan.technologiesToResearch.length + 1; // tech researchers + context enricher
+    report('Phase 2/4: Analyzing', `${workerCount} parallel workers`);
 
     // Run context enricher and tech researchers in parallel with error recovery
     const [contextResult, researchResult] = await Promise.allSettled([
@@ -122,14 +127,14 @@ export async function runMultiAgentAnalysis(
           areasToExplore: plan.areasToExplore,
           questionsToAnswer: plan.questionsToAnswer,
         },
-        verbose
+        verbose && !onProgress
       ),
       runTechResearchPool(
         model,
         modelId,
         plan.technologiesToResearch,
         { tavilyApiKey, context7ApiKey },
-        verbose
+        verbose && !onProgress
       ),
     ]);
 
@@ -150,24 +155,15 @@ export async function runMultiAgentAnalysis(
       logger.warn(`Tech Research Pool failed: ${researchResult.reason instanceof Error ? researchResult.reason.message : String(researchResult.reason)}`);
     }
 
-    if (verbose) {
-      logger.info(`Context: ${enrichedContext.entryPoints.length} entry points, type=${enrichedContext.projectType}`);
-      logger.info(`Research: ${techResearch.length} technologies researched`);
-    }
+    report('Phase 2/4: Analyzing', 'complete');
 
     // ═══════════════════════════════════════════════════════════════
     // PHASE 3: Synthesis + MCP Detection
     // ═══════════════════════════════════════════════════════════════
-    if (verbose) {
-      logger.info('Phase 3: Synthesizing results...');
-    }
+    report('Phase 3/4: Synthesizing');
 
     // Detect MCPs (pure function, no LLM)
     const mcpServers = detectRalphMcpServers(scanResult.stack);
-
-    if (verbose) {
-      logger.info(`MCPs: e2e=${mcpServers.e2eTesting}, db=${mcpServers.database || 'none'}, additional=${mcpServers.additional.length}`);
-    }
 
     // Run synthesis agent
     const synthesizedResult = await runSynthesisAgent(
@@ -180,15 +176,15 @@ export async function runMultiAgentAnalysis(
         plan,
         stack: scanResult.stack,
       },
-      verbose
+      verbose && !onProgress
     );
+
+    report('Phase 3/4: Synthesizing', 'complete');
 
     // ═══════════════════════════════════════════════════════════════
     // PHASE 4: Evaluator-Optimizer QA Loop
     // ═══════════════════════════════════════════════════════════════
-    if (verbose) {
-      logger.info('Phase 4: Running QA evaluation...');
-    }
+    report('Phase 4/4: Quality check');
 
     const finalResult = await runEvaluatorOptimizer(
       model,
@@ -196,12 +192,10 @@ export async function runMultiAgentAnalysis(
       synthesizedResult,
       scanResult,
       2, // Max 2 iterations
-      verbose
+      verbose && !onProgress
     );
 
-    if (verbose) {
-      logger.info('Multi-agent analysis complete (4-phase architecture)');
-    }
+    report('Phase 4/4: Quality check', 'complete');
 
     return finalResult;
   } catch (error) {

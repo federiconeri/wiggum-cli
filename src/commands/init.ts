@@ -300,15 +300,23 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log(pc.dim(`Capabilities: ${capabilities.join(' • ')}`));
   console.log('');
 
-  spinner.start('Running AI analysis...');
+  spinner.start('Starting AI analysis...');
 
   const aiEnhancer = new AIEnhancer({
     provider: apiKeys.provider,
     model: apiKeys.model,
-    verbose: true,
+    verbose: false, // Disable verbose logging when using progress callback
     agentic: true, // Always use agentic mode for deeper analysis
     tavilyApiKey: apiKeys.tavilyKey,
     context7ApiKey: apiKeys.context7Key,
+    onProgress: (phase, detail) => {
+      // Update spinner with current phase
+      if (detail) {
+        spinner.message(`${phase} - ${detail}`);
+      } else {
+        spinner.message(phase);
+      }
+    },
   });
 
   let enhancedResult: EnhancedScanResult;

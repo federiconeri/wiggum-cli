@@ -8,7 +8,7 @@ import type { ScanResult, DetectedStack, DetectionResult } from '../scanner/type
 import { getModel, type AIProvider, hasApiKey, getApiKeyEnvVar, isReasoningModel } from './providers.js';
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_AGENTIC, createAnalysisPrompt } from './prompts.js';
 import { createExplorationTools } from './tools.js';
-import { runMultiAgentAnalysis, type MultiAgentAnalysis } from './agents/index.js';
+import { runMultiAgentAnalysis, type MultiAgentAnalysis, type ProgressCallback } from './agents/index.js';
 import { logger } from '../utils/logger.js';
 import { parseJsonSafe } from '../utils/json-repair.js';
 import { getTracedAI, traced } from '../utils/tracing.js';
@@ -116,6 +116,8 @@ export interface EnhancerOptions {
   tavilyApiKey?: string;
   /** Context7 API key for documentation lookup (optional) */
   context7ApiKey?: string;
+  /** Progress callback for phase updates */
+  onProgress?: ProgressCallback;
 }
 
 /**
@@ -192,6 +194,7 @@ export class AIEnhancer {
   private agentic: boolean;
   private tavilyApiKey?: string;
   private context7ApiKey?: string;
+  private onProgress?: ProgressCallback;
 
   constructor(options: EnhancerOptions = {}) {
     this.provider = options.provider || 'anthropic';
@@ -200,6 +203,7 @@ export class AIEnhancer {
     this.agentic = options.agentic || false;
     this.tavilyApiKey = options.tavilyApiKey;
     this.context7ApiKey = options.context7ApiKey;
+    this.onProgress = options.onProgress;
   }
 
   /**
@@ -327,6 +331,7 @@ export class AIEnhancer {
         tavilyApiKey: this.tavilyApiKey,
         context7ApiKey: this.context7ApiKey,
         verbose: this.verbose,
+        onProgress: this.onProgress,
       }
     );
 

@@ -196,6 +196,11 @@ export interface AgentCapabilities {
 }
 
 /**
+ * Callback for reporting progress during multi-agent analysis
+ */
+export type ProgressCallback = (phase: string, detail?: string) => void;
+
+/**
  * Options for running agents
  */
 export interface AgentOptions {
@@ -205,6 +210,8 @@ export interface AgentOptions {
   context7ApiKey?: string;
   /** Enable verbose logging */
   verbose?: boolean;
+  /** Progress callback for phase updates */
+  onProgress?: ProgressCallback;
 }
 
 /**
