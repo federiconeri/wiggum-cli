@@ -126,8 +126,8 @@ Start by exploring the specified areas, then answer the questions and produce yo
       system: CONTEXT_ENRICHER_SYSTEM_PROMPT,
       prompt,
       tools,
-      stopWhen: stepCountIs(7), // Balance between exploration and ensuring JSON output
-      maxOutputTokens: 3000,
+      stopWhen: stepCountIs(5), // Reduced from 7 to limit token consumption
+      maxOutputTokens: 8000, // Increased to handle many parallel tool calls from GPT-5.1
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
       experimental_telemetry: {
         isEnabled: true,
