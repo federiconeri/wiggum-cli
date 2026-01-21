@@ -15,7 +15,7 @@ import { detectProjectType } from './stack-utils.js';
 /**
  * System prompt for the Context Enricher worker
  */
-const CONTEXT_ENRICHER_SYSTEM_PROMPT = `You are a Context Enricher worker. Your job is to explore specific areas of a codebase and answer specific questions.
+const CONTEXT_ENRICHER_SYSTEM_PROMPT = `You are a Context Enricher worker. Your job is to explore specific areas of a codebase and discover ACTUAL file paths and structures.
 
 ## Your Mission
 Based on the analysis plan, explore the codebase to:
@@ -32,28 +32,48 @@ Based on the analysis plan, explore the codebase to:
 - getPackageInfo: Get package.json info
 
 ## Exploration Strategy
-1. List the areas specified in the plan
-2. Read package.json to understand scripts and dependencies
-3. Search for patterns to answer the specific questions
-4. Identify the project type based on structure
+1. Read package.json FIRST for main/bin entries - these are authoritative entry points
+2. List root directory to discover actual structure (src/, app/, pages/, lib/, cmd/, etc.)
+3. Explore discovered directories to understand their purpose
+4. Search for patterns to answer specific questions
 
-## Project Types
-- MCP Server: Has @modelcontextprotocol dependencies
-- REST API: Express/Fastify/Hono with route handlers
-- React SPA: React with components, no server-side rendering
-- Next.js App: Next.js with app or pages directory
-- CLI Tool: Has bin entry in package.json
-- Library: Published package without app entry
+## Project Types & Entry Point Patterns
+- MCP Server: Has @modelcontextprotocol deps → main field or src/index.ts
+- REST API: Express/Fastify/Hono → main field, app.ts, server.ts, or src/
+- Next.js App: next in deps → app/page.tsx, pages/index.tsx, or pages/_app.tsx
+- CLI Tool: Has bin entry in package.json → use the bin paths directly
+- Library: main/module fields → use those paths
+- Python: main.py, app.py, or __main__.py at root
+- Go: main.go or cmd/*/main.go
+
+## CRITICAL: Output Requirements
+- entryPoints: ONLY actual file paths you discovered
+  - NEVER output instructions like "Check package.json..."
+  - NEVER output suggestions like "If exists, use..."
+  - Priority order for discovery:
+    1. package.json "bin" field paths (for CLI tools)
+    2. package.json "main" or "module" field paths
+    3. Framework conventions (app/page.tsx, pages/index.tsx)
+    4. Common patterns you find (index.ts, main.ts, app.ts)
+  - If truly nothing found, use empty array [] - don't guess
+- keyDirectories: ONLY directories that actually exist with their discovered purpose
+  - First list root to find actual directories (don't assume src/ exists)
+  - Map each real directory to its purpose based on file contents
+  - Example: {"src/commands": "CLI commands", "app": "Next.js app router"}
 
 ## Output Format
-After exploration, output ONLY valid JSON:
+Output ONLY valid JSON with discovered facts, not exploration instructions:
 {
-  "entryPoints": ["src/index.ts"],
-  "keyDirectories": {"src/routes": "API routes", "src/components": "UI components"},
+  "entryPoints": ["bin/cli.js", "dist/index.js"],
+  "keyDirectories": {
+    "src": "TypeScript source code",
+    "bin": "CLI entry scripts",
+    "lib": "Compiled output"
+  },
   "namingConventions": "camelCase files, PascalCase components",
   "commands": {"test": "npm test", "build": "npm run build"},
   "answeredQuestions": {"What is the auth strategy?": "NextAuth with JWT"},
-  "projectType": "Next.js App"
+  "projectType": "CLI Tool"
 }`;
 
 /**
@@ -87,7 +107,7 @@ Start by exploring the specified areas, then answer the questions and produce yo
       system: CONTEXT_ENRICHER_SYSTEM_PROMPT,
       prompt,
       tools,
-      stopWhen: stepCountIs(5),
+      stopWhen: stepCountIs(8), // Increased from 5 to allow proper directory exploration
       maxOutputTokens: 3000,
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
       experimental_telemetry: {

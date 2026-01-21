@@ -7,32 +7,48 @@
 import { stepCountIs, type LanguageModel, type Tool } from 'ai';
 import type { TechResearcherInput, TechResearchResult, AgentCapabilities, AgentOptions } from './types.js';
 import { createTavilySearchTool } from '../tools/tavily.js';
-import { createContext7Tool } from '../tools/context7.js';
+import { createContext7Tools } from '../tools/context7.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
 import { parseJsonSafe } from '../../utils/json-repair.js';
 import { getTracedAI } from '../../utils/tracing.js';
 
 /**
- * System prompt for Tech Researcher with tools
+ * Get the current year for dynamic prompt generation
  */
-const TECH_RESEARCHER_WITH_TOOLS_PROMPT = `You are a Tech Researcher worker focused on a single technology.
+function getCurrentYear(): number {
+  return new Date().getFullYear();
+}
+
+/**
+ * Generate system prompt for Tech Researcher with tools
+ */
+function getTechResearcherWithToolsPrompt(): string {
+  const year = getCurrentYear();
+  return `You are a Tech Researcher worker focused on a single technology.
 
 ## Your Mission
 Research the specified technology to find:
-1. Current best practices (2024+)
+1. Current best practices (${year}+)
 2. Common anti-patterns to avoid
 3. Testing tips and patterns
 4. Useful documentation links
 
 ## Tools Available
-- tavilySearch: Search the web for current best practices
-- context7Lookup: Look up library documentation
+- tavilySearch: Search the web (use timeRange for recent results)
+- resolveLibraryId: Find the Context7 library ID for a package
+- queryDocs: Query documentation using the resolved library ID
 
 ## Research Strategy
-1. Search for "[technology] best practices 2024"
-2. Search for "[technology] testing patterns"
-3. Look up documentation for key features
+1. Use tavilySearch with timeRange: "year" for current practices
+2. For library docs: First call resolveLibraryId, then queryDocs with SPECIFIC queries
+3. Break research into focused queries, not broad searches
+
+## Good vs Bad Queries
+- Tavily Good: "Express error handling middleware patterns"
+- Tavily Bad: "Express Fastify Commander Yargs best practices ${year}"
+- Context7 Good: resolveLibraryId("express") → queryDocs("middleware error handling")
+- Context7 Bad: queryDocs("best practices production testing documentation")
 
 ## Output Format
 Output ONLY valid JSON:
@@ -46,6 +62,7 @@ Output ONLY valid JSON:
 }
 
 Keep each item concise (5-15 words max). Max 5 items per array.`;
+}
 
 /**
  * System prompt for Tech Researcher without tools (knowledge-only)
@@ -99,7 +116,9 @@ export async function runTechResearcher(
     tools.tavilySearch = createTavilySearchTool(options.tavilyApiKey);
   }
   if (options.context7ApiKey) {
-    tools.context7Lookup = createContext7Tool(options.context7ApiKey);
+    const c7Tools = createContext7Tools(options.context7ApiKey);
+    tools.resolveLibraryId = c7Tools.resolveLibraryId;
+    tools.queryDocs = c7Tools.queryDocs;
   }
 
   const hasTools = Object.keys(tools).length > 0;
@@ -110,7 +129,7 @@ export async function runTechResearcher(
   }
 
   const systemPrompt = hasTools
-    ? TECH_RESEARCHER_WITH_TOOLS_PROMPT
+    ? getTechResearcherWithToolsPrompt()
     : TECH_RESEARCHER_KNOWLEDGE_ONLY_PROMPT;
 
   const prompt = `Research best practices for: ${input.technology}

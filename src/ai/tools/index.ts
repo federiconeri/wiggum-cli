@@ -10,8 +10,6 @@ export {
 } from './tavily.js';
 
 export {
-  createContext7Tool,
+  createContext7Tools,
   canUseContext7,
-  type Context7Library,
-  type Context7DocResult,
 } from './context7.js';

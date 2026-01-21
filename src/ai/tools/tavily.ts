@@ -31,20 +31,24 @@ interface TavilyApiResponse {
  */
 export function createTavilySearchTool(apiKey: string) {
   return tool({
-    description: `Search the web for current best practices, documentation, and recent information.
-Use this to find:
-- Current best practices for technologies
-- Testing patterns and tools
-- Library documentation and examples
-- Recent updates and changes`,
+    description: `Search the web for current information.
+
+USAGE TIPS:
+- Keep queries concise and specific (not conversational)
+- Use timeRange: "year" for recent best practices
+- Break complex research into focused individual searches
+- Good: "Express middleware error handling patterns"
+- Bad: "best practices production 2024 testing documentation"`,
     inputSchema: zodSchema(z.object({
-      query: z.string().describe('Search query - be specific about what you want to find'),
+      query: z.string().describe('Search query - be specific and concise'),
       searchDepth: z.enum(['basic', 'advanced']).optional()
         .describe('Search depth - use "advanced" for comprehensive results'),
       maxResults: z.number().min(1).max(10).optional()
         .describe('Maximum number of results (default 5)'),
+      timeRange: z.enum(['day', 'week', 'month', 'year']).optional()
+        .describe('Time filter for results. Use "year" for recent best practices'),
     })),
-    execute: async ({ query, searchDepth, maxResults }) => {
+    execute: async ({ query, searchDepth, maxResults, timeRange }) => {
       try {
         const response = await fetch('https://api.tavily.com/search', {
           method: 'POST',
@@ -56,6 +60,7 @@ Use this to find:
             query,
             search_depth: searchDepth || 'basic',
             max_results: maxResults || 5,
+            ...(timeRange && { time_range: timeRange }),
             include_answer: true,
             include_raw_content: false,
           }),

@@ -1,6 +1,6 @@
 {
   "name": "wiggum-cli",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "AI-powered feature development loop CLI",
   "type": "module",
   "main": "dist/index.js",
@@ -32,6 +32,7 @@
     "@ai-sdk/openai": "^3.0.12",
     "@braintrust/otel": "^0.2.0",
     "@clack/prompts": "^0.7.0",
+    "@upstash/context7-tools-ai-sdk": "^0.2.1",
     "ai": "^6.0.41",
     "braintrust": "^2.0.2",
     "cfonts": "^3.2.0",

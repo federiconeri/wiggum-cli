@@ -40,7 +40,7 @@ export {
 export {
   createTavilySearchTool,
   canUseTavily,
-  createContext7Tool,
+  createContext7Tools,
   canUseContext7,
 } from './tools/index.js';
 

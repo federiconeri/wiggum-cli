@@ -40,6 +40,55 @@ const optimizerOutputSchema = z.object({
 });
 
 /**
+ * Patterns that indicate an entry point is an instruction, not a real path
+ */
+const INVALID_ENTRY_POINT_PATTERNS = [
+  /^check /i,
+  /^if /i,
+  /^open /i,
+  /^look /i,
+  /^search /i,
+  /^find /i,
+  /^inspect /i,
+  /^run /i,
+  /^see /i,
+  /^review /i,
+];
+
+/**
+ * Check if a single entry point looks like an actual file path (not an instruction)
+ */
+function isValidEntryPoint(ep: string): boolean {
+  // Must look like a file path
+  const looksLikePath = ep.includes('/') || ep.includes('.') || ep.startsWith('src') || ep.startsWith('app') || ep.startsWith('pages');
+  // Must not start with instruction words
+  const isNotInstruction = !INVALID_ENTRY_POINT_PATTERNS.some(pattern => pattern.test(ep));
+  return looksLikePath && isNotInstruction;
+}
+
+/**
+ * Check if entry points look like actual file paths (not instructions)
+ */
+function hasValidEntryPoints(entryPoints: string[]): boolean {
+  if (entryPoints.length === 0) return false;
+  return entryPoints.every(isValidEntryPoint);
+}
+
+/**
+ * Filter entry points to only include valid file paths
+ */
+function filterValidEntryPoints(entryPoints: string[]): string[] {
+  return entryPoints.filter(isValidEntryPoint);
+}
+
+/**
+ * Normalize MCP names (strip parenthetical explanations)
+ */
+function normalizeMcpName(name: string): string {
+  return name.split('(')[0].trim().toLowerCase();
+}
+
+/**
  * System prompt for the Evaluator
  */
 const EVALUATOR_SYSTEM_PROMPT = `You are a QA Evaluator for AI-generated codebase analysis.
@@ -58,10 +107,16 @@ Evaluate the analysis result for:
 - 3-4: Incomplete, vague, or partially incorrect
 - 1-2: Poor, missing critical information
 
-## Quality Checks
-- Entry points should identify actual files, not just "src/"
-- Guidelines should be specific (e.g., "Run npm test" not "Test your code")
-- MCP servers should match the detected database and deployment
+## Quality Checks - IMPORTANT
+- Entry points MUST be actual file paths (e.g., "src/index.ts", "src/cli.ts")
+  - FAIL if they contain instructions like "Check", "If", "Open", "Look"
+  - FAIL if they don't look like file paths (no / or . characters)
+- Key directories MUST map actual directories to their purposes
+  - FAIL if only generic entries like {"src": "Source code"}
+- Guidelines MUST be actionable commands, not exploration tasks
+  - Good: "Run npm test", "Check API routes in src/routes"
+  - Bad: "Investigate the codebase", "Look for patterns"
+- MCP servers MUST be single-word identifiers only (no parenthetical explanations)
 
 Be constructive but honest. If it's good, say so. If it needs work, explain why.`;
 
@@ -80,7 +135,13 @@ Based on the evaluation feedback, improve:
 - Keep guidelines to 5-10 words
 - Start with action verbs
 - Be specific to the detected stack
-- Don't remove good content, only add or improve`;
+- Don't remove good content, only add or improve
+
+## MCP Server Names
+- Use ONLY single-word identifiers: "playwright", "supabase", "postgres"
+- NEVER add explanations in parentheses
+- NEVER add descriptions after the name
+- If unsure, omit rather than guess`;
 
 /**
  * Run the Evaluator-Optimizer QA loop
@@ -107,10 +168,11 @@ export async function runEvaluatorOptimizer(
       }
     }
 
-    // Check if quality meets threshold
+    // Check if quality meets threshold (including valid entry point paths)
     if (
       evaluation.qualityScore >= QUALITY_THRESHOLD &&
       evaluation.hasEntryPoints &&
+      hasValidEntryPoints(currentResult.codebaseAnalysis.projectContext.entryPoints) &&
       evaluation.hasImplementationGuidelines
     ) {
       if (verbose) {
@@ -248,16 +310,21 @@ Provide improved guidelines and any additional entry points or MCP servers.`;
           : result.codebaseAnalysis.implementationGuidelines,
         projectContext: {
           ...result.codebaseAnalysis.projectContext,
-          entryPoints: improvements.additionalEntryPoints.length > 0
-            ? [...new Set([...result.codebaseAnalysis.projectContext.entryPoints, ...improvements.additionalEntryPoints])]
-            : result.codebaseAnalysis.projectContext.entryPoints,
+          // Filter invalid entry points (instructions) and merge with new ones
+          entryPoints: filterValidEntryPoints([
+            ...result.codebaseAnalysis.projectContext.entryPoints,
+            ...improvements.additionalEntryPoints,
+          ]).filter((ep, i, arr) => arr.indexOf(ep) === i), // dedupe
         },
       },
       mcpServers: {
         ...result.mcpServers,
         recommended: improvements.additionalMcpServers.length > 0
-          ? [...new Set([...result.mcpServers.recommended, ...improvements.additionalMcpServers])]
-          : result.mcpServers.recommended,
+          ? [...new Set([
+              ...result.mcpServers.recommended.map(normalizeMcpName),
+              ...improvements.additionalMcpServers.map(normalizeMcpName)
+            ])]
+          : result.mcpServers.recommended.map(normalizeMcpName),
       },
     };
 

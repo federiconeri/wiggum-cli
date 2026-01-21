@@ -177,26 +177,33 @@ export function detectRalphMcpServers(stack: DetectedStack): RalphMcpServers {
 /**
  * Convert RalphMcpServers to the legacy McpRecommendations format
  * for backward compatibility with existing code
+ *
+ * Ralph loop essentials only:
+ * - Playwright for E2E testing (always)
+ * - Database MCP if detected (Supabase, Convex, Postgres, etc.)
+ *
+ * Note: filesystem and git are assumed available in Claude Code
  */
 export function convertToLegacyMcpRecommendations(ralphMcp: RalphMcpServers): {
   essential: string[];
   recommended: string[];
 } {
-  const essential: string[] = ['filesystem', 'git'];
+  const essential: string[] = [];
 
-  // Add E2E testing as essential for ralph
+  // Ralph loop essentials only
+  // 1. Playwright for E2E testing (always)
   if (ralphMcp.e2eTesting) {
     essential.push(ralphMcp.e2eTesting);
   }
 
-  // Add database as essential if detected
+  // 2. Database MCP if detected (Supabase, Convex, Postgres, etc.)
   if (ralphMcp.database) {
     essential.push(ralphMcp.database);
   }
 
   return {
     essential,
-    recommended: ralphMcp.additional,
+    recommended: [], // No optional MCPs - keep focused on Ralph loop
   };
 }
 

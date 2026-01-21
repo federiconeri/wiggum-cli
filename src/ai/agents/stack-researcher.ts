@@ -11,34 +11,49 @@ import { stepCountIs, type LanguageModel, type Tool } from 'ai';
 import type { StackResearch, StackResearcherInput, AgentCapabilities } from './types.js';
 import type { DetectedStack } from '../../scanner/types.js';
 import { createTavilySearchTool } from '../tools/tavily.js';
-import { createContext7Tool } from '../tools/context7.js';
+import { createContext7Tools } from '../tools/context7.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
 import { parseJsonSafe } from '../../utils/json-repair.js';
 import { getTracedAI } from '../../utils/tracing.js';
 
 /**
- * System prompt for Stack Researcher with tools
+ * Get the current year for dynamic prompt generation
  */
-const STACK_RESEARCHER_WITH_TOOLS_PROMPT = `You are a Stack Researcher agent with access to web search and documentation lookup tools.
+function getCurrentYear(): number {
+  return new Date().getFullYear();
+}
+
+/**
+ * Generate system prompt for Stack Researcher with tools
+ */
+function getStackResearcherWithToolsPrompt(): string {
+  const year = getCurrentYear();
+  return `You are a Stack Researcher agent with access to web search and documentation lookup tools.
 
 ## Your Mission
 Research the detected technology stack to find:
-1. Current best practices
+1. Current best practices (${year}+)
 2. Common anti-patterns to avoid
 3. Testing tools and patterns
 4. Debugging approaches
 5. Useful documentation links
 
 ## Tools Available
-- tavilySearch: Search the web for current best practices and patterns
-- context7Lookup: Look up library documentation
+- tavilySearch: Search the web (use timeRange for recent results)
+- resolveLibraryId: Find the Context7 library ID for a package
+- queryDocs: Query documentation using the resolved library ID
 
 ## Research Strategy
-1. Search for "[technology] best practices 2024"
-2. Search for "[project type] testing patterns"
-3. Look up documentation for key dependencies
-4. Search for "[framework] anti-patterns"
+1. Use tavilySearch with timeRange: "year" for current practices
+2. For library docs: First call resolveLibraryId, then queryDocs with SPECIFIC queries
+3. Break research into focused queries, not broad searches
+
+## Good vs Bad Queries
+- Tavily Good: "React testing patterns vitest"
+- Tavily Bad: "React Vitest Playwright best practices ${year}"
+- Context7 Good: resolveLibraryId("vitest") → queryDocs("test setup configuration")
+- Context7 Bad: queryDocs("best practices production testing documentation")
 
 ## Output Format
 After research, output ONLY valid JSON with this structure:
@@ -67,6 +82,7 @@ After research, output ONLY valid JSON with this structure:
 }
 
 Keep each item concise (5-15 words max). Max 5 items per array.`;
+}
 
 /**
  * System prompt for Stack Researcher without tools (knowledge-only)
@@ -188,7 +204,9 @@ export async function runStackResearcher(
     tools.tavilySearch = createTavilySearchTool(options.tavilyApiKey);
   }
   if (options.context7ApiKey) {
-    tools.context7Lookup = createContext7Tool(options.context7ApiKey);
+    const c7Tools = createContext7Tools(options.context7ApiKey);
+    tools.resolveLibraryId = c7Tools.resolveLibraryId;
+    tools.queryDocs = c7Tools.queryDocs;
   }
 
   const hasTools = Object.keys(tools).length > 0;
@@ -199,7 +217,7 @@ export async function runStackResearcher(
   }
 
   const systemPrompt = hasTools
-    ? STACK_RESEARCHER_WITH_TOOLS_PROMPT
+    ? getStackResearcherWithToolsPrompt()
     : STACK_RESEARCHER_KNOWLEDGE_ONLY_PROMPT;
 
   const prompt = createResearchPrompt(input.stack, input.projectType, hasTools);
