@@ -1,0 +1,262 @@
+/**
+ * Tech Researcher Worker (Phase 2)
+ * Researches best practices for a specific technology
+ * Multiple instances run in parallel via runTechResearchPool
+ */
+
+import { stepCountIs, type LanguageModel, type Tool } from 'ai';
+import type { TechResearcherInput, TechResearchResult, AgentCapabilities, AgentOptions } from './types.js';
+import { createTavilySearchTool } from '../tools/tavily.js';
+import { createContext7Tool } from '../tools/context7.js';
+import { isReasoningModel } from '../providers.js';
+import { logger } from '../../utils/logger.js';
+import { parseJsonSafe } from '../../utils/json-repair.js';
+import { getTracedAI } from '../../utils/tracing.js';
+
+/**
+ * System prompt for Tech Researcher with tools
+ */
+const TECH_RESEARCHER_WITH_TOOLS_PROMPT = `You are a Tech Researcher worker focused on a single technology.
+
+## Your Mission
+Research the specified technology to find:
+1. Current best practices (2024+)
+2. Common anti-patterns to avoid
+3. Testing tips and patterns
+4. Useful documentation links
+
+## Tools Available
+- tavilySearch: Search the web for current best practices
+- context7Lookup: Look up library documentation
+
+## Research Strategy
+1. Search for "[technology] best practices 2024"
+2. Search for "[technology] testing patterns"
+3. Look up documentation for key features
+
+## Output Format
+Output ONLY valid JSON:
+{
+  "technology": "Next.js 14",
+  "bestPractices": ["Use App Router for new projects", "Enable strict TypeScript"],
+  "antiPatterns": ["Don't use pages/ and app/ together", "Avoid client components for static content"],
+  "testingTips": ["Use @testing-library/react", "Mock next/navigation for routing tests"],
+  "documentationHints": ["App Router: nextjs.org/docs/app", "Data Fetching: nextjs.org/docs/app/building-your-application/data-fetching"],
+  "researchMode": "full"
+}
+
+Keep each item concise (5-15 words max). Max 5 items per array.`;
+
+/**
+ * System prompt for Tech Researcher without tools (knowledge-only)
+ */
+const TECH_RESEARCHER_KNOWLEDGE_ONLY_PROMPT = `You are a Tech Researcher worker. You don't have web access, so rely on your training knowledge.
+
+## Your Mission
+Based on your knowledge of the specified technology, provide:
+1. Best practices (note if potentially outdated)
+2. Common anti-patterns to avoid
+3. Testing tips
+4. Documentation hints
+
+## Output Format
+Output ONLY valid JSON:
+{
+  "technology": "React",
+  "bestPractices": ["Use functional components with hooks", "Memoize expensive computations"],
+  "antiPatterns": ["Don't mutate state directly", "Avoid prop drilling"],
+  "testingTips": ["Use React Testing Library", "Test behavior not implementation"],
+  "documentationHints": ["React docs: react.dev", "Testing: testing-library.com"],
+  "researchMode": "knowledge-only"
+}
+
+Keep each item concise (5-15 words max). Max 5 items per array.`;
+
+/**
+ * Determine research mode based on capabilities
+ */
+function getResearchMode(capabilities: AgentCapabilities): TechResearchResult['researchMode'] {
+  if (capabilities.hasTavily && capabilities.hasContext7) return 'full';
+  if (capabilities.hasTavily) return 'web-only';
+  if (capabilities.hasContext7) return 'docs-only';
+  return 'knowledge-only';
+}
+
+/**
+ * Run a single Tech Researcher worker for one technology
+ */
+export async function runTechResearcher(
+  model: LanguageModel,
+  modelId: string,
+  input: TechResearcherInput,
+  options: AgentOptions,
+  verbose: boolean = false
+): Promise<TechResearchResult> {
+  const tools: Record<string, Tool> = {};
+
+  // Add tools based on available keys
+  if (options.tavilyApiKey) {
+    tools.tavilySearch = createTavilySearchTool(options.tavilyApiKey);
+  }
+  if (options.context7ApiKey) {
+    tools.context7Lookup = createContext7Tool(options.context7ApiKey);
+  }
+
+  const hasTools = Object.keys(tools).length > 0;
+  const researchMode = getResearchMode(input.capabilities);
+
+  if (verbose) {
+    logger.info(`Tech Researcher [${input.technology}]: ${researchMode} mode`);
+  }
+
+  const systemPrompt = hasTools
+    ? TECH_RESEARCHER_WITH_TOOLS_PROMPT
+    : TECH_RESEARCHER_KNOWLEDGE_ONLY_PROMPT;
+
+  const prompt = `Research best practices for: ${input.technology}
+
+Provide current best practices, anti-patterns to avoid, testing tips, and documentation hints.
+Output your findings as JSON.`;
+
+  try {
+    const { generateText } = getTracedAI();
+
+    const result = await generateText({
+      model,
+      system: systemPrompt,
+      prompt,
+      ...(hasTools ? { tools, stopWhen: stepCountIs(3) } : {}),
+      maxOutputTokens: 2000,
+      ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: {
+          agent: 'tech-researcher',
+          technology: input.technology,
+          researchMode,
+        },
+      },
+    });
+
+    const research = parseTechResearch(result.text, result.steps, input.technology, researchMode, verbose);
+    return research;
+  } catch (error) {
+    if (verbose) {
+      logger.error(`Tech Researcher [${input.technology}] error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    return getDefaultTechResearch(input.technology, researchMode);
+  }
+}
+
+/**
+ * Run multiple Tech Researchers in parallel for a list of technologies
+ */
+export async function runTechResearchPool(
+  model: LanguageModel,
+  modelId: string,
+  technologies: string[],
+  options: AgentOptions,
+  verbose: boolean = false
+): Promise<TechResearchResult[]> {
+  if (technologies.length === 0) {
+    return [];
+  }
+
+  // Determine capabilities once
+  const capabilities: AgentCapabilities = {
+    hasTavily: !!options.tavilyApiKey,
+    hasContext7: !!options.context7ApiKey,
+  };
+
+  if (verbose) {
+    logger.info(`Tech Research Pool: Starting ${technologies.length} parallel researchers`);
+  }
+
+  // Run all researchers in parallel
+  const results = await Promise.all(
+    technologies.map(technology =>
+      runTechResearcher(
+        model,
+        modelId,
+        { technology, capabilities },
+        options,
+        verbose
+      )
+    )
+  );
+
+  if (verbose) {
+    logger.info(`Tech Research Pool: Completed ${results.length} research tasks`);
+  }
+
+  return results;
+}
+
+/**
+ * Parse tech research from agent response
+ */
+function parseTechResearch(
+  text: string,
+  steps: Array<{ text?: string }> | undefined,
+  technology: string,
+  researchMode: TechResearchResult['researchMode'],
+  verbose: boolean
+): TechResearchResult {
+  // Try to get text from the result or steps
+  let textToParse = text;
+
+  if (!textToParse || textToParse.trim() === '') {
+    const stepsList = steps || [];
+    for (let i = stepsList.length - 1; i >= 0; i--) {
+      const step = stepsList[i];
+      if (step.text && step.text.trim() !== '') {
+        textToParse = step.text;
+        break;
+      }
+    }
+  }
+
+  if (!textToParse || textToParse.trim() === '') {
+    if (verbose) {
+      logger.warn(`Tech Researcher [${technology}]: No text output found`);
+    }
+    return getDefaultTechResearch(technology, researchMode);
+  }
+
+  // Use safe JSON parser with repair capabilities
+  const parsed = parseJsonSafe<Partial<TechResearchResult>>(textToParse);
+
+  if (!parsed) {
+    if (verbose) {
+      logger.warn(`Tech Researcher [${technology}]: Failed to parse JSON response`);
+    }
+    return getDefaultTechResearch(technology, researchMode);
+  }
+
+  return {
+    technology,
+    bestPractices: parsed.bestPractices || [],
+    antiPatterns: parsed.antiPatterns || [],
+    testingTips: parsed.testingTips || [],
+    documentationHints: parsed.documentationHints || [],
+    researchMode,
+  };
+}
+
+/**
+ * Get default tech research when parsing fails
+ */
+function getDefaultTechResearch(
+  technology: string,
+  researchMode: TechResearchResult['researchMode']
+): TechResearchResult {
+  return {
+    technology,
+    bestPractices: ['Follow official documentation', 'Use TypeScript for type safety'],
+    antiPatterns: ['Avoid deprecated APIs', 'Don\'t skip error handling'],
+    testingTips: ['Write unit tests for core logic', 'Test edge cases'],
+    documentationHints: [`Check official ${technology} documentation`],
+    researchMode,
+  };
+}

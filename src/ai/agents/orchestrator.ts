@@ -1,6 +1,9 @@
 /**
  * Orchestrator Agent
  * Coordinates the multi-agent analysis and merges results
+ *
+ * @deprecated Use runPlanningOrchestrator + runSynthesisAgent instead.
+ * This agent is kept for backward compatibility.
  */
 
 import type { LanguageModel } from 'ai';

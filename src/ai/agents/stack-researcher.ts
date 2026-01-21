@@ -2,6 +2,9 @@
  * Stack Researcher Agent
  * Researches best practices and tools for the detected stack
  * Gracefully degrades when optional services are unavailable
+ *
+ * @deprecated Use runTechResearcher/runTechResearchPool from tech-researcher.ts instead.
+ * This agent is kept for backward compatibility.
  */
 
 import { stepCountIs, type LanguageModel, type Tool } from 'ai';

@@ -1,6 +1,9 @@
 /**
  * Codebase Analyst Agent
  * Explores the codebase to understand its structure and patterns
+ *
+ * @deprecated Use runContextEnricher from context-enricher.ts instead.
+ * This agent is kept for backward compatibility.
  */
 
 import { stepCountIs, type LanguageModel } from 'ai';
