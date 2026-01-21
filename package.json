@@ -12,6 +12,8 @@
     "copy-templates": "cp -r src/templates dist/",
     "dev": "tsc --watch",
     "start": "node bin/ralph.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -39,7 +41,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
-    "typescript": "^5.3.0"
+    "typescript": "^5.3.0",
+    "vitest": "^4.0.17"
   },
   "engines": {
     "node": ">=18.0.0"
