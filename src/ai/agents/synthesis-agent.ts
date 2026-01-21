@@ -28,7 +28,7 @@ const synthesisOutputSchema = z.object({
     testing: z.array(z.string()).describe('Commands to run tests (e.g., "npm test", "npx vitest")'),
     debugging: z.array(z.string()).describe('Debug flags, env vars, tools (e.g., "DEBUG=* npm run dev")'),
     validation: z.array(z.string()).describe('Type checking, linting commands (e.g., "npm run lint", "npx tsc --noEmit")'),
-  }).optional(),
+  }),
 });
 
 /**
