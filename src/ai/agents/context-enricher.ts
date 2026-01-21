@@ -3,6 +3,8 @@
  * Explores the codebase to gather enriched context based on the analysis plan
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { stepCountIs, type LanguageModel } from 'ai';
 import type { ContextEnricherInput, EnrichedContext } from './types.js';
 import { createExplorationTools } from '../tools.js';
@@ -25,17 +27,23 @@ Based on the analysis plan, explore the codebase to:
 4. Find available commands (from package.json)
 5. Answer the specific questions provided
 
+## IMPORTANT: Token Efficiency
+- Make at most 4-5 tool calls total, then produce output
+- Priority: package.json → root listing → one key directory
+- Don't explore every subdirectory - sample enough to understand structure
+- ALWAYS produce JSON output even with partial information
+
 ## Tools Available
 - searchCode: Search using ripgrep patterns
 - readFile: Read file contents
 - listDirectory: List directory structure
-- getPackageInfo: Get package.json info
+- getPackageInfo: Get package.json info (use specific fields like "bin", "main", "scripts")
 
 ## Exploration Strategy
 1. Read package.json FIRST for main/bin entries - these are authoritative entry points
 2. List root directory to discover actual structure (src/, app/, pages/, lib/, cmd/, etc.)
-3. Explore discovered directories to understand their purpose
-4. Search for patterns to answer specific questions
+3. Explore ONE key directory to understand its purpose
+4. Produce output - don't exhaustively explore
 
 ## Project Types & Entry Point Patterns
 - MCP Server: Has @modelcontextprotocol deps → main field or src/index.ts
@@ -107,7 +115,7 @@ Start by exploring the specified areas, then answer the questions and produce yo
       system: CONTEXT_ENRICHER_SYSTEM_PROMPT,
       prompt,
       tools,
-      stopWhen: stepCountIs(8), // Increased from 5 to allow proper directory exploration
+      stopWhen: stepCountIs(5), // Reduced from 8 to leave tokens for JSON output
       maxOutputTokens: 3000,
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
       experimental_telemetry: {
@@ -121,8 +129,8 @@ Start by exploring the specified areas, then answer the questions and produce yo
       },
     });
 
-    // Parse the response
-    const context = parseEnrichedContext(result.text, result.steps, verbose);
+    // Parse the response (pass input for fallback derivation)
+    const context = parseEnrichedContext(result.text, result.steps, verbose, input);
 
     if (verbose) {
       logger.info(`Context Enricher: Found ${context.entryPoints.length} entry points, answered ${Object.keys(context.answeredQuestions).length} questions`);
@@ -144,7 +152,8 @@ Start by exploring the specified areas, then answer the questions and produce yo
 function parseEnrichedContext(
   text: string,
   steps: Array<{ text?: string }> | undefined,
-  verbose: boolean
+  verbose: boolean,
+  input?: ContextEnricherInput
 ): EnrichedContext {
   // Try to get text from the result or steps
   let textToParse = text;
@@ -164,7 +173,7 @@ function parseEnrichedContext(
     if (verbose) {
       logger.warn('Context Enricher: No text output found');
     }
-    return getDefaultEnrichedContext();
+    return getDefaultEnrichedContext(input);
   }
 
   // Use safe JSON parser with repair capabilities
@@ -174,35 +183,72 @@ function parseEnrichedContext(
     if (verbose) {
       logger.warn('Context Enricher: Failed to parse JSON response');
     }
-    return getDefaultEnrichedContext();
+    return getDefaultEnrichedContext(input);
   }
 
-  // Build result with defaults for missing fields
+  // Build result with empty defaults for missing fields (don't guess)
   return {
-    entryPoints: parsed.entryPoints || ['src/index.ts'],
-    keyDirectories: parsed.keyDirectories || { src: 'Source code' },
-    namingConventions: parsed.namingConventions || 'camelCase',
-    commands: parsed.commands || { build: 'npm run build' },
+    entryPoints: parsed.entryPoints || [],  // Empty = not found, not guessed
+    keyDirectories: parsed.keyDirectories || {},  // Empty = not found
+    namingConventions: parsed.namingConventions || 'unknown',
+    commands: parsed.commands || {},
     answeredQuestions: parsed.answeredQuestions || {},
     projectType: parsed.projectType || 'Unknown',
   };
 }
 
 /**
+ * Derive entry points from package.json when AI fails to discover them
+ */
+function deriveEntryPointsFromPackageJson(projectRoot: string): string[] {
+  const entryPoints: string[] = [];
+  const packageJsonPath = join(projectRoot, 'package.json');
+
+  if (!existsSync(packageJsonPath)) {
+    return entryPoints;
+  }
+
+  try {
+    const content = readFileSync(packageJsonPath, 'utf-8');
+    const pkg = JSON.parse(content) as Record<string, unknown>;
+
+    // CLI tools: use bin field
+    if (pkg.bin) {
+      if (typeof pkg.bin === 'string') {
+        entryPoints.push(pkg.bin);
+      } else if (typeof pkg.bin === 'object' && pkg.bin !== null) {
+        entryPoints.push(...Object.values(pkg.bin as Record<string, string>));
+      }
+    }
+
+    // Libraries: use main/module fields
+    if (typeof pkg.main === 'string') {
+      entryPoints.push(pkg.main);
+    }
+    if (typeof pkg.module === 'string') {
+      entryPoints.push(pkg.module);
+    }
+
+    // Filter out compiled output (dist/) and dedupe
+    return [...new Set(entryPoints.filter(ep => ep && !ep.startsWith('dist/')))];
+  } catch {
+    return entryPoints;
+  }
+}
+
+/**
  * Get default enriched context when parsing fails
+ * Returns empty arrays instead of guesses, but derives entry points from package.json
  */
 function getDefaultEnrichedContext(input?: ContextEnricherInput): EnrichedContext {
   const projectType = detectProjectType(input?.scanResult.stack);
+  const entryPoints = input ? deriveEntryPointsFromPackageJson(input.scanResult.projectRoot) : [];
 
   return {
-    entryPoints: ['src/index.ts'],
-    keyDirectories: { src: 'Source code' },
-    namingConventions: 'camelCase',
-    commands: {
-      test: 'npm test',
-      build: 'npm run build',
-      dev: 'npm run dev',
-    },
+    entryPoints,  // Derived from package.json, not guessed
+    keyDirectories: {},  // Empty = not discovered
+    namingConventions: 'unknown',
+    commands: {},  // Empty = not discovered
     answeredQuestions: {},
     projectType,
   };

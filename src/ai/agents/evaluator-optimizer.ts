@@ -59,11 +59,16 @@ const INVALID_ENTRY_POINT_PATTERNS = [
  * Check if a single entry point looks like an actual file path (not an instruction)
  */
 function isValidEntryPoint(ep: string): boolean {
-  // Must look like a file path
-  const looksLikePath = ep.includes('/') || ep.includes('.') || ep.startsWith('src') || ep.startsWith('app') || ep.startsWith('pages');
+  // Has a known file extension (ts, js, tsx, jsx, mjs, cjs, py, go, rs)
+  const hasExtension = /\.(ts|js|tsx|jsx|mjs|cjs|py|go|rs)$/.test(ep);
+  // Looks like a path with directory separator (e.g., bin/cli, src/index)
+  const hasPathSeparator = ep.includes('/');
   // Must not start with instruction words
   const isNotInstruction = !INVALID_ENTRY_POINT_PATTERNS.some(pattern => pattern.test(ep));
-  return looksLikePath && isNotInstruction;
+
+  // Valid if: (has extension) OR (has path separator for extensionless like bin/wiggum)
+  // AND doesn't look like an instruction
+  return (hasExtension || hasPathSeparator) && isNotInstruction;
 }
 
 /**

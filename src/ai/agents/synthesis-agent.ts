@@ -29,28 +29,33 @@ const synthesisOutputSchema = z.object({
 /**
  * System prompt for the Synthesis Agent
  */
-const SYNTHESIS_AGENT_SYSTEM_PROMPT = `You are a Synthesis Agent that merges analysis results into actionable implementation guidelines.
+const SYNTHESIS_AGENT_SYSTEM_PROMPT = `You are a Synthesis Agent that merges analysis results into implementation guidelines describing DISCOVERED patterns.
 
 ## Your Mission
 Based on the enriched context and technology research, generate:
-1. Short, actionable implementation guidelines (5-10 words each)
+1. Short implementation guidelines (5-10 words each) describing DISCOVERED patterns
 2. List any technologies that may have been missed
 
 ## Guidelines Style
-- Start with action verbs: "Run", "Use", "Follow", "Avoid"
-- Be specific to the detected stack
-- Include testing commands
-- Mention key patterns from the research
-- Max 7 guidelines, prioritize the most important
+- Describe DISCOVERED patterns, not instructions to follow
+- Format: "[Pattern/Tool] for [purpose]" not "Run [command]"
+- Focus on what EXISTS in the codebase, not what to do
+- Examples:
+  - Good: "Vitest configured for unit testing"
+  - Good: "App Router structure in app/ directory"
+  - Good: "Zod schemas in src/schemas for validation"
+  - Bad: "Run npm test after changes"
+  - Bad: "Use Zod for validation"
+- Max 7 patterns, prioritize most distinctive features
 
 ## Example Output
 {
   "implementationGuidelines": [
-    "Run npm test after changes",
-    "Use App Router for new pages",
-    "Follow existing component patterns in src/components",
-    "Use Zod for API validation",
-    "Run npx playwright test for E2E"
+    "Vitest configured for unit testing (npm test)",
+    "App Router structure with app/ directory",
+    "TypeScript strict mode enabled",
+    "Zod schemas in src/schemas for API validation",
+    "Playwright E2E tests in tests/e2e"
   ],
   "possibleMissedTechnologies": ["Redis caching"]
 }`;

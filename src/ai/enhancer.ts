@@ -484,23 +484,31 @@ export function formatAIAnalysis(analysis: AIAnalysisResult): string {
   if (analysis.projectContext) {
     const ctx = analysis.projectContext;
 
+    // Entry points with quality indicator
     if (ctx.entryPoints && ctx.entryPoints.length > 0) {
       lines.push('Entry Points:');
       for (const entry of ctx.entryPoints) {
         lines.push(`  ${entry}`);
       }
       lines.push('');
+    } else {
+      lines.push('Entry Points: (not discovered - check package.json manually)');
+      lines.push('');
     }
 
+    // Key directories with quality indicator
     if (ctx.keyDirectories && Object.keys(ctx.keyDirectories).length > 0) {
       lines.push('Key Directories:');
       for (const [dir, purpose] of Object.entries(ctx.keyDirectories)) {
         lines.push(`  ${dir} → ${purpose}`);
       }
       lines.push('');
+    } else {
+      lines.push('Key Directories: (not discovered - explore src/ manually)');
+      lines.push('');
     }
 
-    if (ctx.namingConventions) {
+    if (ctx.namingConventions && ctx.namingConventions !== 'unknown') {
       lines.push(`Naming: ${ctx.namingConventions}`);
       lines.push('');
     }
