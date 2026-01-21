@@ -10,6 +10,7 @@ import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
 import { parseJsonSafe } from '../../utils/json-repair.js';
 import { getTracedAI } from '../../utils/tracing.js';
+import { detectProjectType } from './stack-utils.js';
 
 /**
  * System prompt for the Context Enricher worker
@@ -171,20 +172,7 @@ function parseEnrichedContext(
  * Get default enriched context when parsing fails
  */
 function getDefaultEnrichedContext(input?: ContextEnricherInput): EnrichedContext {
-  // Try to extract project type from scan result
-  let projectType = 'Unknown';
-  if (input?.scanResult.stack) {
-    const stack = input.scanResult.stack;
-    if (stack.mcp?.isProject) {
-      projectType = 'MCP Server';
-    } else if (stack.framework?.name.includes('Next')) {
-      projectType = 'Next.js App';
-    } else if (stack.framework?.name.includes('React')) {
-      projectType = 'React SPA';
-    } else if (stack.framework?.name) {
-      projectType = `${stack.framework.name} Project`;
-    }
-  }
+  const projectType = detectProjectType(input?.scanResult.stack);
 
   return {
     entryPoints: ['src/index.ts'],

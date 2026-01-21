@@ -39,6 +39,7 @@ export { runTechResearcher, runTechResearchPool } from './tech-researcher.js';
 export { detectRalphMcpServers, convertToLegacyMcpRecommendations } from './mcp-detector.js';
 export { runSynthesisAgent } from './synthesis-agent.js';
 export { runEvaluatorOptimizer } from './evaluator-optimizer.js';
+export { detectProjectType } from './stack-utils.js';
 
 // Legacy exports (for backward compatibility during migration)
 export { runCodebaseAnalyst } from './codebase-analyst.js';
@@ -60,6 +61,7 @@ import { runTechResearchPool } from './tech-researcher.js';
 import { detectRalphMcpServers } from './mcp-detector.js';
 import { runSynthesisAgent } from './synthesis-agent.js';
 import { runEvaluatorOptimizer } from './evaluator-optimizer.js';
+import { detectProjectType } from './stack-utils.js';
 import { logger } from '../../utils/logger.js';
 
 /**
@@ -214,19 +216,7 @@ export async function runMultiAgentAnalysis(
  * Get default analysis result when pipeline fails
  */
 function getDefaultMultiAgentAnalysis(scanResult: ScanResult): MultiAgentAnalysis {
-  const stack = scanResult.stack;
-
-  // Detect project type
-  let projectType = 'Unknown';
-  if (stack.mcp?.isProject) {
-    projectType = 'MCP Server';
-  } else if (stack.framework?.name.includes('Next')) {
-    projectType = 'Next.js App';
-  } else if (stack.framework?.name.includes('React')) {
-    projectType = 'React SPA';
-  } else if (stack.framework?.name) {
-    projectType = `${stack.framework.name} Project`;
-  }
+  const projectType = detectProjectType(scanResult.stack);
 
   return {
     codebaseAnalysis: {
@@ -268,19 +258,7 @@ function getDefaultMultiAgentAnalysis(scanResult: ScanResult): MultiAgentAnalysi
  * Get default enriched context when Context Enricher fails
  */
 function getDefaultEnrichedContext(scanResult: ScanResult): EnrichedContext {
-  const stack = scanResult.stack;
-
-  // Detect project type
-  let projectType = 'Unknown';
-  if (stack.mcp?.isProject) {
-    projectType = 'MCP Server';
-  } else if (stack.framework?.name.includes('Next')) {
-    projectType = 'Next.js App';
-  } else if (stack.framework?.name.includes('React')) {
-    projectType = 'React SPA';
-  } else if (stack.framework?.name) {
-    projectType = `${stack.framework.name} Project`;
-  }
+  const projectType = detectProjectType(scanResult.stack);
 
   return {
     entryPoints: ['src/index.ts'],
