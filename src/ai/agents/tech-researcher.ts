@@ -14,6 +14,71 @@ import { parseJsonSafe } from '../../utils/json-repair.js';
 import { getTracedAI } from '../../utils/tracing.js';
 
 /**
+ * Documentation hints mapping for common technologies
+ * Used to provide useful links when AI research fails or as supplements
+ */
+const DOCUMENTATION_HINTS: Record<string, string[]> = {
+  // MCP ecosystem
+  'MCP': ['https://modelcontextprotocol.io/docs', 'https://modelcontextprotocol.io/docs/tools/inspector'],
+  'MCP Server': ['https://modelcontextprotocol.io/docs', 'https://modelcontextprotocol.io/docs/tools/inspector'],
+  '@modelcontextprotocol/sdk': ['https://modelcontextprotocol.io/docs/tools/inspector'],
+
+  // Frontend frameworks
+  'Next.js': ['https://nextjs.org/docs/app', 'https://nextjs.org/docs/app/building-your-application'],
+  'React': ['https://react.dev', 'https://react.dev/learn'],
+  'Vue': ['https://vuejs.org/guide', 'https://vuejs.org/api'],
+  'Svelte': ['https://svelte.dev/docs', 'https://kit.svelte.dev/docs'],
+  'Nuxt': ['https://nuxt.com/docs', 'https://nuxt.com/docs/api'],
+
+  // Backend frameworks
+  'Express': ['https://expressjs.com/en/guide', 'https://expressjs.com/en/api.html'],
+  'Fastify': ['https://fastify.dev/docs/latest', 'https://fastify.dev/docs/latest/Guides/Getting-Started'],
+  'Hono': ['https://hono.dev/docs', 'https://hono.dev/docs/guides'],
+  'NestJS': ['https://docs.nestjs.com', 'https://docs.nestjs.com/first-steps'],
+
+  // Testing
+  'Vitest': ['https://vitest.dev/guide', 'https://vitest.dev/api'],
+  'Jest': ['https://jestjs.io/docs/getting-started', 'https://jestjs.io/docs/api'],
+  'Playwright': ['https://playwright.dev/docs/intro', 'https://playwright.dev/docs/api/class-test'],
+
+  // Validation
+  'Zod': ['https://zod.dev', 'https://zod.dev/?id=primitives'],
+  'Yup': ['https://github.com/jquense/yup#api'],
+
+  // Database
+  'Prisma': ['https://www.prisma.io/docs', 'https://www.prisma.io/docs/orm/prisma-client'],
+  'Drizzle': ['https://orm.drizzle.team/docs/overview', 'https://orm.drizzle.team/docs/sql-schema-declaration'],
+  'Supabase': ['https://supabase.com/docs', 'https://supabase.com/docs/guides/database'],
+
+  // TypeScript
+  'TypeScript': ['https://www.typescriptlang.org/docs', 'https://www.typescriptlang.org/docs/handbook'],
+
+  // CLI tools
+  'Commander': ['https://github.com/tj/commander.js#readme'],
+  'Yargs': ['https://yargs.js.org/docs'],
+};
+
+/**
+ * Get documentation hints for a technology
+ */
+function getDocumentationHints(technology: string): string[] {
+  // Direct match
+  if (DOCUMENTATION_HINTS[technology]) {
+    return DOCUMENTATION_HINTS[technology];
+  }
+
+  // Case-insensitive partial match
+  const lowerTech = technology.toLowerCase();
+  for (const [key, hints] of Object.entries(DOCUMENTATION_HINTS)) {
+    if (lowerTech.includes(key.toLowerCase()) || key.toLowerCase().includes(lowerTech)) {
+      return hints;
+    }
+  }
+
+  return [`Check official ${technology} documentation`];
+}
+
+/**
  * Get the current year for dynamic prompt generation
  */
 function getCurrentYear(): number {
@@ -265,6 +330,7 @@ function parseTechResearch(
 
 /**
  * Get default tech research when parsing fails
+ * Uses the DOCUMENTATION_HINTS mapping for relevant URLs
  */
 function getDefaultTechResearch(
   technology: string,
@@ -275,7 +341,7 @@ function getDefaultTechResearch(
     bestPractices: ['Follow official documentation', 'Use TypeScript for type safety'],
     antiPatterns: ['Avoid deprecated APIs', 'Don\'t skip error handling'],
     testingTips: ['Write unit tests for core logic', 'Test edge cases'],
-    documentationHints: [`Check official ${technology} documentation`],
+    documentationHints: getDocumentationHints(technology),
     researchMode,
   };
 }

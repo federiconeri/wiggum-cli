@@ -162,8 +162,8 @@ export async function runMultiAgentAnalysis(
     // ═══════════════════════════════════════════════════════════════
     report('Phase 3/4: Synthesizing');
 
-    // Detect MCPs (pure function, no LLM)
-    const mcpServers = detectRalphMcpServers(scanResult.stack);
+    // Detect MCPs (pure function, no LLM) - pass project type for context-aware recommendations
+    const mcpServers = detectRalphMcpServers(scanResult.stack, enrichedContext.projectType);
 
     // Run synthesis agent
     const synthesizedResult = await runSynthesisAgent(

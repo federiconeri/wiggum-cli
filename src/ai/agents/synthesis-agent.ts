@@ -24,6 +24,11 @@ import { getTracedAI } from '../../utils/tracing.js';
 const synthesisOutputSchema = z.object({
   implementationGuidelines: z.array(z.string()).describe('Short, actionable implementation guidelines'),
   possibleMissedTechnologies: z.array(z.string()).describe('Technologies that may have been missed (empty array if none)'),
+  technologyTools: z.object({
+    testing: z.array(z.string()).describe('Commands to run tests (e.g., "npm test", "npx vitest")'),
+    debugging: z.array(z.string()).describe('Debug flags, env vars, tools (e.g., "DEBUG=* npm run dev")'),
+    validation: z.array(z.string()).describe('Type checking, linting commands (e.g., "npm run lint", "npx tsc --noEmit")'),
+  }).optional(),
 });
 
 /**
@@ -35,6 +40,7 @@ const SYNTHESIS_AGENT_SYSTEM_PROMPT = `You are a Synthesis Agent that merges ana
 Based on the enriched context and technology research, generate:
 1. Short implementation guidelines (5-10 words each) describing DISCOVERED patterns
 2. List any technologies that may have been missed
+3. Technology tools for testing, debugging, and validation
 
 ## Guidelines Style
 - Describe DISCOVERED patterns, not instructions to follow
@@ -48,6 +54,12 @@ Based on the enriched context and technology research, generate:
   - Bad: "Use Zod for validation"
 - Max 7 patterns, prioritize most distinctive features
 
+## Technology Tools
+Based on the detected stack and available commands, provide:
+- testing: Commands to verify changes (e.g., "npm test", "npx vitest")
+- debugging: How to debug (e.g., "DEBUG=* npm run dev", "--verbose flag", "NODE_DEBUG=http")
+- validation: Pre-commit checks (e.g., "npm run lint", "npx tsc --noEmit")
+
 ## Example Output
 {
   "implementationGuidelines": [
@@ -57,7 +69,12 @@ Based on the enriched context and technology research, generate:
     "Zod schemas in src/schemas for API validation",
     "Playwright E2E tests in tests/e2e"
   ],
-  "possibleMissedTechnologies": ["Redis caching"]
+  "possibleMissedTechnologies": ["Redis caching"],
+  "technologyTools": {
+    "testing": ["npm test", "npx vitest --watch"],
+    "debugging": ["DEBUG=* npm run dev", "--verbose flag"],
+    "validation": ["npm run lint", "npx tsc --noEmit"]
+  }
 }`;
 
 /**
@@ -121,7 +138,7 @@ Generate concise, actionable implementation guidelines based on this analysis.`;
     }
 
     // Convert to MultiAgentAnalysis format for backward compatibility
-    return buildMultiAgentAnalysis(input, synthesis.implementationGuidelines, synthesis.possibleMissedTechnologies);
+    return buildMultiAgentAnalysis(input, synthesis.implementationGuidelines, synthesis.possibleMissedTechnologies, synthesis.technologyTools);
   } catch (error) {
     if (verbose) {
       logger.error(`Synthesis Agent error: ${error instanceof Error ? error.message : String(error)}`);
@@ -133,12 +150,22 @@ Generate concise, actionable implementation guidelines based on this analysis.`;
 }
 
 /**
+ * Technology tools output from synthesis
+ */
+interface TechnologyTools {
+  testing?: string[];
+  debugging?: string[];
+  validation?: string[];
+}
+
+/**
  * Build MultiAgentAnalysis from synthesis input and generated guidelines
  */
 function buildMultiAgentAnalysis(
   input: SynthesisInput,
   implementationGuidelines: string[],
-  possibleMissedTechnologies?: string[]
+  possibleMissedTechnologies?: string[],
+  technologyTools?: TechnologyTools
 ): MultiAgentAnalysis {
   // Convert EnrichedContext to CodebaseAnalysis format
   const codebaseAnalysis: CodebaseAnalysis = {
@@ -161,7 +188,7 @@ function buildMultiAgentAnalysis(
   };
 
   // Merge tech research into StackResearch format
-  const stackResearch: StackResearch = mergeTechResearch(input.techResearch);
+  const stackResearch: StackResearch = mergeTechResearch(input.techResearch, technologyTools);
 
   // Convert MCP servers to legacy format
   const mcpServers: McpRecommendations = convertToLegacyMcpRecommendations(input.mcpServers);
@@ -176,13 +203,21 @@ function buildMultiAgentAnalysis(
 /**
  * Merge multiple TechResearchResult into a single StackResearch
  */
-function mergeTechResearch(techResearch: SynthesisInput['techResearch']): StackResearch {
+function mergeTechResearch(
+  techResearch: SynthesisInput['techResearch'],
+  technologyTools?: TechnologyTools
+): StackResearch {
+  // Use technologyTools from synthesis if available
+  const synthesisTesting = technologyTools?.testing || [];
+  const synthesisDebugging = technologyTools?.debugging || [];
+  const synthesisValidation = technologyTools?.validation || [];
+
   if (techResearch.length === 0) {
     return {
       bestPractices: ['Follow project conventions'],
       antiPatterns: ['Avoid skipping tests'],
-      testingTools: ['npm test'],
-      debuggingTools: ['console.log'],
+      testingTools: synthesisTesting.length > 0 ? synthesisTesting : ['npm test'],
+      debuggingTools: synthesisDebugging.length > 0 ? synthesisDebugging : ['console.log'],
       documentationHints: ['Check official docs'],
       researchMode: 'knowledge-only',
     };
@@ -191,7 +226,7 @@ function mergeTechResearch(techResearch: SynthesisInput['techResearch']): StackR
   // Merge all research results
   const bestPractices: string[] = [];
   const antiPatterns: string[] = [];
-  const testingTips: string[] = [];
+  const testingTips: string[] = [...synthesisTesting]; // Start with synthesis testing tools
   const documentationHints: string[] = [];
   let researchMode: StackResearch['researchMode'] = 'knowledge-only';
 
@@ -208,11 +243,13 @@ function mergeTechResearch(techResearch: SynthesisInput['techResearch']): StackR
   }
 
   // Deduplicate and limit
+  // Note: validation tools are available in technologyTools.validation from synthesis output,
+  // not merged here since StackResearch doesn't have a dedicated validation field
   return {
     bestPractices: [...new Set(bestPractices)].slice(0, 10),
     antiPatterns: [...new Set(antiPatterns)].slice(0, 10),
     testingTools: [...new Set(testingTips)].slice(0, 5),
-    debuggingTools: [], // Not collected in new format
+    debuggingTools: [...new Set(synthesisDebugging)].slice(0, 5),
     documentationHints: [...new Set(documentationHints)].slice(0, 5),
     researchMode,
   };
