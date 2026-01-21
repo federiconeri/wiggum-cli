@@ -218,6 +218,7 @@ function mergeTechResearch(
       antiPatterns: ['Avoid skipping tests'],
       testingTools: synthesisTesting.length > 0 ? synthesisTesting : ['npm test'],
       debuggingTools: synthesisDebugging.length > 0 ? synthesisDebugging : ['console.log'],
+      validationTools: synthesisValidation.length > 0 ? synthesisValidation : ['npm run lint'],
       documentationHints: ['Check official docs'],
       researchMode: 'knowledge-only',
     };
@@ -243,13 +244,12 @@ function mergeTechResearch(
   }
 
   // Deduplicate and limit
-  // Note: validation tools are available in technologyTools.validation from synthesis output,
-  // not merged here since StackResearch doesn't have a dedicated validation field
   return {
     bestPractices: [...new Set(bestPractices)].slice(0, 10),
     antiPatterns: [...new Set(antiPatterns)].slice(0, 10),
     testingTools: [...new Set(testingTips)].slice(0, 5),
     debuggingTools: [...new Set(synthesisDebugging)].slice(0, 5),
+    validationTools: [...new Set(synthesisValidation)].slice(0, 5),
     documentationHints: [...new Set(documentationHints)].slice(0, 5),
     researchMode,
   };

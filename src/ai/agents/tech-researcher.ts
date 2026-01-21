@@ -74,11 +74,23 @@ export function getDocumentationHints(technology: string): string[] {
     return [`Check official ${technology} documentation`];
   }
 
-  // Case-insensitive partial match
   const lowerTech = technology.toLowerCase();
+
+  // Case-insensitive exact match first
   for (const [key, hints] of Object.entries(DOCUMENTATION_HINTS)) {
-    if (lowerTech.includes(key.toLowerCase()) || key.toLowerCase().includes(lowerTech)) {
+    if (key.toLowerCase() === lowerTech) {
       return hints;
+    }
+  }
+
+  // Partial match - prefer longer keys to avoid "React" matching "React Native"
+  // Sort keys by length descending so longer/more specific matches win
+  const sortedKeys = Object.keys(DOCUMENTATION_HINTS).sort((a, b) => b.length - a.length);
+
+  for (const key of sortedKeys) {
+    const lowerKey = key.toLowerCase();
+    if (lowerTech.includes(lowerKey) || lowerKey.includes(lowerTech)) {
+      return DOCUMENTATION_HINTS[key];
     }
   }
 

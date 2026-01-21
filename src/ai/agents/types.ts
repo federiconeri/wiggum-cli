@@ -157,6 +157,8 @@ export interface StackResearch {
   testingTools: string[];
   /** Technology-specific debugging tools */
   debuggingTools: string[];
+  /** Technology-specific validation tools (linting, type checking) */
+  validationTools: string[];
   /** Documentation hints and links */
   documentationHints: string[];
   /** Whether research was performed with tools or knowledge-only */

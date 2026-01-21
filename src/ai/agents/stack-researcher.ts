@@ -295,6 +295,7 @@ function parseStackResearch(
     antiPatterns: parsed.antiPatterns || [],
     testingTools: parsed.testingTools || [],
     debuggingTools: parsed.debuggingTools || [],
+    validationTools: parsed.validationTools || [],
     documentationHints: parsed.documentationHints || [],
     researchMode: researchMode,
   };
@@ -309,6 +310,7 @@ function getDefaultStackResearch(researchMode: StackResearch['researchMode']): S
     antiPatterns: ['Avoid skipping tests', 'Don\'t ignore type errors'],
     testingTools: ['npm test'],
     debuggingTools: ['console.log', 'debugger statement'],
+    validationTools: ['npm run lint', 'npx tsc --noEmit'],
     documentationHints: ['Check package.json for dependencies'],
     researchMode,
   };

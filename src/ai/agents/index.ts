@@ -238,6 +238,7 @@ function getDefaultMultiAgentAnalysis(scanResult: ScanResult): MultiAgentAnalysi
       antiPatterns: ['Avoid skipping tests'],
       testingTools: ['npm test'],
       debuggingTools: ['console.log'],
+      validationTools: ['npm run lint', 'npx tsc --noEmit'],
       documentationHints: ['Check official docs'],
       researchMode: 'knowledge-only',
     },
