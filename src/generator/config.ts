@@ -98,6 +98,8 @@ export function generateConfig(scanResult: ScanResult, customVars: Record<string
  * Generate ralph.config.js file content as JavaScript module
  */
 export function generateConfigFile(config: RalphConfig): string {
+  // Use CommonJS module.exports for compatibility with both CJS and ESM projects
+  // ESM projects can import CJS modules, but CJS projects can't use 'export default'
   const content = `module.exports = ${JSON.stringify(config, null, 2)};
 `;
 

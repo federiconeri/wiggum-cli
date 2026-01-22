@@ -1,6 +1,6 @@
 /**
  * New Command
- * Create a new feature specification from template
+ * Create a new feature specification from template or AI interview
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { logger } from '../utils/logger.js';
 import { loadConfigWithDefaults, hasConfig } from '../utils/config.js';
+import { getAvailableProvider, type AIProvider, AVAILABLE_MODELS } from '../ai/providers.js';
+import { SpecGenerator } from '../ai/conversation/index.js';
+import { Scanner, type ScanResult } from '../scanner/index.js';
 import pc from 'picocolors';
 import * as prompts from '@clack/prompts';
 
@@ -21,6 +24,14 @@ export interface NewOptions {
   yes?: boolean;
   /** Force overwrite if file exists */
   force?: boolean;
+  /** Use AI interview to generate spec */
+  ai?: boolean;
+  /** AI provider (anthropic, openai, openrouter) */
+  provider?: AIProvider;
+  /** Model to use for AI generation */
+  model?: string;
+  /** Pre-loaded scan result (from REPL session) */
+  scanResult?: ScanResult;
 }
 
 /**
@@ -96,6 +107,15 @@ Describe what this feature does and why it's needed.
 - [ ] Question 1 - Decision needed
 - [ ] Question 2 - Clarification required
 `;
+
+/**
+ * Get default model for a provider
+ */
+function getDefaultModelForProvider(provider: AIProvider): string {
+  const models = AVAILABLE_MODELS[provider];
+  const recommended = models.find(m => m.hint?.includes('recommended'));
+  return recommended?.value || models[0].value;
+}
 
 /**
  * Find the _example.md template
@@ -178,7 +198,7 @@ export async function newCommand(feature: string, options: NewOptions = {}): Pro
   // Sanitize feature name (allow alphanumeric, hyphens, underscores)
   if (!/^[a-zA-Z0-9_-]+$/.test(feature)) {
     logger.error('Feature name must contain only letters, numbers, hyphens, and underscores');
-    logger.info('Example: ralph new my-feature or ralph new user_auth');
+    logger.info('Example: wiggum new my-feature or wiggum new user_auth');
     process.exit(1);
   }
 
@@ -194,7 +214,7 @@ export async function newCommand(feature: string, options: NewOptions = {}): Pro
 
   // Check for config
   if (!hasConfig(projectRoot)) {
-    logger.warn('No ralph.config.js found. Run "ralph init" first to configure your project.');
+    logger.warn('No ralph.config.js found. Run "wiggum init" first to configure your project.');
     logger.info('Using default paths...');
     console.log('');
   }
@@ -234,54 +254,111 @@ export async function newCommand(feature: string, options: NewOptions = {}): Pro
     logger.warn('Overwriting existing spec file');
   }
 
-  // Find or use default template
-  let templateContent: string;
+  // Determine if we should use AI generation
+  const provider = options.provider || getAvailableProvider();
+  const useAi = options.ai && provider !== null;
 
-  // Try to find _example.md template
-  const exampleTemplate = await findExampleTemplate(projectRoot);
-  if (exampleTemplate) {
-    logger.info(`Using template: ${exampleTemplate}`);
-    templateContent = readFileSync(exampleTemplate, 'utf-8');
-  } else {
-    // Try package template
-    const packageTemplateDir = getPackageTemplateDir();
-    const packageTemplate = join(packageTemplateDir, '_example.md.tmpl');
-    if (existsSync(packageTemplate)) {
-      logger.info(`Using package template`);
-      templateContent = readFileSync(packageTemplate, 'utf-8');
-    } else {
-      // Use default template
-      logger.info('Using default template');
-      templateContent = DEFAULT_SPEC_TEMPLATE;
+  let specContent: string;
+
+  if (useAi && provider) {
+    // Use AI-powered spec generation
+    const model = options.model || getDefaultModelForProvider(provider);
+    logger.info(`Using AI spec generation (${provider}/${model})`);
+
+    // Get or perform scan
+    let scanResult = options.scanResult;
+    if (!scanResult) {
+      const scanner = new Scanner();
+      scanResult = await scanner.scan(projectRoot);
     }
-  }
 
-  // Process template
-  const specContent = processTemplate(templateContent, feature);
-
-  // Confirm with user (unless --yes)
-  if (!options.yes) {
-    console.log('');
-    console.log(pc.cyan('--- Spec Preview ---'));
-    console.log(`File: ${specPath}`);
-    console.log('');
-
-    // Show first few lines of the processed template
-    const previewLines = specContent.split('\n').slice(0, 15);
-    console.log(pc.dim(previewLines.join('\n')));
-    if (specContent.split('\n').length > 15) {
-      console.log(pc.dim('...'));
-    }
-    console.log('');
-
-    const shouldCreate = await prompts.confirm({
-      message: 'Create this spec file?',
-      initialValue: true,
+    const specGenerator = new SpecGenerator({
+      featureName: feature,
+      projectRoot,
+      provider,
+      model,
+      scanResult,
     });
 
-    if (prompts.isCancel(shouldCreate) || !shouldCreate) {
-      logger.info('Cancelled');
+    const generatedSpec = await specGenerator.run();
+
+    if (!generatedSpec) {
+      logger.info('Spec generation cancelled');
       return;
+    }
+
+    specContent = generatedSpec;
+
+    // Confirm saving (unless --yes)
+    if (!options.yes) {
+      console.log('');
+      const shouldSave = await prompts.confirm({
+        message: `Save spec to ${specPath}?`,
+        initialValue: true,
+      });
+
+      if (prompts.isCancel(shouldSave) || !shouldSave) {
+        logger.info('Spec not saved');
+        return;
+      }
+    }
+  } else {
+    // Use template-based generation
+    if (options.ai && !provider) {
+      logger.warn('No API key found. Falling back to template mode.');
+      logger.info('Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY for AI generation.');
+      console.log('');
+    }
+
+    // Find or use default template
+    let templateContent: string;
+
+    // Try to find _example.md template
+    const exampleTemplate = await findExampleTemplate(projectRoot);
+    if (exampleTemplate) {
+      logger.info(`Using template: ${exampleTemplate}`);
+      templateContent = readFileSync(exampleTemplate, 'utf-8');
+    } else {
+      // Try package template
+      const packageTemplateDir = getPackageTemplateDir();
+      const packageTemplate = join(packageTemplateDir, '_example.md.tmpl');
+      if (existsSync(packageTemplate)) {
+        logger.info(`Using package template`);
+        templateContent = readFileSync(packageTemplate, 'utf-8');
+      } else {
+        // Use default template
+        logger.info('Using default template');
+        templateContent = DEFAULT_SPEC_TEMPLATE;
+      }
+    }
+
+    // Process template
+    specContent = processTemplate(templateContent, feature);
+
+    // Confirm with user (unless --yes)
+    if (!options.yes) {
+      console.log('');
+      console.log(pc.cyan('--- Spec Preview ---'));
+      console.log(`File: ${specPath}`);
+      console.log('');
+
+      // Show first few lines of the processed template
+      const previewLines = specContent.split('\n').slice(0, 15);
+      console.log(pc.dim(previewLines.join('\n')));
+      if (specContent.split('\n').length > 15) {
+        console.log(pc.dim('...'));
+      }
+      console.log('');
+
+      const shouldCreate = await prompts.confirm({
+        message: 'Create this spec file?',
+        initialValue: true,
+      });
+
+      if (prompts.isCancel(shouldCreate) || !shouldCreate) {
+        logger.info('Cancelled');
+        return;
+      }
     }
   }
 
@@ -308,5 +385,5 @@ export async function newCommand(feature: string, options: NewOptions = {}): Pro
   console.log('');
   console.log('Next steps:');
   console.log(`  1. Edit the spec: ${pc.cyan(`$EDITOR ${specPath}`)}`);
-  console.log(`  2. When ready, run: ${pc.cyan(`ralph run ${feature}`)}`);
+  console.log(`  2. When ready, run: ${pc.cyan(`wiggum run ${feature}`)}`);
 }

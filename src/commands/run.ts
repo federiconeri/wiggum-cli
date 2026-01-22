@@ -94,7 +94,7 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
 
   // Check for config
   if (!hasConfig(projectRoot)) {
-    logger.warn('No ralph.config.js found. Run "ralph init" first to configure your project.');
+    logger.warn('No ralph.config.js found. Run "wiggum init" first to configure your project.');
     logger.info('Attempting to run with default settings...');
     console.log('');
   }
@@ -106,7 +106,7 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
   const specFile = await validateSpecFile(projectRoot, feature);
   if (!specFile) {
     logger.error(`Spec file not found: ${feature}.md`);
-    logger.info(`Create the spec first: ralph new ${feature}`);
+    logger.info(`Create the spec first: wiggum new ${feature}`);
     logger.info(`Expected location: ${join(projectRoot, config.paths.specs, `${feature}.md`)}`);
     process.exit(1);
   }
@@ -118,7 +118,7 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
   if (!scriptPath) {
     logger.error('feature-loop.sh script not found');
     logger.info('The script should be in .ralph/scripts/ or the ralph/ directory');
-    logger.info('Run "ralph init" to generate the necessary scripts');
+    logger.info('Run "wiggum init" to generate the necessary scripts');
     process.exit(1);
   }
 
