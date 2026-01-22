@@ -94,7 +94,7 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
 
   // Check for config
   if (!hasConfig(projectRoot)) {
-    logger.warn('No ralph.config.js found. Run "wiggum init" first to configure your project.');
+    logger.warn('No ralph.config.cjs found. Run "wiggum init" first to configure your project.');
     logger.info('Attempting to run with default settings...');
     console.log('');
   }

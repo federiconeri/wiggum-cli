@@ -214,7 +214,7 @@ export async function newCommand(feature: string, options: NewOptions = {}): Pro
 
   // Check for config
   if (!hasConfig(projectRoot)) {
-    logger.warn('No ralph.config.js found. Run "wiggum init" first to configure your project.');
+    logger.warn('No ralph.config.cjs found. Run "wiggum init" first to configure your project.');
     logger.info('Using default paths...');
     console.log('');
   }

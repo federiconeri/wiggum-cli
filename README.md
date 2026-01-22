@@ -228,7 +228,7 @@ After running `wiggum init`, the following structure is created:
 
 ```
 .ralph/
-├── ralph.config.js          # Main configuration file
+├── ralph.config.cjs          # Main configuration file
 ├── prompts/                  # AI prompt templates
 │   ├── PROMPT.md            # Implementation prompt
 │   ├── PROMPT_feature.md    # Feature planning prompt
@@ -312,7 +312,7 @@ Wiggum uses a 4-phase multi-agent architecture:
 
 ## Configuration
 
-### ralph.config.js
+### ralph.config.cjs
 
 ```javascript
 module.exports = {

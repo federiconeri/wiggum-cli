@@ -242,7 +242,7 @@ export function mapTemplateOutputPaths(templateOutputs: Map<string, string>): Ma
       // Scripts go to .ralph/scripts/
       finalPath = `.ralph/${outputPath}`;
     } else if (outputPath.startsWith('config/')) {
-      // ralph.config.js goes to project root
+      // ralph.config.cjs goes to project root
       finalPath = outputPath.replace('config/', '');
     } else if (outputPath.startsWith('root/')) {
       // Root files go to .ralph/

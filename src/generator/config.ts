@@ -1,6 +1,6 @@
 /**
  * Config Generator
- * Generates ralph.config.js file from scan results
+ * Generates ralph.config.cjs file from scan results
  */
 
 import type { ScanResult } from '../scanner/types.js';
@@ -95,7 +95,7 @@ export function generateConfig(scanResult: ScanResult, customVars: Record<string
 }
 
 /**
- * Generate ralph.config.js file content as JavaScript module
+ * Generate ralph.config.cjs file content as CommonJS module
  */
 export function generateConfigFile(config: RalphConfig): string {
   // Use CommonJS module.exports for compatibility with both CJS and ESM projects
@@ -110,7 +110,7 @@ export function generateConfigFile(config: RalphConfig): string {
 }
 
 /**
- * Generate ralph.config.js from scan result
+ * Generate ralph.config.cjs from scan result
  */
 export function generateConfigFileFromScan(scanResult: ScanResult, customVars: Record<string, string> = {}): string {
   const config = generateConfig(scanResult, customVars);

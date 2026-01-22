@@ -8,13 +8,13 @@ set -e
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Load config from ralph.config.js if available
-if [ -f "$SCRIPT_DIR/../ralph.config.js" ]; then
-    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
-    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
-elif [ -f "$SCRIPT_DIR/../../ralph.config.js" ]; then
-    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
-    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+# Load config from ralph.config.cjs if available
+if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
+    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
+    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+elif [ -f "$SCRIPT_DIR/../../ralph.config.cjs" ]; then
+    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
+    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
 else
     PROMPTS_DIR=".ralph/prompts"
     DEFAULT_MODEL="sonnet"

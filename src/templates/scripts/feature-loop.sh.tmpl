@@ -14,23 +14,23 @@ set -o pipefail
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Load config from ralph.config.js if available
-if [ -f "$SCRIPT_DIR/../ralph.config.js" ]; then
-    RALPH_ROOT=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
-    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
-    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
-    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
-    PLANNING_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
-    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
-    DEFAULT_MAX_E2E=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
-elif [ -f "$SCRIPT_DIR/../../ralph.config.js" ]; then
-    RALPH_ROOT=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
-    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
-    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
-    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
-    PLANNING_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
-    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
-    DEFAULT_MAX_E2E=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+# Load config from ralph.config.cjs if available
+if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
+    RALPH_ROOT=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
+    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
+    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
+    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+    PLANNING_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
+    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
+    DEFAULT_MAX_E2E=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+elif [ -f "$SCRIPT_DIR/../../ralph.config.cjs" ]; then
+    RALPH_ROOT=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
+    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
+    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
+    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+    PLANNING_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
+    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
+    DEFAULT_MAX_E2E=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
 else
     # Default paths
     RALPH_ROOT=".ralph"

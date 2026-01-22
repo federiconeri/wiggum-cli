@@ -1,6 +1,6 @@
 /**
  * Configuration Utilities
- * Load and parse ralph.config.js files
+ * Load and parse ralph.config.cjs files
  */
 
 import { existsSync } from 'node:fs';
@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url';
 import { logger } from './logger.js';
 
 /**
- * Stack configuration in ralph.config.js
+ * Stack configuration in ralph.config.cjs
  */
 export interface StackConfig {
   framework: {
@@ -26,7 +26,7 @@ export interface StackConfig {
 }
 
 /**
- * Commands configuration in ralph.config.js
+ * Commands configuration in ralph.config.cjs
  */
 export interface CommandsConfig {
   dev: string;
@@ -37,7 +37,7 @@ export interface CommandsConfig {
 }
 
 /**
- * Paths configuration in ralph.config.js
+ * Paths configuration in ralph.config.cjs
  */
 export interface PathsConfig {
   root: string;
@@ -50,7 +50,7 @@ export interface PathsConfig {
 }
 
 /**
- * Loop configuration in ralph.config.js
+ * Loop configuration in ralph.config.cjs
  */
 export interface LoopConfig {
   maxIterations: number;
@@ -60,7 +60,7 @@ export interface LoopConfig {
 }
 
 /**
- * Full ralph.config.js structure
+ * Full ralph.config.cjs structure
  */
 export interface RalphConfig {
   name: string;
@@ -113,11 +113,11 @@ export const DEFAULT_CONFIG: RalphConfig = {
 };
 
 /**
- * Load ralph.config.js from a project directory
+ * Load ralph.config.cjs from a project directory
  * Returns null if config file doesn't exist
  */
 export async function loadConfig(projectRoot: string): Promise<RalphConfig | null> {
-  const configPath = join(projectRoot, 'ralph.config.js');
+  const configPath = join(projectRoot, 'ralph.config.cjs');
 
   if (!existsSync(configPath)) {
     return null;
@@ -179,7 +179,7 @@ export async function loadConfigWithDefaults(projectRoot: string): Promise<Ralph
  * Check if a ralph config exists in the project
  */
 export function hasConfig(projectRoot: string): boolean {
-  const configPath = join(projectRoot, 'ralph.config.js');
+  const configPath = join(projectRoot, 'ralph.config.cjs');
   return existsSync(configPath);
 }
 

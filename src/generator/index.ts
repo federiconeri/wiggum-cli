@@ -128,7 +128,7 @@ export class Generator {
     if (this.options.generateConfig) {
       config = generateConfig(scanResult, this.options.customVariables || {});
       const configContent = generateConfigFile(config);
-      processedTemplates.set('config/ralph.config.js', configContent);
+      processedTemplates.set('config/ralph.config.cjs', configContent);
     }
 
     // Map template outputs to final paths

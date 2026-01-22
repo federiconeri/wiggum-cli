@@ -6,11 +6,11 @@
 FEATURE="${1:?Usage: ./ralph-monitor.sh <feature-name>}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Load config from ralph.config.js if available
-if [ -f "$SCRIPT_DIR/../ralph.config.js" ]; then
-    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.js').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
-elif [ -f "$SCRIPT_DIR/../../ralph.config.js" ]; then
-    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.js').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
+# Load config from ralph.config.cjs if available
+if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
+    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
+elif [ -f "$SCRIPT_DIR/../../ralph.config.cjs" ]; then
+    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
 else
     SPEC_DIR=".ralph/specs"
 fi
