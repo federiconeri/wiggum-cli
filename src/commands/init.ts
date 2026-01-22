@@ -18,7 +18,7 @@ import {
   getAvailableProvider,
   AVAILABLE_MODELS,
 } from '../ai/providers.js';
-import * as prompts from '@clack/prompts';
+import * as replPrompts from '../utils/repl-prompts.js';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -33,23 +33,8 @@ import { createShimmerSpinner, type ShimmerSpinner } from '../utils/spinner.js';
 import { startRepl, createSessionState } from '../repl/index.js';
 import { loadConfigWithDefaults } from '../utils/config.js';
 
-/**
- * Secure password input using @clack/prompts
- * Works correctly in both CLI and REPL contexts
- */
-async function securePasswordInput(message: string): Promise<string | null> {
-  const result = await prompts.password({
-    message,
-    mask: '*',
-  });
-
-  if (prompts.isCancel(result)) {
-    return null;
-  }
-
-  // Return trimmed input, filtering any control characters
-  return (result as string).trim().replace(/[\x00-\x1F\x7F]/g, '') || null;
-}
+// Use REPL-friendly prompts for interactive input
+const prompts = replPrompts;
 
 export interface InitOptions {
   provider?: AIProvider;
@@ -154,8 +139,10 @@ async function collectApiKeys(
     provider = providerChoice as AIProvider;
     const envVar = getApiKeyEnvVar(provider);
 
-    // Get API key with fixed-length mask (doesn't reveal key length)
-    const apiKeyInput = await securePasswordInput(`Enter your ${envVar}:`);
+    // Get API key with masked input
+    const apiKeyInput = await prompts.password({
+      message: `Enter your ${envVar}:`,
+    });
 
     if (!apiKeyInput) {
       logger.error('API key is required to use Ralph.');
