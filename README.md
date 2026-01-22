@@ -35,11 +35,12 @@ npm install -g wiggum-cli
 # 1. Initialize Wiggum in your project
 npx wiggum-cli init
 
-# 2. Create a new feature specification
-wiggum new my-feature
+# 2. Create a new feature specification (with AI interview)
+wiggum new my-feature --ai
 
-# 3. Edit the spec file (opens in your editor)
-wiggum new my-feature --edit
+# 3. Or use interactive mode (stays in REPL after init)
+wiggum init -i
+# Then use: /new my-feature, /run my-feature, /help, /exit
 
 # 4. Run the feature development loop
 wiggum run my-feature
@@ -62,12 +63,16 @@ wiggum init [options]
 | Flag | Description |
 |------|-------------|
 | `--provider <name>` | AI provider: `anthropic`, `openai`, or `openrouter` (default: `anthropic`) |
+| `-i, --interactive` | Stay in interactive REPL mode after initialization |
 | `-y, --yes` | Accept defaults and skip confirmations |
 
 **Examples:**
 ```bash
 # Initialize with AI analysis (interactive)
 wiggum init
+
+# Initialize and enter REPL mode
+wiggum init -i
 
 # Initialize with OpenAI provider
 wiggum init --provider openai
@@ -143,7 +148,7 @@ wiggum monitor my-feature --bash
 
 ### `wiggum new <feature>`
 
-Create a new feature specification from template.
+Create a new feature specification from template or AI-powered interview.
 
 ```bash
 wiggum new <feature> [options]
@@ -152,6 +157,9 @@ wiggum new <feature> [options]
 **Options:**
 | Flag | Description |
 |------|-------------|
+| `--ai` | Use AI interview to generate the spec |
+| `--provider <name>` | AI provider for spec generation |
+| `--model <model>` | Model to use for AI spec generation |
 | `-e, --edit` | Open in editor after creation |
 | `--editor <editor>` | Editor to use (defaults to `$EDITOR` or `code`) |
 | `-y, --yes` | Skip confirmation prompts |
@@ -159,7 +167,10 @@ wiggum new <feature> [options]
 
 **Examples:**
 ```bash
-# Create a new spec with interactive prompts
+# Create spec with AI interview (recommended)
+wiggum new user-dashboard --ai
+
+# Create a new spec from template
 wiggum new user-dashboard
 
 # Create and open in VS Code
@@ -171,6 +182,45 @@ wiggum new user-dashboard --edit --editor vim --yes
 # Overwrite existing spec
 wiggum new user-dashboard --force
 ```
+
+**AI Mode (`--ai`):**
+The AI-powered spec generation guides you through a 4-phase interview:
+1. **Context Gathering** - Share reference URLs or files for context
+2. **Goals Discussion** - Describe what you want to build
+3. **Interview** - AI asks clarifying questions (3-5 questions typically)
+4. **Generation** - AI generates a detailed, project-specific specification
+
+## Interactive REPL Mode
+
+Start an interactive session after initialization with `-i`:
+
+```bash
+wiggum init -i
+```
+
+Once in REPL mode, use slash commands:
+
+| Command | Description |
+|---------|-------------|
+| `/new <feature>` | Create a new feature spec (with AI interview) |
+| `/run <feature>` | Run the feature development loop |
+| `/monitor <feature>` | Monitor a running feature |
+| `/help` | Show available commands |
+| `/exit` | Exit the REPL |
+
+**Aliases:** `/n`, `/r`, `/m`, `/h`, `/q`
+
+```bash
+wiggum> /new user-dashboard
+# AI interview starts...
+
+wiggum> /run user-dashboard
+# Development loop starts...
+
+wiggum> /exit
+```
+
+---
 
 ## Generated Files Structure
 
@@ -265,7 +315,7 @@ Wiggum uses a 4-phase multi-agent architecture:
 ### ralph.config.js
 
 ```javascript
-export default {
+module.exports = {
   // Project paths
   paths: {
     root: '.ralph',
@@ -279,11 +329,6 @@ export default {
     maxIterations: 10,
     maxE2eAttempts: 5,
     defaultModel: 'sonnet',
-  },
-
-  // AI settings
-  ai: {
-    provider: 'anthropic',
   },
 
   // Detected stack (auto-populated)
