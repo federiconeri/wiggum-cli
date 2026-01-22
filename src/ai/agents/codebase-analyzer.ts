@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stepCountIs, type LanguageModel } from 'ai';
 import type { ScanResult } from '../../scanner/types.js';
-import type { MultiAgentAnalysis, CodebaseAnalysis, StackResearch, RalphMcpServers } from './types.js';
+import type { MultiAgentAnalysis, CodebaseAnalysis, StackResearch, RalphMcpServers, TokenUsage } from './types.js';
 import { createExplorationTools } from '../tools.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
@@ -193,8 +193,15 @@ After exploring, output your complete analysis as JSON.`;
     // Detect MCP servers (pure function)
     const mcpServers = detectRalphMcpServers(stack, analyzerOutput.projectType);
 
+    // Capture token usage from AI response
+    const tokenUsage = result.usage ? {
+      inputTokens: result.usage.inputTokens ?? 0,
+      outputTokens: result.usage.outputTokens ?? 0,
+      totalTokens: result.usage.totalTokens ?? 0,
+    } : undefined;
+
     // Build full MultiAgentAnalysis
-    return buildMultiAgentAnalysis(analyzerOutput, mcpServers, input);
+    return buildMultiAgentAnalysis(analyzerOutput, mcpServers, input, tokenUsage);
   } catch (error) {
     if (verbose) {
       logger.error(`Codebase Analyzer error: ${error instanceof Error ? error.message : String(error)}`);
@@ -270,7 +277,8 @@ function parseAnalyzerOutput(
 function buildMultiAgentAnalysis(
   output: AnalyzerOutput,
   mcpServers: RalphMcpServers,
-  input: CodebaseAnalyzerInput
+  input: CodebaseAnalyzerInput,
+  tokenUsage?: TokenUsage
 ): MultiAgentAnalysis {
   const derivedCommands = deriveCommandsFromScripts(input.scanResult.projectRoot);
 
@@ -316,6 +324,7 @@ function buildMultiAgentAnalysis(
     codebaseAnalysis,
     stackResearch,
     mcpServers: convertToLegacyMcpRecommendations(mcpServers),
+    tokenUsage,
   };
 }
 

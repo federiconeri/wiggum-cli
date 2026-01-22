@@ -33,22 +33,25 @@ describe('detectRalphMcpServers', () => {
       expect(result.e2eTesting).toBe('playwright');
     });
 
-    it('returns mcp-inspector for MCP projects via stack.mcp.isProject', () => {
+    it('returns undefined for MCP projects (use npx @modelcontextprotocol/inspector)', () => {
       const stack = createStack({
         mcp: { isProject: true },
       });
       const result = detectRalphMcpServers(stack);
-      expect(result.e2eTesting).toBe('mcp-inspector');
+      // MCP Inspector is an npx tool, not an MCP server
+      expect(result.e2eTesting).toBeUndefined();
     });
 
-    it('returns mcp-inspector for MCP projects via projectType parameter', () => {
+    it('returns undefined for MCP projects via projectType parameter', () => {
       const result = detectRalphMcpServers(createStack(), 'MCP Server');
-      expect(result.e2eTesting).toBe('mcp-inspector');
+      // MCP Inspector is an npx tool, not an MCP server
+      expect(result.e2eTesting).toBeUndefined();
     });
 
-    it('returns mcp-inspector when projectType contains "mcp" (case-insensitive)', () => {
+    it('returns undefined when projectType contains "mcp" (case-insensitive)', () => {
       const result = detectRalphMcpServers(createStack(), 'mcp tool');
-      expect(result.e2eTesting).toBe('mcp-inspector');
+      // MCP Inspector is an npx tool, not an MCP server
+      expect(result.e2eTesting).toBeUndefined();
     });
 
     it('returns playwright for Next.js projects', () => {
@@ -81,7 +84,8 @@ describe('detectRalphMcpServers', () => {
         framework: detection('Next.js'),
       });
       const result = detectRalphMcpServers(stack);
-      expect(result.e2eTesting).toBe('mcp-inspector');
+      // MCP Inspector is an npx tool, not an MCP server - no E2E MCP for MCP projects
+      expect(result.e2eTesting).toBeUndefined();
     });
   });
 
@@ -311,6 +315,25 @@ describe('convertToLegacyMcpRecommendations', () => {
       additional: [],
     });
     expect(result.essential).toContain('playwright');
+  });
+
+  it('returns empty essential when e2eTesting is undefined (MCP projects)', () => {
+    const result = convertToLegacyMcpRecommendations({
+      e2eTesting: undefined,
+      additional: [],
+    });
+    // MCP projects use npx @modelcontextprotocol/inspector, not an MCP server
+    expect(result.essential).toEqual([]);
+  });
+
+  it('only includes database in essential for MCP projects', () => {
+    const result = convertToLegacyMcpRecommendations({
+      e2eTesting: undefined,
+      database: 'supabase',
+      additional: [],
+    });
+    // MCP projects use npx inspector for testing, but still get database MCP
+    expect(result.essential).toEqual(['supabase']);
   });
 
   it('includes database in essential when detected', () => {

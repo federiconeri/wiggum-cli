@@ -101,3 +101,142 @@ export function sectionHeader(title: string): string {
   const line = drawLine(50);
   return `\n${line}\n${simpson.yellow(title)}\n${line}`;
 }
+
+/**
+ * Compact section header (single line style)
+ */
+export function compactHeader(title: string): string {
+  const titlePart = `─── ${title} ───`;
+  return simpson.yellow(titlePart);
+}
+
+/**
+ * Progress phase indicators
+ */
+export const phase = {
+  pending: '○',
+  active: '◐',
+  complete: '✓',
+  error: '✗',
+};
+
+/**
+ * Display a stack info box
+ */
+export function stackBox(stack: {
+  framework?: string;
+  language?: string;
+  testing?: string;
+  packageManager?: string;
+}): string {
+  const lines: string[] = [];
+  const maxLabelWidth = 10;
+
+  const addLine = (label: string, value: string | undefined) => {
+    if (value) {
+      const paddedLabel = label.padEnd(maxLabelWidth);
+      lines.push(`│  ${simpson.brown(paddedLabel)} ${value}`);
+    }
+  };
+
+  lines.push(simpson.brown('┌─ Detected Stack ────────────────────────────┐'));
+  addLine('Framework:', stack.framework);
+  addLine('Language:', stack.language);
+  addLine('Testing:', stack.testing);
+  addLine('Package:', stack.packageManager);
+  lines.push(simpson.brown('└─────────────────────────────────────────────┘'));
+
+  return lines.join('\n');
+}
+
+/**
+ * Progress phases display
+ */
+export interface ProgressPhase {
+  name: string;
+  status: 'pending' | 'active' | 'complete' | 'error';
+  detail?: string;
+}
+
+export function progressPhases(phases: ProgressPhase[]): string {
+  return phases.map((p, i) => {
+    const num = `${i + 1}.`;
+    const icon = phase[p.status];
+    const statusColor = p.status === 'complete' ? simpson.yellow :
+                        p.status === 'active' ? simpson.white :
+                        p.status === 'error' ? simpson.pink :
+                        simpson.brown;
+    const detail = p.detail ? simpson.brown(` (${p.detail})`) : '';
+    return `  ${num} ${statusColor(icon)} ${p.name}${detail}`;
+  }).join('\n');
+}
+
+/**
+ * File tree display for generated files
+ */
+export function fileTree(basePath: string, files: string[]): string {
+  // Group files by directory
+  const tree: Record<string, string[]> = {};
+
+  for (const file of files) {
+    const parts = file.split('/');
+    if (parts.length === 1) {
+      tree[''] = tree[''] || [];
+      tree[''].push(parts[0]);
+    } else {
+      const dir = parts.slice(0, -1).join('/');
+      const filename = parts[parts.length - 1];
+      tree[dir] = tree[dir] || [];
+      tree[dir].push(filename);
+    }
+  }
+
+  const lines: string[] = [`  ${simpson.yellow(basePath + '/')}`];
+  const dirs = Object.keys(tree).sort();
+
+  for (let i = 0; i < dirs.length; i++) {
+    const dir = dirs[i];
+    const isLastDir = i === dirs.length - 1;
+    const dirPrefix = isLastDir ? '  └── ' : '  ├── ';
+    const filePrefix = isLastDir ? '      ' : '  │   ';
+
+    if (dir) {
+      lines.push(`${dirPrefix}${simpson.brown(dir + '/')}`);
+    }
+
+    const filesInDir = tree[dir].sort();
+    for (let j = 0; j < filesInDir.length; j++) {
+      const file = filesInDir[j];
+      const isLastFile = j === filesInDir.length - 1;
+      const connector = dir ? (isLastFile ? '└── ' : '├── ') : (isLastFile && isLastDir ? '└── ' : '├── ');
+      const prefix = dir ? filePrefix : '  ';
+      lines.push(`${prefix}${connector}${file}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Next steps box
+ */
+export function nextStepsBox(steps: Array<{ command: string; description: string }>): string {
+  const lines: string[] = [];
+  lines.push('');
+  lines.push(compactHeader('Next Steps'));
+  lines.push('');
+
+  for (const step of steps) {
+    lines.push(`  ${simpson.yellow('$')} ${step.command}`);
+    lines.push(`    ${simpson.brown(step.description)}`);
+    lines.push('');
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Fixed-length password mask (32 characters)
+ */
+export const PASSWORD_MASK_LENGTH = 32;
+export const PASSWORD_MASK = '▪'.repeat(PASSWORD_MASK_LENGTH);

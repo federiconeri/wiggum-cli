@@ -66,13 +66,15 @@ const SERVICE_MCP_MAP: Record<string, string> = {
  * Detect ralph-essential MCP servers from the stack
  *
  * Ralph loop essentials:
- * - For MCP Server projects: mcp-inspector for testing
- * - For web apps with E2E: playwright for E2E testing
+ * - For web apps with E2E: playwright MCP server for E2E testing
  * - Database MCP: If database is detected
  * - Additional MCPs based on services and deployment
+ *
+ * Note: MCP Inspector is a debugging TOOL (npx @modelcontextprotocol/inspector),
+ * NOT an MCP server. It should be mentioned in implementation guidelines, not here.
  */
 export function detectRalphMcpServers(stack: DetectedStack, projectType?: string): RalphMcpServers {
-  // Determine appropriate E2E testing tool based on project type
+  // Determine appropriate E2E testing MCP based on project type
   const isMcpProject = stack.mcp?.isProject || projectType?.toLowerCase().includes('mcp');
   const isWebApp = stack.framework?.name?.toLowerCase().includes('next') ||
                    stack.framework?.name?.toLowerCase().includes('react') ||
@@ -81,12 +83,13 @@ export function detectRalphMcpServers(stack: DetectedStack, projectType?: string
                    stack.framework?.name?.toLowerCase().includes('nuxt') ||
                    stack.framework?.name?.toLowerCase().includes('remix');
 
-  // Choose E2E testing tool based on project type
-  let e2eTesting: string;
+  // Choose E2E testing MCP based on project type
+  // Note: MCP projects don't need an E2E testing MCP server - they use npx @modelcontextprotocol/inspector
+  let e2eTesting: string | undefined;
   if (isMcpProject) {
-    e2eTesting = 'mcp-inspector'; // MCP projects use MCP Inspector
+    e2eTesting = undefined; // MCP projects use npx inspector (not an MCP server)
   } else if (isWebApp) {
-    e2eTesting = 'playwright'; // Web apps use Playwright
+    e2eTesting = 'playwright'; // Web apps use Playwright MCP
   } else {
     e2eTesting = 'playwright'; // Default to Playwright for CLI/other projects
   }

@@ -85,6 +85,8 @@ export {
   type ProjectContext,
   type DetectedCommands,
   type McpRecommendations as McpRecommendationsLegacy,
+  type E2ETools,
+  type TokenUsage,
   type AIAnalysisResult,
   type EnhancedScanResult,
   type EnhancerOptions,

@@ -74,6 +74,21 @@ export interface TechnologyPractices {
 }
 
 /**
+ * E2E testing tools recommendation
+ * Distinguishes between MCP servers (like playwright) and standalone tools (like MCP Inspector)
+ */
+export interface E2ETools {
+  /** The tool or MCP server name */
+  tool: string;
+  /** How to run/invoke the tool */
+  command: string;
+  /** Brief description of what it does */
+  description: string;
+  /** Whether this is an MCP server or a standalone tool */
+  isMcpServer: boolean;
+}
+
+/**
  * AI analysis result - focused on actionable outputs
  */
 export interface AIAnalysisResult {
@@ -83,14 +98,25 @@ export interface AIAnalysisResult {
   commands?: DetectedCommands;
   /** Short, actionable implementation guidelines */
   implementationGuidelines?: string[];
-  /** MCP server recommendations */
+  /** MCP server recommendations (database, deployment, etc.) */
   mcpServers?: McpRecommendations;
+  /** E2E testing tools (playwright MCP or MCP Inspector) */
+  e2eTools?: E2ETools;
   /** Additional technologies that may have been missed */
   possibleMissedTechnologies?: string[];
   /** Technology-specific tools for testing/debugging */
   technologyTools?: TechnologyTools;
   /** Technology-specific best practices based on detected stack */
   technologyPractices?: TechnologyPractices;
+}
+
+/**
+ * Token usage from AI calls
+ */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
 }
 
 /**
@@ -101,6 +127,8 @@ export interface EnhancedScanResult extends ScanResult {
   aiEnhanced: boolean;
   aiProvider?: AIProvider;
   aiError?: string;
+  /** Token usage from AI analysis */
+  tokenUsage?: TokenUsage;
 }
 
 /**
@@ -246,10 +274,13 @@ export class AIEnhancer {
       }
 
       let analysis: AIAnalysisResult | null;
+      let tokenUsage: TokenUsage | undefined;
 
       if (this.agentic) {
         // Agentic mode: use tools to explore codebase
-        analysis = await this.enhanceAgentic(model, modelId, scanResult);
+        const result = await this.enhanceAgentic(model, modelId, scanResult);
+        analysis = result?.analysis ?? null;
+        tokenUsage = result?.tokenUsage;
       } else {
         // Simple mode: just analyze detected stack
         analysis = await this.enhanceSimple(model, modelId, scanResult);
@@ -273,6 +304,7 @@ export class AIEnhancer {
         aiAnalysis: analysis,
         aiEnhanced: true,
         aiProvider: this.provider,
+        tokenUsage,
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -321,7 +353,7 @@ export class AIEnhancer {
     model: ReturnType<typeof getModel>['model'],
     modelId: string,
     scanResult: ScanResult
-  ): Promise<AIAnalysisResult | null> {
+  ): Promise<{ analysis: AIAnalysisResult; tokenUsage?: TokenUsage } | null> {
     // Use the multi-agent system for deeper analysis
     const multiAgentResult = await runMultiAgentAnalysis(
       model,
@@ -337,11 +369,17 @@ export class AIEnhancer {
 
     if (!multiAgentResult) {
       // Fall back to simple agentic mode
-      return this.enhanceLegacyAgentic(model, modelId, scanResult);
+      const analysis = await this.enhanceLegacyAgentic(model, modelId, scanResult);
+      return analysis ? { analysis } : null;
     }
 
     // Convert MultiAgentAnalysis to AIAnalysisResult for backward compatibility
-    return convertMultiAgentToAIAnalysis(multiAgentResult);
+    const analysis = convertMultiAgentToAIAnalysis(multiAgentResult);
+
+    // Extract token usage from the multi-agent result
+    const tokenUsage = multiAgentResult.tokenUsage;
+
+    return { analysis, tokenUsage };
   }
 
   /**
@@ -435,6 +473,29 @@ When done exploring, output your final analysis as valid JSON matching this stru
  */
 function convertMultiAgentToAIAnalysis(multiAgent: MultiAgentAnalysis): AIAnalysisResult {
   const { codebaseAnalysis, stackResearch, mcpServers } = multiAgent;
+  const projectType = codebaseAnalysis.projectContext.projectType?.toLowerCase() || '';
+
+  // Determine E2E testing tool based on project type
+  const isMcpProject = projectType.includes('mcp');
+  let e2eTools: E2ETools | undefined;
+
+  if (isMcpProject) {
+    // MCP projects use the MCP Inspector (npx tool, not an MCP server)
+    e2eTools = {
+      tool: 'MCP Inspector',
+      command: 'npx @modelcontextprotocol/inspector',
+      description: 'Interactive debugging for MCP servers - test tools, resources, and prompts',
+      isMcpServer: false,
+    };
+  } else if (mcpServers.essential?.includes('playwright')) {
+    // Web apps and CLIs use Playwright MCP server
+    e2eTools = {
+      tool: 'playwright',
+      command: 'playwright MCP server',
+      description: 'Browser automation for E2E testing',
+      isMcpServer: true,
+    };
+  }
 
   return {
     projectContext: {
@@ -444,6 +505,7 @@ function convertMultiAgentToAIAnalysis(multiAgent: MultiAgentAnalysis): AIAnalys
     },
     commands: codebaseAnalysis.commands,
     implementationGuidelines: codebaseAnalysis.implementationGuidelines,
+    e2eTools,
     mcpServers: {
       essential: mcpServers.essential,
       recommended: mcpServers.recommended,
@@ -537,15 +599,32 @@ export function formatAIAnalysis(analysis: AIAnalysisResult): string {
     lines.push('');
   }
 
-  // MCP servers
+  // E2E Testing Tools
+  if (analysis.e2eTools) {
+    const e2e = analysis.e2eTools;
+    if (e2e.isMcpServer) {
+      lines.push(`E2E Testing: ${e2e.tool} MCP server`);
+    } else {
+      lines.push(`E2E Testing: ${e2e.command}`);
+      lines.push(`  ${e2e.description}`);
+    }
+    lines.push('');
+  }
+
+  // MCP servers (database, deployment, etc.)
   if (analysis.mcpServers) {
-    if (analysis.mcpServers.essential && analysis.mcpServers.essential.length > 0) {
-      lines.push(`MCP (essential): ${analysis.mcpServers.essential.join(', ')}`);
+    // Filter out e2eTesting from essential (it's shown separately now)
+    const essentialMcps = analysis.mcpServers.essential?.filter(
+      mcp => mcp !== 'playwright' && mcp !== 'mcp-inspector'
+    ) || [];
+
+    if (essentialMcps.length > 0) {
+      lines.push(`MCP Servers: ${essentialMcps.join(', ')}`);
     }
     if (analysis.mcpServers.recommended && analysis.mcpServers.recommended.length > 0) {
       lines.push(`MCP (optional): ${analysis.mcpServers.recommended.join(', ')}`);
     }
-    if (analysis.mcpServers.essential?.length || analysis.mcpServers.recommended?.length) {
+    if (essentialMcps.length || analysis.mcpServers.recommended?.length) {
       lines.push('');
     }
   }

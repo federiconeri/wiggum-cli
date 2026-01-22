@@ -82,8 +82,8 @@ export interface TechResearchResult {
 export interface RalphMcpServers {
   /** Database MCP server if applicable */
   database?: string;
-  /** E2E testing MCP (always playwright for ralph) */
-  e2eTesting: string;
+  /** E2E testing MCP (playwright for web apps, undefined for MCP projects) */
+  e2eTesting?: string;
   /** Any additional recommended MCPs */
   additional: string[];
 }
@@ -178,6 +178,15 @@ export interface McpRecommendations {
 /**
  * Combined result from all agents
  */
+/**
+ * Token usage from AI calls
+ */
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+}
+
 export interface MultiAgentAnalysis {
   /** Codebase analysis from the Codebase Analyst */
   codebaseAnalysis: CodebaseAnalysis;
@@ -185,6 +194,8 @@ export interface MultiAgentAnalysis {
   stackResearch: StackResearch;
   /** MCP server recommendations (merged from both agents) */
   mcpServers: McpRecommendations;
+  /** Token usage from AI calls */
+  tokenUsage?: TokenUsage;
 }
 
 /**

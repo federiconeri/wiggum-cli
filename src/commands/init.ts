@@ -5,7 +5,7 @@
 
 import { logger } from '../utils/logger.js';
 import { Scanner, type ScanResult } from '../scanner/index.js';
-import { Generator, formatGenerationResult } from '../generator/index.js';
+import { Generator, type GenerationResult } from '../generator/index.js';
 import {
   AIEnhancer,
   formatAIAnalysis,
@@ -17,16 +17,22 @@ import {
   getApiKeyEnvVar,
   getAvailableProvider,
   AVAILABLE_MODELS,
-  OPTIONAL_SERVICE_ENV_VARS,
-  hasTavilyKey,
-  hasContext7Key,
 } from '../ai/providers.js';
 import * as prompts from '@clack/prompts';
-import pc from 'picocolors';
 import fs from 'fs';
 import path from 'path';
-import { simpson, sectionHeader, drawLine } from '../utils/colors.js';
+import {
+  simpson,
+  compactHeader,
+  stackBox,
+  progressPhases,
+  fileTree,
+  nextStepsBox,
+  PASSWORD_MASK,
+  type ProgressPhase,
+} from '../utils/colors.js';
 import { flushTracing } from '../utils/tracing.js';
+import { createShimmerSpinner, type ShimmerSpinner } from '../utils/spinner.js';
 
 export interface InitOptions {
   provider?: AIProvider;
@@ -75,7 +81,7 @@ function getDefaultModel(provider: AIProvider): string {
 }
 
 /**
- * BYOK Flow: Collect API keys from user
+ * BYOK Flow: Collect API keys from user (simplified - no optional keys)
  */
 async function collectApiKeys(
   projectRoot: string,
@@ -83,8 +89,6 @@ async function collectApiKeys(
 ): Promise<{
   provider: AIProvider;
   model: string;
-  tavilyKey?: string;
-  context7Key?: string;
 } | null> {
   // Check if we already have an LLM key
   let provider: AIProvider = options.provider || 'anthropic';
@@ -101,9 +105,7 @@ async function collectApiKeys(
 
     // Need to collect LLM API key interactively
     console.log('');
-    console.log(simpson.yellow('─── API Key Setup ───'));
-    console.log('');
-    console.log('Ralph uses AI to analyze your codebase and generate configuration.');
+    console.log(compactHeader('API Key'));
     console.log('');
 
     // Select provider
@@ -123,19 +125,23 @@ async function collectApiKeys(
     provider = providerChoice as AIProvider;
     const envVar = getApiKeyEnvVar(provider);
 
-    // Get API key
+    // Get API key with fixed-length mask display
     const apiKeyInput = await prompts.password({
       message: `Enter your ${envVar}:`,
+      mask: '▪',
     });
 
     if (prompts.isCancel(apiKeyInput) || !apiKeyInput) {
-      logger.error('LLM API key is required to use Ralph.');
+      logger.error('API key is required to use Ralph.');
       return null;
     }
 
     // Set in process.env for this session
     process.env[envVar] = apiKeyInput;
     llmKeyEnteredThisSession = true;
+
+    // Show fixed-length mask instead of variable length
+    console.log(`  ${simpson.brown('│')} ${PASSWORD_MASK}`);
   } else if (!options.provider) {
     // Use the available provider
     provider = existingProvider || 'anthropic';
@@ -164,75 +170,27 @@ async function collectApiKeys(
     selectedModel = modelChoice as string;
   }
 
-  // Collect optional Tavily API key (skip in --yes mode)
-  let tavilyKey: string | undefined;
-  let tavilyKeyEnteredThisSession = false;
-
-  if (hasTavilyKey()) {
-    tavilyKey = process.env[OPTIONAL_SERVICE_ENV_VARS.tavily];
-  } else if (!options.yes) {
-    console.log('');
-    console.log(pc.dim('Tavily enables web search for current best practices (optional)'));
-
-    const tavilyInput = await prompts.password({
-      message: `Enter ${OPTIONAL_SERVICE_ENV_VARS.tavily} (press Enter to skip):`,
-    });
-
-    if (!prompts.isCancel(tavilyInput) && tavilyInput) {
-      tavilyKey = tavilyInput;
-      tavilyKeyEnteredThisSession = true;
-      process.env[OPTIONAL_SERVICE_ENV_VARS.tavily] = tavilyInput;
-    }
-  }
-
-  // Collect optional Context7 API key (skip in --yes mode)
-  let context7Key: string | undefined;
-  let context7KeyEnteredThisSession = false;
-
-  if (hasContext7Key()) {
-    context7Key = process.env[OPTIONAL_SERVICE_ENV_VARS.context7];
-  } else if (!options.yes) {
-    console.log(pc.dim('Context7 enables documentation lookup for your stack (optional)'));
-
-    const context7Input = await prompts.password({
-      message: `Enter ${OPTIONAL_SERVICE_ENV_VARS.context7} (press Enter to skip):`,
-    });
-
-    if (!prompts.isCancel(context7Input) && context7Input) {
-      context7Key = context7Input;
-      context7KeyEnteredThisSession = true;
-      process.env[OPTIONAL_SERVICE_ENV_VARS.context7] = context7Input;
-    }
-  }
-
-  // Save keys entered this session to .env.local
-  const keysToSave: Record<string, string> = {};
-
+  // Save key entered this session to .env.local
   if (llmKeyEnteredThisSession) {
     const llmEnvVar = getApiKeyEnvVar(provider);
-    keysToSave[llmEnvVar] = process.env[llmEnvVar]!;
-  }
-  if (tavilyKeyEnteredThisSession && tavilyKey) {
-    keysToSave[OPTIONAL_SERVICE_ENV_VARS.tavily] = tavilyKey;
-  }
-  if (context7KeyEnteredThisSession && context7Key) {
-    keysToSave[OPTIONAL_SERVICE_ENV_VARS.context7] = context7Key;
-  }
+    const keysToSave: Record<string, string> = {
+      [llmEnvVar]: process.env[llmEnvVar]!,
+    };
 
-  if (Object.keys(keysToSave).length > 0) {
     // In --yes mode, auto-save keys
     if (options.yes) {
       saveKeysToEnvLocal(projectRoot, keysToSave);
-      logger.success('API keys saved to .env.local');
+      logger.success('API key saved to .env.local');
     } else {
+      console.log('');
       const saveKeys = await prompts.confirm({
-        message: 'Save API keys to .env.local?',
+        message: 'Save API key to .env.local?',
         initialValue: true,
       });
 
       if (!prompts.isCancel(saveKeys) && saveKeys) {
         saveKeysToEnvLocal(projectRoot, keysToSave);
-        logger.success('API keys saved to .env.local');
+        logger.success('API key saved to .env.local');
       }
     }
   }
@@ -240,8 +198,6 @@ async function collectApiKeys(
   return {
     provider,
     model: selectedModel,
-    tavilyKey,
-    context7Key,
   };
 }
 
@@ -256,7 +212,57 @@ export async function initCommand(options: InitOptions): Promise<void> {
   logger.info(`Project: ${projectRoot}`);
   console.log('');
 
-  // Step 1: Collect API keys (BYOK)
+  // Define progress phases for display
+  const phases: ProgressPhase[] = [
+    { name: 'Scan project structure', status: 'pending' },
+    { name: 'Detect tech stack', status: 'pending' },
+    { name: 'AI codebase analysis', status: 'pending' },
+    { name: 'Generate configuration', status: 'pending' },
+  ];
+
+  const updatePhases = (index: number, status: ProgressPhase['status'], detail?: string) => {
+    phases[index].status = status;
+    phases[index].detail = detail;
+  };
+
+  // Step 1: Scan the project FIRST
+  // Use shimmer spinner with timer for better UX
+  const shimmerSpinner = createShimmerSpinner({ showTimer: true, style: 'shimmer' });
+
+  console.log(compactHeader('Analysis Steps'));
+  console.log('');
+  updatePhases(0, 'active');
+  console.log(progressPhases(phases));
+
+  shimmerSpinner.start('Scanning project...');
+
+  const scanner = new Scanner();
+  let scanResult: ScanResult;
+
+  try {
+    scanResult = await scanner.scan(projectRoot);
+    shimmerSpinner.stop('Project scanned');
+    updatePhases(0, 'complete');
+    updatePhases(1, 'complete');
+  } catch (error) {
+    shimmerSpinner.fail('Scan failed');
+    logger.error(`Failed to scan project: ${error instanceof Error ? error.message : String(error)}`);
+    await flushTracing();
+    process.exit(1);
+  }
+
+  // Step 2: Show detected stack
+  console.log('');
+  const { stack } = scanResult;
+  console.log(stackBox({
+    framework: stack.framework ? `${stack.framework.name}${stack.framework.version ? ` ${stack.framework.version}` : ''}` : undefined,
+    language: 'TypeScript', // Wiggum targets TypeScript projects
+    testing: stack.testing?.unit?.name,
+    packageManager: stack.packageManager?.name || 'npm',
+  }));
+  console.log('');
+
+  // Step 3: Collect API keys (BYOK)
   const apiKeys = await collectApiKeys(projectRoot, options);
 
   if (!apiKeys) {
@@ -270,51 +276,32 @@ export async function initCommand(options: InitOptions): Promise<void> {
     return;
   }
 
-  // Step 2: Scan the project (background)
-  const spinner = prompts.spinner();
-  spinner.start('Scanning project...');
-
-  const scanner = new Scanner();
-  let scanResult: ScanResult;
-
-  try {
-    scanResult = await scanner.scan(projectRoot);
-    spinner.stop('Project scanned');
-  } catch (error) {
-    spinner.stop('Scan failed');
-    logger.error(`Failed to scan project: ${error instanceof Error ? error.message : String(error)}`);
-    await flushTracing();
-    process.exit(1);
-  }
-
-  // Step 3: Run multi-agent AI analysis
+  // Step 4: Run AI analysis
   console.log('');
   const modelLabel = AVAILABLE_MODELS[apiKeys.provider].find(m => m.value === apiKeys.model)?.label || apiKeys.model;
 
-  // Show capabilities status
-  const capabilities: string[] = ['Codebase Analysis'];
-  if (apiKeys.tavilyKey) capabilities.push('Web Research');
-  if (apiKeys.context7Key) capabilities.push('Doc Lookup');
-
-  console.log(simpson.yellow(`─── AI Analysis (${apiKeys.provider} / ${modelLabel}) ───`));
-  console.log(pc.dim(`Capabilities: ${capabilities.join(' • ')}`));
+  console.log(compactHeader(`AI Analysis (${apiKeys.provider} / ${modelLabel})`));
   console.log('');
 
-  spinner.start('Starting AI analysis...');
+  // Update and show progress
+  updatePhases(2, 'active');
+  console.log(progressPhases(phases));
+  console.log('');
+
+  // Use shimmer spinner with timer and token tracking for AI analysis
+  const aiSpinner = createShimmerSpinner({ showTimer: true, showTokens: true, style: 'shimmer' });
+  aiSpinner.start('Starting AI analysis...');
 
   const aiEnhancer = new AIEnhancer({
     provider: apiKeys.provider,
     model: apiKeys.model,
-    verbose: false, // Disable verbose logging when using progress callback
-    agentic: true, // Always use agentic mode for deeper analysis
-    tavilyApiKey: apiKeys.tavilyKey,
-    context7ApiKey: apiKeys.context7Key,
+    verbose: false,
+    agentic: true,
     onProgress: (phase, detail) => {
-      // Update spinner with current phase
       if (detail) {
-        spinner.message(`${phase} - ${detail}`);
+        aiSpinner.update(`${phase} - ${detail}`);
       } else {
-        spinner.message(phase);
+        aiSpinner.update(phase);
       }
     },
   });
@@ -325,27 +312,30 @@ export async function initCommand(options: InitOptions): Promise<void> {
     enhancedResult = await aiEnhancer.enhance(scanResult);
 
     if (enhancedResult.aiEnhanced && enhancedResult.aiAnalysis) {
-      spinner.stop('AI analysis complete');
+      // Set token usage on spinner before stopping
+      if (enhancedResult.tokenUsage) {
+        aiSpinner.setTokens(enhancedResult.tokenUsage);
+      }
+      aiSpinner.stop('AI analysis complete');
+      updatePhases(2, 'complete');
       console.log('');
       console.log(formatAIAnalysis(enhancedResult.aiAnalysis));
     } else if (enhancedResult.aiError) {
-      spinner.stop('AI analysis failed');
+      aiSpinner.fail('AI analysis failed');
+      updatePhases(2, 'error', 'fallback to basic');
       logger.warn(`AI error: ${enhancedResult.aiError}`);
       console.log('');
-
-      // Fall back to basic scan result
       enhancedResult = { ...scanResult, aiEnhanced: false };
     }
   } catch (error) {
-    spinner.stop('AI analysis failed');
+    aiSpinner.fail('AI analysis failed');
+    updatePhases(2, 'error', 'fallback to basic');
     logger.warn(`AI error: ${error instanceof Error ? error.message : String(error)}`);
     console.log('');
-
-    // Fall back to basic scan result
     enhancedResult = { ...scanResult, aiEnhanced: false };
   }
 
-  // Step 4: Confirm with user (unless --yes)
+  // Step 5: Confirm with user (unless --yes)
   if (!options.yes) {
     const shouldContinue = await prompts.confirm({
       message: 'Generate Ralph configuration files?',
@@ -359,9 +349,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
   }
 
-  // Step 5: Generate configuration files
+  // Step 6: Generate configuration files
   console.log('');
-  spinner.start('Generating configuration files...');
+  updatePhases(3, 'active');
+  const genSpinner = createShimmerSpinner({ showTimer: true, style: 'shimmer' });
+  genSpinner.start('Generating configuration files...');
 
   const generator = new Generator({
     existingFiles: 'backup',
@@ -371,29 +363,42 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   try {
     const generationResult = await generator.generate(enhancedResult);
-    spinner.stop('Configuration files generated');
+    genSpinner.stop('Configuration files generated');
+    updatePhases(3, 'complete');
 
+    // Show file tree of what was generated
     console.log('');
-    console.log(simpson.yellow('─── Generation Results ───'));
-    console.log(formatGenerationResult(generationResult));
+    console.log(compactHeader('Generated Files'));
+    console.log('');
+    const generatedFiles = generationResult.writeSummary.results
+      .filter((f: { action: string }) => f.action === 'created' || f.action === 'backed_up' || f.action === 'overwritten')
+      .map((f: { path: string }) => {
+        // Normalize absolute paths to relative paths within .ralph/
+        const relativePath = path.relative(projectRoot, f.path);
+        return relativePath.replace(/^\.ralph[\\/]/, '');
+      });
+    console.log(fileTree('.ralph', generatedFiles));
 
     // Flush tracing spans before completing
     await flushTracing();
 
     if (generationResult.success) {
+      // Show next steps
+      console.log(nextStepsBox([
+        { command: 'ralph new my-feature', description: 'Create a feature specification' },
+        { command: 'ralph run my-feature', description: 'Start the development loop' },
+        { command: 'ralph monitor my-feature', description: 'Watch progress in real-time' },
+      ]));
+
+      console.log(`  ${simpson.brown('Documentation:')} .ralph/guides/AGENTS.md`);
       console.log('');
       logger.success('Ralph initialized successfully!');
-      console.log('');
-      console.log('Next steps:');
-      console.log('  1. Review the generated files in .ralph/');
-      console.log('  2. Customize the prompts in .ralph/prompts/');
-      console.log('  3. Run "ralph new <feature>" to create a feature spec');
-      console.log('  4. Run "ralph run <feature>" to start development');
     } else {
       logger.warn('Initialization completed with some errors');
     }
   } catch (error) {
-    spinner.stop('Generation failed');
+    genSpinner.fail('Generation failed');
+    updatePhases(3, 'error');
     logger.error(`Failed to generate files: ${error instanceof Error ? error.message : String(error)}`);
     await flushTracing();
     process.exit(1);
