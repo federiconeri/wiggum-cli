@@ -98,7 +98,7 @@ export function generateConfig(scanResult: ScanResult, customVars: Record<string
  * Generate ralph.config.js file content as JavaScript module
  */
 export function generateConfigFile(config: RalphConfig): string {
-  const content = `module.exports = ${JSON.stringify(config, null, 2)};
+  const content = `export default ${JSON.stringify(config, null, 2)};
 `;
 
   // Fix JSON to valid JS (unquote keys)

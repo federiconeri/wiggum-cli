@@ -13,7 +13,7 @@ export function createCli(): Command {
   const program = new Command();
 
   program
-    .name('ralph')
+    .name('wiggum')
     .description(
       'AI-powered feature development loop CLI.\n\n' +
         'Ralph auto-detects your tech stack and generates an intelligent\n' +
@@ -27,17 +27,17 @@ export function createCli(): Command {
       'after',
       `
 Examples:
-  $ ralph init                    Initialize Ralph with AI analysis
-  $ ralph new my-feature          Create a new feature specification
-  $ ralph run my-feature          Run the feature development loop
-  $ ralph monitor my-feature      Monitor progress in real-time
+  $ wiggum init                    Initialize Wiggum with AI analysis
+  $ wiggum new my-feature          Create a new feature specification
+  $ wiggum run my-feature          Run the feature development loop
+  $ wiggum monitor my-feature      Monitor progress in real-time
 
 Documentation:
-  https://github.com/your-org/ralph-cli#readme
+  https://github.com/your-org/wiggum-cli#readme
 `
     );
 
-  // ralph init
+  // wiggum init
   program
     .command('init')
     .description(
@@ -51,13 +51,15 @@ Documentation:
       'anthropic'
     )
     .option('-y, --yes', 'Accept defaults and skip all confirmation prompts')
+    .option('-i, --interactive', 'Stay in interactive REPL mode after initialization')
     .addHelpText(
       'after',
       `
 Examples:
-  $ ralph init                           Initialize with AI analysis
-  $ ralph init --provider openai         Use OpenAI provider
-  $ ralph init --yes                     Non-interactive mode
+  $ wiggum init                           Initialize with AI analysis
+  $ wiggum init --provider openai         Use OpenAI provider
+  $ wiggum init --yes                     Non-interactive mode
+  $ wiggum init -i                        Initialize and enter interactive mode
 
 API Keys (BYOK - Bring Your Own Keys):
   Required (one of):
@@ -78,7 +80,7 @@ API Keys (BYOK - Bring Your Own Keys):
       }
     });
 
-  // ralph run <feature>
+  // wiggum run <feature>
   program
     .command('run <feature>')
     .description(
@@ -112,14 +114,14 @@ API Keys (BYOK - Bring Your Own Keys):
       'after',
       `
 Examples:
-  $ ralph run user-auth                     Run the user-auth feature
-  $ ralph run payment --worktree            Run in isolated worktree
-  $ ralph run payment --resume              Resume interrupted session
-  $ ralph run my-feature --model opus       Use Claude Opus model
-  $ ralph run my-feature --max-iterations 30 --max-e2e-attempts 5
+  $ wiggum run user-auth                     Run the user-auth feature
+  $ wiggum run payment --worktree            Run in isolated worktree
+  $ wiggum run payment --resume              Resume interrupted session
+  $ wiggum run my-feature --model opus       Use Claude Opus model
+  $ wiggum run my-feature --max-iterations 30 --max-e2e-attempts 5
 
 Notes:
-  - Create a feature spec first with: ralph new <feature>
+  - Create a feature spec first with: wiggum new <feature>
   - The spec file should be at: .ralph/specs/<feature>.md
   - Use --worktree to run multiple features in parallel
 `
@@ -139,7 +141,7 @@ Notes:
       }
     });
 
-  // ralph monitor <feature>
+  // wiggum monitor <feature>
   program
     .command('monitor <feature>')
     .description(
@@ -162,9 +164,9 @@ Notes:
       'after',
       `
 Examples:
-  $ ralph monitor my-feature              Monitor with built-in dashboard
-  $ ralph monitor my-feature --interval 2 Refresh every 2 seconds
-  $ ralph monitor my-feature --bash       Use bash script monitor
+  $ wiggum monitor my-feature              Monitor with built-in dashboard
+  $ wiggum monitor my-feature --interval 2 Refresh every 2 seconds
+  $ wiggum monitor my-feature --bash       Use bash script monitor
 
 Dashboard Shows:
   - Current phase (Planning, Implementation, E2E Testing, etc.)
@@ -187,7 +189,7 @@ Dashboard Shows:
       }
     });
 
-  // ralph new <feature>
+  // wiggum new <feature>
   program
     .command('new <feature>')
     .description(
@@ -202,26 +204,34 @@ Dashboard Shows:
     )
     .option('-y, --yes', 'Skip confirmation prompts')
     .option('-f, --force', 'Overwrite existing spec file without prompting')
+    .option('--ai', 'Use AI interview to generate the spec')
+    .option(
+      '--provider <name>',
+      'AI provider for spec generation (anthropic, openai, openrouter)'
+    )
+    .option('--model <model>', 'Model to use for AI spec generation')
     .addHelpText(
       'after',
       `
 Examples:
-  $ ralph new user-dashboard              Create spec with prompts
-  $ ralph new user-dashboard --edit       Create and open in editor
-  $ ralph new user-dashboard -e --editor vim  Open in vim
-  $ ralph new user-dashboard --yes        Skip confirmations
-  $ ralph new user-dashboard --force      Overwrite if exists
+  $ wiggum new user-dashboard              Create spec from template
+  $ wiggum new user-dashboard --ai         Use AI interview to generate spec
+  $ wiggum new user-dashboard --edit       Create and open in editor
+  $ wiggum new user-dashboard -e --editor vim  Open in vim
+  $ wiggum new user-dashboard --yes        Skip confirmations
+  $ wiggum new user-dashboard --force      Overwrite if exists
 
 Output:
   Creates: .ralph/specs/<feature>.md
 
-Template includes sections for:
-  - Purpose and user stories
-  - Functional and non-functional requirements
-  - Technical notes and dependencies
-  - Visual requirements (for UI features)
-  - API endpoints
-  - Acceptance criteria
+AI Mode (--ai):
+  - Gathers context from URLs/files you provide
+  - Conducts an interview to understand your requirements
+  - Generates a detailed, project-specific specification
+
+Template Mode (default):
+  - Uses a standard template with sections for:
+    Purpose, user stories, requirements, technical notes, etc.
 `
     )
     .action(async (feature: string, options) => {
@@ -231,6 +241,9 @@ Template includes sections for:
           editor: options.editor,
           yes: options.yes,
           force: options.force,
+          ai: options.ai,
+          provider: options.provider,
+          model: options.model,
         };
         await newCommand(feature, newOptions);
       } catch (error) {

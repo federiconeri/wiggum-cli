@@ -31,6 +31,8 @@ import {
 } from '../utils/colors.js';
 import { flushTracing } from '../utils/tracing.js';
 import { createShimmerSpinner, type ShimmerSpinner } from '../utils/spinner.js';
+import { startRepl, createSessionState } from '../repl/index.js';
+import { loadConfigWithDefaults } from '../utils/config.js';
 
 const FIXED_MASK = '*'.repeat(32);
 
@@ -116,6 +118,7 @@ async function securePasswordInput(message: string): Promise<string | null> {
 export interface InitOptions {
   provider?: AIProvider;
   yes?: boolean;
+  interactive?: boolean;
 }
 
 /**
@@ -426,14 +429,27 @@ export async function initCommand(options: InitOptions): Promise<void> {
     if (generationResult.success) {
       // Show next steps
       console.log(nextStepsBox([
-        { command: 'ralph new my-feature', description: 'Create a feature specification' },
-        { command: 'ralph run my-feature', description: 'Start the development loop' },
-        { command: 'ralph monitor my-feature', description: 'Watch progress in real-time' },
+        { command: 'wiggum new my-feature', description: 'Create a feature specification' },
+        { command: 'wiggum run my-feature', description: 'Start the development loop' },
+        { command: 'wiggum monitor my-feature', description: 'Watch progress in real-time' },
       ]));
 
       console.log(`  ${simpson.brown('Documentation:')} .ralph/guides/AGENTS.md`);
       console.log('');
-      logger.success('Ralph initialized successfully!');
+      logger.success('Wiggum initialized successfully!');
+
+      // Start interactive REPL if requested
+      if (options.interactive) {
+        const config = await loadConfigWithDefaults(projectRoot);
+        const sessionState = createSessionState(
+          projectRoot,
+          apiKeys.provider,
+          apiKeys.model,
+          scanResult,
+          config
+        );
+        await startRepl(sessionState);
+      }
     } else {
       logger.warn('Initialization completed with some errors');
     }
