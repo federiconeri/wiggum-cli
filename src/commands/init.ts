@@ -21,7 +21,6 @@ import {
 import * as prompts from '@clack/prompts';
 import fs from 'fs';
 import path from 'path';
-import readline from 'readline';
 import {
   simpson,
   compactHeader,
@@ -34,85 +33,22 @@ import { createShimmerSpinner, type ShimmerSpinner } from '../utils/spinner.js';
 import { startRepl, createSessionState } from '../repl/index.js';
 import { loadConfigWithDefaults } from '../utils/config.js';
 
-const FIXED_MASK = '*'.repeat(32);
-
 /**
- * Secure password input with fixed-length mask (doesn't reveal key length)
- * Shows asterisks while typing for feedback, replaces with fixed mask on submit
+ * Secure password input using @clack/prompts
+ * Works correctly in both CLI and REPL contexts
  */
 async function securePasswordInput(message: string): Promise<string | null> {
-  return new Promise((resolve) => {
-    // Print the prompt message with clack-style formatting
-    process.stdout.write(`${simpson.brown('│')}\n`);
-    process.stdout.write(`${simpson.yellow('◆')}  ${message}\n`);
-    process.stdout.write(`${simpson.brown('│')}  `);
-
-    let input = '';
-    const linePrefix = `${simpson.brown('│')}  `;
-
-    const updateDisplay = () => {
-      // Show asterisks for visual feedback while typing
-      const display = '*'.repeat(input.length);
-      process.stdout.write(`\r${linePrefix}${display}`);
-    };
-
-    const cleanup = () => {
-      if (process.stdin.isTTY) {
-        process.stdin.setRawMode(false);
-      }
-      process.stdin.removeListener('data', onData);
-      process.stdin.pause();
-    };
-
-    const onData = (key: string) => {
-      // Ctrl+C - cancel
-      if (key === '\u0003') {
-        cleanup();
-        process.stdout.write('\n');
-        resolve(null);
-        return;
-      }
-
-      // Enter - submit
-      if (key === '\r' || key === '\n') {
-        cleanup();
-        // Clear line and show fixed mask (hides actual length)
-        process.stdout.write(`\r${linePrefix}${FIXED_MASK}\n`);
-        // Return trimmed input, filtering any control characters
-        const cleanInput = input.trim().replace(/[\x00-\x1F\x7F]/g, '');
-        resolve(cleanInput);
-        return;
-      }
-
-      // Backspace - delete last char
-      if (key === '\u007F' || key === '\b') {
-        if (input.length > 0) {
-          input = input.slice(0, -1);
-          // Clear extra char from display
-          process.stdout.write(`\r${linePrefix}${'*'.repeat(input.length)} \b`);
-        }
-        return;
-      }
-
-      // Filter: only accept printable ASCII characters (space to tilde)
-      // This handles paste correctly by filtering each character
-      for (const char of key) {
-        const code = char.charCodeAt(0);
-        if (code >= 32 && code <= 126) {
-          input += char;
-        }
-      }
-      updateDisplay();
-    };
-
-    // Enable raw mode to capture keystrokes without echo
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(true);
-    }
-    process.stdin.resume();
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', onData);
+  const result = await prompts.password({
+    message,
+    mask: '*',
   });
+
+  if (prompts.isCancel(result)) {
+    return null;
+  }
+
+  // Return trimmed input, filtering any control characters
+  return (result as string).trim().replace(/[\x00-\x1F\x7F]/g, '') || null;
 }
 
 export interface InitOptions {
