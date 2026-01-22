@@ -36,6 +36,7 @@ const FIXED_MASK = '*'.repeat(32);
 
 /**
  * Secure password input with fixed-length mask (doesn't reveal key length)
+ * Shows asterisks while typing for feedback, replaces with fixed mask on submit
  */
 async function securePasswordInput(message: string): Promise<string | null> {
   return new Promise((resolve) => {
@@ -45,21 +46,26 @@ async function securePasswordInput(message: string): Promise<string | null> {
     process.stdout.write(`${simpson.brown('│')}  `);
 
     let input = '';
+    const linePrefix = `${simpson.brown('│')}  `;
 
-    // Enable raw mode to capture keystrokes without echo
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(true);
-    }
-    process.stdin.resume();
-    process.stdin.setEncoding('utf8');
+    const updateDisplay = () => {
+      // Show asterisks for visual feedback while typing
+      const display = '*'.repeat(input.length);
+      process.stdout.write(`\r${linePrefix}${display}`);
+    };
+
+    const cleanup = () => {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.removeListener('data', onData);
+      process.stdin.pause();
+    };
 
     const onData = (key: string) => {
       // Ctrl+C - cancel
       if (key === '\u0003') {
-        if (process.stdin.isTTY) {
-          process.stdin.setRawMode(false);
-        }
-        process.stdin.removeListener('data', onData);
+        cleanup();
         process.stdout.write('\n');
         resolve(null);
         return;
@@ -67,13 +73,12 @@ async function securePasswordInput(message: string): Promise<string | null> {
 
       // Enter - submit
       if (key === '\r' || key === '\n') {
-        if (process.stdin.isTTY) {
-          process.stdin.setRawMode(false);
-        }
-        process.stdin.removeListener('data', onData);
-        // Clear line and show fixed mask
-        process.stdout.write(`\r${simpson.brown('│')}  ${FIXED_MASK}\n`);
-        resolve(input);
+        cleanup();
+        // Clear line and show fixed mask (hides actual length)
+        process.stdout.write(`\r${linePrefix}${FIXED_MASK}\n`);
+        // Return trimmed input, filtering any control characters
+        const cleanInput = input.trim().replace(/[\x00-\x1F\x7F]/g, '');
+        resolve(cleanInput);
         return;
       }
 
@@ -81,14 +86,29 @@ async function securePasswordInput(message: string): Promise<string | null> {
       if (key === '\u007F' || key === '\b') {
         if (input.length > 0) {
           input = input.slice(0, -1);
+          // Clear extra char from display
+          process.stdout.write(`\r${linePrefix}${'*'.repeat(input.length)} \b`);
         }
         return;
       }
 
-      // Handle paste (multiple chars at once) or single char
-      input += key;
+      // Filter: only accept printable ASCII characters (space to tilde)
+      // This handles paste correctly by filtering each character
+      for (const char of key) {
+        const code = char.charCodeAt(0);
+        if (code >= 32 && code <= 126) {
+          input += char;
+        }
+      }
+      updateDisplay();
     };
 
+    // Enable raw mode to capture keystrokes without echo
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
     process.stdin.on('data', onData);
   });
 }
