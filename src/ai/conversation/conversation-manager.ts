@@ -52,7 +52,6 @@ function formatCodebaseSummary(scanResult: ScanResult): string {
     parts.push(`Framework: ${stack.framework.name}${stack.framework.version ? ` v${stack.framework.version}` : ''}`);
   }
 
-
   if (stack.testing?.unit) {
     parts.push(`Unit Testing: ${stack.testing.unit.name}`);
   }

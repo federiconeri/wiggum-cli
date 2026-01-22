@@ -25,7 +25,8 @@ const PROMPT = `${simpson.yellow('wiggum')}${simpson.brown('>')} `;
  */
 async function handleNewCommand(
   args: string[],
-  state: SessionState
+  state: SessionState,
+  rl: readline.Interface
 ): Promise<SessionState> {
   if (args.length === 0) {
     logger.error('Feature name required. Usage: /new <feature-name>');
@@ -34,10 +35,22 @@ async function handleNewCommand(
 
   const featureName = args[0];
 
-  // For now, delegate to the existing new command behavior
-  // This will be enhanced in Phase 3 with AI spec generation
-  const { newCommand } = await import('../commands/new.js');
-  await newCommand(featureName, { yes: false });
+  // Pause REPL readline to avoid conflicts with subcommand's stdin usage
+  rl.pause();
+
+  try {
+    // Delegate to the existing new command behavior
+    const { newCommand } = await import('../commands/new.js');
+    await newCommand(featureName, {
+      yes: false,
+      scanResult: state.scanResult,
+      provider: state.provider,
+      model: state.model,
+    });
+  } finally {
+    // Resume REPL readline after subcommand completes
+    rl.resume();
+  }
 
   return state;
 }
@@ -47,7 +60,8 @@ async function handleNewCommand(
  */
 async function handleRunCommand(
   args: string[],
-  state: SessionState
+  state: SessionState,
+  rl: readline.Interface
 ): Promise<SessionState> {
   if (args.length === 0) {
     logger.error('Feature name required. Usage: /run <feature-name>');
@@ -55,7 +69,15 @@ async function handleRunCommand(
   }
 
   const featureName = args[0];
-  await runCommand(featureName, {});
+
+  // Pause REPL readline to avoid conflicts with subcommand's stdin usage
+  rl.pause();
+
+  try {
+    await runCommand(featureName, {});
+  } finally {
+    rl.resume();
+  }
 
   return state;
 }
@@ -65,7 +87,8 @@ async function handleRunCommand(
  */
 async function handleMonitorCommand(
   args: string[],
-  state: SessionState
+  state: SessionState,
+  rl: readline.Interface
 ): Promise<SessionState> {
   if (args.length === 0) {
     logger.error('Feature name required. Usage: /monitor <feature-name>');
@@ -73,7 +96,15 @@ async function handleMonitorCommand(
   }
 
   const featureName = args[0];
-  await monitorCommand(featureName, {});
+
+  // Pause REPL readline to avoid conflicts with subcommand's stdin usage
+  rl.pause();
+
+  try {
+    await monitorCommand(featureName, {});
+  } finally {
+    rl.resume();
+  }
 
   return state;
 }
@@ -93,17 +124,18 @@ function handleHelpCommand(): void {
 async function executeCommand(
   commandName: ReplCommandName,
   args: string[],
-  state: SessionState
+  state: SessionState,
+  rl: readline.Interface
 ): Promise<{ state: SessionState; shouldExit: boolean }> {
   switch (commandName) {
     case 'new':
-      return { state: await handleNewCommand(args, state), shouldExit: false };
+      return { state: await handleNewCommand(args, state, rl), shouldExit: false };
 
     case 'run':
-      return { state: await handleRunCommand(args, state), shouldExit: false };
+      return { state: await handleRunCommand(args, state, rl), shouldExit: false };
 
     case 'monitor':
-      return { state: await handleMonitorCommand(args, state), shouldExit: false };
+      return { state: await handleMonitorCommand(args, state, rl), shouldExit: false };
 
     case 'help':
       handleHelpCommand();
@@ -144,7 +176,8 @@ async function handleNaturalLanguage(
  */
 async function processInput(
   input: string,
-  state: SessionState
+  state: SessionState,
+  rl: readline.Interface
 ): Promise<{ state: SessionState; shouldExit: boolean }> {
   const parsed = parseInput(input);
 
@@ -164,7 +197,7 @@ async function processInput(
         return { state, shouldExit: false };
       }
 
-      return executeCommand(resolvedName, command.args, state);
+      return executeCommand(resolvedName, command.args, state, rl);
     }
 
     case 'natural-language': {
@@ -213,7 +246,7 @@ export async function startRepl(initialState: SessionState): Promise<void> {
 
   for await (const line of rl) {
     try {
-      const result = await processInput(line, state);
+      const result = await processInput(line, state, rl);
       state = result.state;
 
       if (result.shouldExit) {

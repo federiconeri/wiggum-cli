@@ -11,6 +11,9 @@ import type { AIProvider } from '../providers.js';
 import type { ScanResult } from '../../scanner/types.js';
 import { simpson } from '../../utils/colors.js';
 
+/** Maximum number of interview questions before auto-completing */
+const MAX_INTERVIEW_QUESTIONS = 10;
+
 /**
  * Spec generator options
  */
@@ -203,9 +206,8 @@ export class SpecGenerator {
     console.log('');
 
     let questionCount = 0;
-    const maxQuestions = 10; // Safety limit
 
-    while (questionCount < maxQuestions) {
+    while (questionCount < MAX_INTERVIEW_QUESTIONS) {
       const answer = await promptUser(`${simpson.brown('you>')} `);
 
       if (answer.toLowerCase() === 'done' || answer.toLowerCase() === 'skip') {
@@ -291,11 +293,20 @@ Today's date is ${new Date().toISOString().split('T')[0]}.`;
 
       return spec;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('readline was closed')) {
-        console.log('');
-        console.log(pc.dim('Spec generation cancelled.'));
-        return null;
+      // Handle user cancellation (Ctrl+C, Ctrl+D, or readline closed)
+      if (error instanceof Error) {
+        const message = error.message.toLowerCase();
+        if (
+          message.includes('readline was closed') ||
+          message.includes('aborted') ||
+          message.includes('cancel')
+        ) {
+          console.log('');
+          console.log(pc.dim('Spec generation cancelled.'));
+          return null;
+        }
       }
+      // Re-throw unexpected errors
       throw error;
     }
   }
