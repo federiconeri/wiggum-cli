@@ -23,7 +23,7 @@ function getVersion(): string {
 export function displayHeader(): void {
   const version = getVersion();
   // Welcome box like Claude Code with version
-  const welcomeText = '🍩 Welcome to ' + simpson.yellow('Wiggum CLI') + ': AI-powered ' + simpson.yellow('Ralph') + ' development loop CLI ' + simpson.pink(`v${version}`) + ' 🍩';
+  const welcomeText = '🍩 Welcome to Wiggum CLI: AI-powered ' + simpson.yellow('Ralph') + ' development loop CLI 🍩 ' + simpson.pink(`v${version}`);
   console.log('');
   console.log(drawBox(welcomeText, 2));
   console.log('');

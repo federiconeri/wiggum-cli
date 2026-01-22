@@ -25,11 +25,8 @@ import {
   simpson,
   compactHeader,
   stackBox,
-  progressPhases,
   fileTree,
   nextStepsBox,
-  PASSWORD_MASK,
-  type ProgressPhase,
 } from '../utils/colors.js';
 import { flushTracing } from '../utils/tracing.js';
 import { createShimmerSpinner, type ShimmerSpinner } from '../utils/spinner.js';
@@ -139,9 +136,6 @@ async function collectApiKeys(
     // Set in process.env for this session
     process.env[envVar] = apiKeyInput;
     llmKeyEnteredThisSession = true;
-
-    // Show fixed-length mask instead of variable length
-    console.log(`  ${simpson.brown('│')} ${PASSWORD_MASK}`);
   } else if (!options.provider) {
     // Use the available provider
     provider = existingProvider || 'anthropic';
@@ -212,40 +206,18 @@ export async function initCommand(options: InitOptions): Promise<void> {
   logger.info(`Project: ${projectRoot}`);
   console.log('');
 
-  // Define progress phases for display
-  const phases: ProgressPhase[] = [
-    { name: 'Scan project structure', status: 'pending' },
-    { name: 'Detect tech stack', status: 'pending' },
-    { name: 'AI codebase analysis', status: 'pending' },
-    { name: 'Generate configuration', status: 'pending' },
-  ];
-
-  const updatePhases = (index: number, status: ProgressPhase['status'], detail?: string) => {
-    phases[index].status = status;
-    phases[index].detail = detail;
-  };
-
-  // Step 1: Scan the project FIRST
-  // Use shimmer spinner with timer for better UX
-  const shimmerSpinner = createShimmerSpinner({ showTimer: true, style: 'shimmer' });
-
-  console.log(compactHeader('Analysis Steps'));
-  console.log('');
-  updatePhases(0, 'active');
-  console.log(progressPhases(phases));
-
-  shimmerSpinner.start('Scanning project...');
+  // Step 1: Scan the project
+  const scanSpinner = createShimmerSpinner({ showTimer: true, style: 'shimmer' });
+  scanSpinner.start('Scanning project structure...');
 
   const scanner = new Scanner();
   let scanResult: ScanResult;
 
   try {
     scanResult = await scanner.scan(projectRoot);
-    shimmerSpinner.stop('Project scanned');
-    updatePhases(0, 'complete');
-    updatePhases(1, 'complete');
+    scanSpinner.stop('Project scanned');
   } catch (error) {
-    shimmerSpinner.fail('Scan failed');
+    scanSpinner.fail('Scan failed');
     logger.error(`Failed to scan project: ${error instanceof Error ? error.message : String(error)}`);
     await flushTracing();
     process.exit(1);
@@ -283,14 +255,9 @@ export async function initCommand(options: InitOptions): Promise<void> {
   console.log(compactHeader(`AI Analysis (${apiKeys.provider} / ${modelLabel})`));
   console.log('');
 
-  // Update and show progress
-  updatePhases(2, 'active');
-  console.log(progressPhases(phases));
-  console.log('');
-
   // Use shimmer spinner with timer and token tracking for AI analysis
   const aiSpinner = createShimmerSpinner({ showTimer: true, showTokens: true, style: 'shimmer' });
-  aiSpinner.start('Starting AI analysis...');
+  aiSpinner.start('Analyzing codebase...');
 
   const aiEnhancer = new AIEnhancer({
     provider: apiKeys.provider,
@@ -317,19 +284,16 @@ export async function initCommand(options: InitOptions): Promise<void> {
         aiSpinner.setTokens(enhancedResult.tokenUsage);
       }
       aiSpinner.stop('AI analysis complete');
-      updatePhases(2, 'complete');
       console.log('');
       console.log(formatAIAnalysis(enhancedResult.aiAnalysis));
     } else if (enhancedResult.aiError) {
       aiSpinner.fail('AI analysis failed');
-      updatePhases(2, 'error', 'fallback to basic');
       logger.warn(`AI error: ${enhancedResult.aiError}`);
       console.log('');
       enhancedResult = { ...scanResult, aiEnhanced: false };
     }
   } catch (error) {
     aiSpinner.fail('AI analysis failed');
-    updatePhases(2, 'error', 'fallback to basic');
     logger.warn(`AI error: ${error instanceof Error ? error.message : String(error)}`);
     console.log('');
     enhancedResult = { ...scanResult, aiEnhanced: false };
@@ -351,7 +315,6 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   // Step 6: Generate configuration files
   console.log('');
-  updatePhases(3, 'active');
   const genSpinner = createShimmerSpinner({ showTimer: true, style: 'shimmer' });
   genSpinner.start('Generating configuration files...');
 
@@ -364,7 +327,6 @@ export async function initCommand(options: InitOptions): Promise<void> {
   try {
     const generationResult = await generator.generate(enhancedResult);
     genSpinner.stop('Configuration files generated');
-    updatePhases(3, 'complete');
 
     // Show file tree of what was generated
     console.log('');
@@ -398,7 +360,6 @@ export async function initCommand(options: InitOptions): Promise<void> {
     }
   } catch (error) {
     genSpinner.fail('Generation failed');
-    updatePhases(3, 'error');
     logger.error(`Failed to generate files: ${error instanceof Error ? error.message : String(error)}`);
     await flushTracing();
     process.exit(1);
