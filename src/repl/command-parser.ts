@@ -33,6 +33,11 @@ export interface ParsedInput {
  * Available REPL commands
  */
 export const REPL_COMMANDS = {
+  init: {
+    description: 'Initialize Wiggum in this project',
+    usage: '/init',
+    aliases: ['i'],
+  },
   new: {
     description: 'Create a new feature specification',
     usage: '/new <feature-name>',

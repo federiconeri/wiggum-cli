@@ -122,6 +122,17 @@ export interface InitOptions {
 }
 
 /**
+ * Result of the init workflow
+ */
+export interface InitResult {
+  success: boolean;
+  provider: AIProvider;
+  model: string;
+  scanResult: ScanResult;
+  config: import('../utils/config.js').RalphConfig | null;
+}
+
+/**
  * Save API keys to .env.local file
  */
 function saveKeysToEnvLocal(
@@ -278,12 +289,15 @@ async function collectApiKeys(
 }
 
 /**
- * Initialize Ralph in the current project
- * Uses BYOK (Bring Your Own Keys) model with multi-agent AI analysis
+ * Run the init workflow
+ * Reusable core logic for both CLI and REPL usage
+ * Returns InitResult on success, null on cancellation
+ * Throws on hard errors
  */
-export async function initCommand(options: InitOptions): Promise<void> {
-  const projectRoot = process.cwd();
-
+export async function runInitWorkflow(
+  projectRoot: string,
+  options: InitOptions
+): Promise<InitResult | null> {
   logger.info('Initializing Ralph...');
   logger.info(`Project: ${projectRoot}`);
   console.log('');
@@ -300,9 +314,8 @@ export async function initCommand(options: InitOptions): Promise<void> {
     scanSpinner.stop('Project scanned');
   } catch (error) {
     scanSpinner.fail('Scan failed');
-    logger.error(`Failed to scan project: ${error instanceof Error ? error.message : String(error)}`);
     await flushTracing();
-    process.exit(1);
+    throw new Error(`Failed to scan project: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   // Step 2: Show detected stack
@@ -320,14 +333,9 @@ export async function initCommand(options: InitOptions): Promise<void> {
   const apiKeys = await collectApiKeys(projectRoot, options);
 
   if (!apiKeys) {
-    // In --yes mode, null means missing API key (hard failure)
-    // In interactive mode, null means user cancelled
+    // User cancelled or missing API key in --yes mode
     await flushTracing();
-    if (options.yes) {
-      process.exit(1);
-    }
-    logger.info('Initialization cancelled');
-    return;
+    return null;
   }
 
   // Step 4: Run AI analysis
@@ -390,8 +398,7 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
     if (prompts.isCancel(shouldContinue) || !shouldContinue) {
       await flushTracing();
-      logger.info('Initialization cancelled');
-      return;
+      return null;
     }
   }
 
@@ -427,36 +434,77 @@ export async function initCommand(options: InitOptions): Promise<void> {
     await flushTracing();
 
     if (generationResult.success) {
-      // Show next steps
+      // Show next steps (REPL-aware)
       console.log(nextStepsBox([
-        { command: 'wiggum new my-feature', description: 'Create a feature specification' },
-        { command: 'wiggum run my-feature', description: 'Start the development loop' },
-        { command: 'wiggum monitor my-feature', description: 'Watch progress in real-time' },
+        { command: '/new my-feature', description: 'Create a feature specification' },
+        { command: '/run my-feature', description: 'Start the development loop' },
+        { command: '/help', description: 'Show all available commands' },
       ]));
 
       console.log(`  ${simpson.brown('Documentation:')} .ralph/guides/AGENTS.md`);
       console.log('');
       logger.success('Wiggum initialized successfully!');
 
-      // Start interactive REPL if requested
-      if (options.interactive) {
-        const config = await loadConfigWithDefaults(projectRoot);
-        const sessionState = createSessionState(
-          projectRoot,
-          apiKeys.provider,
-          apiKeys.model,
-          scanResult,
-          config
-        );
-        await startRepl(sessionState);
-      }
+      // Load config and return result
+      const config = await loadConfigWithDefaults(projectRoot);
+      return {
+        success: true,
+        provider: apiKeys.provider,
+        model: apiKeys.model,
+        scanResult,
+        config,
+      };
     } else {
       logger.warn('Initialization completed with some errors');
+      const config = await loadConfigWithDefaults(projectRoot);
+      return {
+        success: true, // Still return success to continue
+        provider: apiKeys.provider,
+        model: apiKeys.model,
+        scanResult,
+        config,
+      };
     }
   } catch (error) {
     genSpinner.fail('Generation failed');
-    logger.error(`Failed to generate files: ${error instanceof Error ? error.message : String(error)}`);
     await flushTracing();
+    throw new Error(`Failed to generate files: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/**
+ * Initialize Ralph in the current project
+ * Uses BYOK (Bring Your Own Keys) model with multi-agent AI analysis
+ */
+export async function initCommand(options: InitOptions): Promise<void> {
+  const projectRoot = process.cwd();
+
+  try {
+    const result = await runInitWorkflow(projectRoot, options);
+
+    if (!result) {
+      // Cancelled by user or missing API key
+      if (options.yes) {
+        process.exit(1);
+      }
+      logger.info('Initialization cancelled');
+      return;
+    }
+
+    // Start interactive REPL if requested
+    if (options.interactive) {
+      const sessionState = createSessionState(
+        projectRoot,
+        result.provider,
+        result.model,
+        result.scanResult,
+        result.config,
+        true // initialized
+      );
+      await startRepl(sessionState);
+    }
+  } catch (error) {
+    logger.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
 }

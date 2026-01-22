@@ -16,7 +16,7 @@ export interface SessionState {
   /** Loaded Ralph configuration */
   config: RalphConfig | null;
   /** AI provider being used */
-  provider: AIProvider;
+  provider: AIProvider | null;
   /** Model to use for AI operations */
   model: string;
   /** Cached scan result from init */
@@ -25,6 +25,8 @@ export interface SessionState {
   conversationMode: boolean;
   /** Current conversation context (e.g., 'spec-generation') */
   conversationContext?: string;
+  /** Whether /init has been run in this session */
+  initialized: boolean;
 }
 
 /**
@@ -32,10 +34,11 @@ export interface SessionState {
  */
 export function createSessionState(
   projectRoot: string,
-  provider: AIProvider,
+  provider: AIProvider | null,
   model: string,
   scanResult?: ScanResult,
-  config?: RalphConfig | null
+  config?: RalphConfig | null,
+  initialized?: boolean
 ): SessionState {
   return {
     projectRoot,
@@ -45,6 +48,7 @@ export function createSessionState(
     scanResult,
     conversationMode: false,
     conversationContext: undefined,
+    initialized: initialized ?? false,
   };
 }
 

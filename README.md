@@ -32,21 +32,24 @@ npm install -g wiggum-cli
 ## Quick Start
 
 ```bash
-# 1. Initialize Wiggum in your project
-npx wiggum-cli init
+# REPL-first: Just run wiggum to start interactive mode
+wiggum
 
-# 2. Create a new feature specification (with AI interview)
-wiggum new my-feature --ai
+# Inside the REPL:
+wiggum> /init              # Initialize (scans project, configures AI)
+wiggum> /new my-feature    # Create spec with AI interview
+wiggum> /run my-feature    # Run the development loop
+wiggum> /exit              # Exit when done
+```
 
-# 3. Or use interactive mode (stays in REPL after init)
-wiggum init -i
-# Then use: /new my-feature, /run my-feature, /help, /exit
+### CLI Mode (for scripts/CI)
 
-# 4. Run the feature development loop
-wiggum run my-feature
-
-# 5. Monitor progress in real-time
-wiggum monitor my-feature
+```bash
+# Traditional CLI commands still work
+wiggum init                # Initialize project
+wiggum new my-feature --ai # Create spec with AI
+wiggum run my-feature      # Run the loop
+wiggum monitor my-feature  # Monitor progress
 ```
 
 ## Commands
@@ -190,35 +193,53 @@ The AI-powered spec generation guides you through a 4-phase interview:
 3. **Interview** - AI asks clarifying questions (3-5 questions typically)
 4. **Generation** - AI generates a detailed, project-specific specification
 
-## Interactive REPL Mode
+## Interactive REPL Mode (Default)
 
-Start an interactive session after initialization with `-i`:
+**REPL-first:** Running `wiggum` with no arguments opens the interactive REPL:
 
 ```bash
-wiggum init -i
+wiggum
 ```
 
-Once in REPL mode, use slash commands:
+This is the recommended way to use Wiggum - all commands are available interactively with persistent session state.
 
-| Command | Description |
-|---------|-------------|
-| `/new <feature>` | Create a new feature spec (with AI interview) |
-| `/run <feature>` | Run the feature development loop |
-| `/monitor <feature>` | Monitor a running feature |
-| `/help` | Show available commands |
-| `/exit` | Exit the REPL |
+### REPL Commands
 
-**Aliases:** `/n`, `/r`, `/m`, `/h`, `/q`
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `/init` | `/i` | Initialize Wiggum in this project |
+| `/new <feature>` | `/n` | Create a new feature spec (AI interview) |
+| `/run <feature>` | `/r` | Run the feature development loop |
+| `/monitor <feature>` | `/m` | Monitor a running feature |
+| `/help` | `/h`, `/?` | Show available commands |
+| `/exit` | `/q`, `/quit` | Exit the REPL |
+
+### Example Session
 
 ```bash
+$ wiggum
+
+Wiggum Interactive Mode
+Not initialized. Run /init to set up this project.
+
+wiggum> /init
+# Scans project, prompts for API key, runs AI analysis...
+
 wiggum> /new user-dashboard
-# AI interview starts...
+# AI interview starts (no --ai flag needed in REPL)...
 
 wiggum> /run user-dashboard
 # Development loop starts...
 
 wiggum> /exit
 ```
+
+### Benefits of REPL Mode
+
+- **Simpler mental model** - One entry point, everything inside REPL
+- **No flags to remember** - AI mode is default for `/new`
+- **Persistent session** - Scan result, provider, model carry through
+- **Discoverable commands** - `/help` always available
 
 ---
 

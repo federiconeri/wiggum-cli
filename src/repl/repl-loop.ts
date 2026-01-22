@@ -9,6 +9,8 @@ import { logger } from '../utils/logger.js';
 import { simpson } from '../utils/colors.js';
 import { runCommand } from '../commands/run.js';
 import { monitorCommand } from '../commands/monitor.js';
+import { runInitWorkflow } from '../commands/init.js';
+import { hasConfig } from '../utils/config.js';
 import type { SessionState } from './session-state.js';
 import { updateSessionState } from './session-state.js';
 import {
@@ -21,13 +23,64 @@ import {
 const PROMPT = `${simpson.yellow('wiggum')}${simpson.brown('>')} `;
 
 /**
- * Handler for the /new command - will be enhanced in Phase 3
+ * Handler for the /init command
+ */
+async function handleInitCommand(
+  _args: string[],
+  state: SessionState,
+  rl: readline.Interface
+): Promise<SessionState> {
+  // Check if already initialized
+  if (state.initialized && hasConfig(state.projectRoot)) {
+    logger.warn('Project is already initialized. Re-running init will update configuration.');
+    console.log('');
+  }
+
+  // Pause REPL readline to avoid conflicts with subcommand's stdin usage
+  rl.pause();
+
+  try {
+    const result = await runInitWorkflow(state.projectRoot, {
+      yes: false, // Always interactive in REPL
+    });
+
+    if (result) {
+      // Update state with init result
+      return updateSessionState(state, {
+        provider: result.provider,
+        model: result.model,
+        scanResult: result.scanResult,
+        config: result.config,
+        initialized: true,
+      });
+    }
+
+    // User cancelled
+    return state;
+  } catch (error) {
+    logger.error(`Init failed: ${error instanceof Error ? error.message : String(error)}`);
+    return state;
+  } finally {
+    // Resume REPL readline after subcommand completes
+    rl.resume();
+  }
+}
+
+/**
+ * Handler for the /new command
+ * Always uses AI interview mode in REPL (falls back to template if no API key)
  */
 async function handleNewCommand(
   args: string[],
   state: SessionState,
   rl: readline.Interface
 ): Promise<SessionState> {
+  // Check if initialized
+  if (!state.initialized && !hasConfig(state.projectRoot)) {
+    logger.warn('Project not initialized. Run /init first.');
+    return state;
+  }
+
   if (args.length === 0) {
     logger.error('Feature name required. Usage: /new <feature-name>');
     return state;
@@ -40,12 +93,14 @@ async function handleNewCommand(
 
   try {
     // Delegate to the existing new command behavior
+    // Always use AI mode in REPL (the command handles fallback to template if no API key)
     const { newCommand } = await import('../commands/new.js');
     await newCommand(featureName, {
       yes: false,
       scanResult: state.scanResult,
-      provider: state.provider,
+      provider: state.provider ?? undefined,
       model: state.model,
+      ai: true, // Always use AI interview in REPL
     });
   } finally {
     // Resume REPL readline after subcommand completes
@@ -63,6 +118,12 @@ async function handleRunCommand(
   state: SessionState,
   rl: readline.Interface
 ): Promise<SessionState> {
+  // Check if initialized
+  if (!state.initialized && !hasConfig(state.projectRoot)) {
+    logger.warn('Project not initialized. Run /init first.');
+    return state;
+  }
+
   if (args.length === 0) {
     logger.error('Feature name required. Usage: /run <feature-name>');
     return state;
@@ -128,6 +189,9 @@ async function executeCommand(
   rl: readline.Interface
 ): Promise<{ state: SessionState; shouldExit: boolean }> {
   switch (commandName) {
+    case 'init':
+      return { state: await handleInitCommand(args, state, rl), shouldExit: false };
+
     case 'new':
       return { state: await handleNewCommand(args, state, rl), shouldExit: false };
 
@@ -218,7 +282,13 @@ export async function startRepl(initialState: SessionState): Promise<void> {
 
   console.log('');
   console.log(simpson.yellow('Wiggum Interactive Mode'));
-  console.log(pc.dim('Type /help for commands, /exit to quit'));
+
+  // Show context-aware welcome message
+  if (!state.initialized && !hasConfig(state.projectRoot)) {
+    console.log(pc.dim('Not initialized. Run /init to set up this project.'));
+  } else {
+    console.log(pc.dim('Type /help for commands, /exit to quit'));
+  }
   console.log('');
 
   const rl = readline.createInterface({
