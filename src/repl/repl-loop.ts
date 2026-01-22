@@ -23,6 +23,32 @@ import {
 const PROMPT = `${simpson.yellow('wiggum')}${simpson.brown('>')} `;
 
 /**
+ * Clear any buffered stdin data
+ * Prevents leaked input after subcommands that use their own stdin handling
+ */
+async function clearStdinBuffer(): Promise<void> {
+  return new Promise((resolve) => {
+    if (process.stdin.isTTY) {
+      // Set raw mode temporarily to drain buffer
+      const wasRaw = process.stdin.isRaw;
+      process.stdin.setRawMode(true);
+      process.stdin.once('readable', () => {
+        // Drain any buffered data
+        while (process.stdin.read() !== null) {
+          // discard
+        }
+        process.stdin.setRawMode(wasRaw);
+        resolve();
+      });
+      // Trigger readable if nothing buffered
+      setTimeout(resolve, 10);
+    } else {
+      resolve();
+    }
+  });
+}
+
+/**
  * Handler for the /init command
  */
 async function handleInitCommand(
@@ -36,8 +62,9 @@ async function handleInitCommand(
     console.log('');
   }
 
-  // Pause REPL readline to avoid conflicts with subcommand's stdin usage
-  rl.pause();
+  // Close REPL readline to avoid conflicts with subcommand's stdin usage
+  // We'll signal to recreate it after the command completes
+  rl.close();
 
   try {
     const result = await runInitWorkflow(state.projectRoot, {
@@ -60,9 +87,6 @@ async function handleInitCommand(
   } catch (error) {
     logger.error(`Init failed: ${error instanceof Error ? error.message : String(error)}`);
     return state;
-  } finally {
-    // Resume REPL readline after subcommand completes
-    rl.resume();
   }
 }
 
@@ -88,8 +112,8 @@ async function handleNewCommand(
 
   const featureName = args[0];
 
-  // Pause REPL readline to avoid conflicts with subcommand's stdin usage
-  rl.pause();
+  // Close REPL readline to avoid stdin conflicts with subcommand prompts
+  rl.close();
 
   try {
     // Delegate to the existing new command behavior
@@ -102,9 +126,8 @@ async function handleNewCommand(
       model: state.model,
       ai: true, // Always use AI interview in REPL
     });
-  } finally {
-    // Resume REPL readline after subcommand completes
-    rl.resume();
+  } catch (error) {
+    logger.error(`New command failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return state;
@@ -131,13 +154,13 @@ async function handleRunCommand(
 
   const featureName = args[0];
 
-  // Pause REPL readline to avoid conflicts with subcommand's stdin usage
-  rl.pause();
+  // Close REPL readline to avoid stdin conflicts with subcommand
+  rl.close();
 
   try {
     await runCommand(featureName, {});
-  } finally {
-    rl.resume();
+  } catch (error) {
+    logger.error(`Run command failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return state;
@@ -158,13 +181,13 @@ async function handleMonitorCommand(
 
   const featureName = args[0];
 
-  // Pause REPL readline to avoid conflicts with subcommand's stdin usage
-  rl.pause();
+  // Close REPL readline to avoid stdin conflicts with subcommand
+  rl.close();
 
   try {
     await monitorCommand(featureName, {});
-  } finally {
-    rl.resume();
+  } catch (error) {
+    logger.error(`Monitor command failed: ${error instanceof Error ? error.message : String(error)}`);
   }
 
   return state;
@@ -187,30 +210,31 @@ async function executeCommand(
   args: string[],
   state: SessionState,
   rl: readline.Interface
-): Promise<{ state: SessionState; shouldExit: boolean }> {
+): Promise<{ state: SessionState; shouldExit: boolean; needsRlRecreate: boolean }> {
   switch (commandName) {
     case 'init':
-      return { state: await handleInitCommand(args, state, rl), shouldExit: false };
+      // Init closes the readline to avoid stdin conflicts
+      return { state: await handleInitCommand(args, state, rl), shouldExit: false, needsRlRecreate: true };
 
     case 'new':
-      return { state: await handleNewCommand(args, state, rl), shouldExit: false };
+      return { state: await handleNewCommand(args, state, rl), shouldExit: false, needsRlRecreate: true };
 
     case 'run':
-      return { state: await handleRunCommand(args, state, rl), shouldExit: false };
+      return { state: await handleRunCommand(args, state, rl), shouldExit: false, needsRlRecreate: true };
 
     case 'monitor':
-      return { state: await handleMonitorCommand(args, state, rl), shouldExit: false };
+      return { state: await handleMonitorCommand(args, state, rl), shouldExit: false, needsRlRecreate: true };
 
     case 'help':
       handleHelpCommand();
-      return { state, shouldExit: false };
+      return { state, shouldExit: false, needsRlRecreate: false };
 
     case 'exit':
-      return { state, shouldExit: true };
+      return { state, shouldExit: true, needsRlRecreate: false };
 
     default:
       logger.warn(`Unknown command: ${commandName}`);
-      return { state, shouldExit: false };
+      return { state, shouldExit: false, needsRlRecreate: false };
   }
 }
 
@@ -242,23 +266,23 @@ async function processInput(
   input: string,
   state: SessionState,
   rl: readline.Interface
-): Promise<{ state: SessionState; shouldExit: boolean }> {
+): Promise<{ state: SessionState; shouldExit: boolean; needsRlRecreate: boolean }> {
   const parsed = parseInput(input);
 
   switch (parsed.type) {
     case 'empty':
-      return { state, shouldExit: false };
+      return { state, shouldExit: false, needsRlRecreate: false };
 
     case 'slash-command': {
       const { command } = parsed;
       if (!command) {
-        return { state, shouldExit: false };
+        return { state, shouldExit: false, needsRlRecreate: false };
       }
 
       const resolvedName = resolveCommandAlias(command.name);
       if (!resolvedName) {
         logger.warn(`Unknown command: /${command.name}. Type /help for available commands.`);
-        return { state, shouldExit: false };
+        return { state, shouldExit: false, needsRlRecreate: false };
       }
 
       return executeCommand(resolvedName, command.args, state, rl);
@@ -266,12 +290,39 @@ async function processInput(
 
     case 'natural-language': {
       const newState = await handleNaturalLanguage(parsed.text!, state);
-      return { state: newState, shouldExit: false };
+      return { state: newState, shouldExit: false, needsRlRecreate: false };
     }
 
     default:
-      return { state, shouldExit: false };
+      return { state, shouldExit: false, needsRlRecreate: false };
   }
+}
+
+/**
+ * Create a new readline interface
+ */
+function createReadline(): readline.Interface {
+  return readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    prompt: PROMPT,
+    terminal: true,
+  });
+}
+
+/**
+ * Read a single line from readline
+ */
+function readLine(rl: readline.Interface): Promise<string | null> {
+  return new Promise((resolve) => {
+    rl.once('line', (line) => resolve(line));
+    rl.once('close', () => resolve(null));
+    rl.once('SIGINT', () => {
+      console.log('');
+      logger.info('Use /exit to quit');
+      rl.prompt();
+    });
+  });
 }
 
 /**
@@ -291,30 +342,21 @@ export async function startRepl(initialState: SessionState): Promise<void> {
   }
   console.log('');
 
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    prompt: PROMPT,
-    terminal: true,
-  });
+  let rl = createReadline();
+  let running = true;
 
-  // Handle Ctrl+C gracefully
-  rl.on('SIGINT', () => {
-    console.log('');
-    logger.info('Use /exit to quit');
+  while (running) {
     rl.prompt();
-  });
+    const line = await readLine(rl);
 
-  // Handle Ctrl+D (EOF)
-  rl.on('close', () => {
-    console.log('');
-    logger.info('Goodbye!');
-    process.exit(0);
-  });
+    // Handle EOF (Ctrl+D)
+    if (line === null) {
+      console.log('');
+      logger.info('Goodbye!');
+      running = false;
+      break;
+    }
 
-  rl.prompt();
-
-  for await (const line of rl) {
     try {
       const result = await processInput(line, state, rl);
       state = result.state;
@@ -323,13 +365,17 @@ export async function startRepl(initialState: SessionState): Promise<void> {
         console.log('');
         logger.info('Goodbye!');
         rl.close();
-        return;
+        running = false;
+        break;
+      }
+
+      // Recreate readline if needed (after commands that closed it)
+      if (result.needsRlRecreate) {
+        rl = createReadline();
       }
     } catch (error) {
       logger.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     }
-
-    rl.prompt();
   }
 }
 
