@@ -3,6 +3,7 @@ import { startRepl, createSessionState } from './repl/index.js';
 import { hasConfig, loadConfigWithDefaults } from './utils/config.js';
 import { getAvailableProvider } from './ai/providers.js';
 import { displayHeader } from './utils/header.js';
+import { notifyIfUpdateAvailable } from './utils/update-check.js';
 
 /**
  * Start REPL-first mode
@@ -42,6 +43,9 @@ async function startReplFirst(): Promise<void> {
  */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
+
+  // Check for updates (non-blocking, fails silently)
+  await notifyIfUpdateAvailable();
 
   // REPL-first: no args = start REPL
   if (args.length === 0) {
