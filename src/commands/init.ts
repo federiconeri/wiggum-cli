@@ -21,6 +21,7 @@ import {
 import * as prompts from '@clack/prompts';
 import fs from 'fs';
 import path from 'path';
+import readline from 'readline';
 import {
   simpson,
   compactHeader,
@@ -30,6 +31,67 @@ import {
 } from '../utils/colors.js';
 import { flushTracing } from '../utils/tracing.js';
 import { createShimmerSpinner, type ShimmerSpinner } from '../utils/spinner.js';
+
+const FIXED_MASK = '*'.repeat(32);
+
+/**
+ * Secure password input with fixed-length mask (doesn't reveal key length)
+ */
+async function securePasswordInput(message: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    // Print the prompt message with clack-style formatting
+    process.stdout.write(`${simpson.brown('│')}\n`);
+    process.stdout.write(`${simpson.yellow('◆')}  ${message}\n`);
+    process.stdout.write(`${simpson.brown('│')}  `);
+
+    let input = '';
+
+    // Enable raw mode to capture keystrokes without echo
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+
+    const onData = (key: string) => {
+      // Ctrl+C - cancel
+      if (key === '\u0003') {
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(false);
+        }
+        process.stdin.removeListener('data', onData);
+        process.stdout.write('\n');
+        resolve(null);
+        return;
+      }
+
+      // Enter - submit
+      if (key === '\r' || key === '\n') {
+        if (process.stdin.isTTY) {
+          process.stdin.setRawMode(false);
+        }
+        process.stdin.removeListener('data', onData);
+        // Clear line and show fixed mask
+        process.stdout.write(`\r${simpson.brown('│')}  ${FIXED_MASK}\n`);
+        resolve(input);
+        return;
+      }
+
+      // Backspace - delete last char
+      if (key === '\u007F' || key === '\b') {
+        if (input.length > 0) {
+          input = input.slice(0, -1);
+        }
+        return;
+      }
+
+      // Handle paste (multiple chars at once) or single char
+      input += key;
+    };
+
+    process.stdin.on('data', onData);
+  });
+}
 
 export interface InitOptions {
   provider?: AIProvider;
@@ -122,13 +184,10 @@ async function collectApiKeys(
     provider = providerChoice as AIProvider;
     const envVar = getApiKeyEnvVar(provider);
 
-    // Get API key with fixed-length mask display
-    const apiKeyInput = await prompts.password({
-      message: `Enter your ${envVar}:`,
-      mask: '▪',
-    });
+    // Get API key with fixed-length mask (doesn't reveal key length)
+    const apiKeyInput = await securePasswordInput(`Enter your ${envVar}:`);
 
-    if (prompts.isCancel(apiKeyInput) || !apiKeyInput) {
+    if (!apiKeyInput) {
       logger.error('API key is required to use Ralph.');
       return null;
     }

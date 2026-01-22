@@ -121,7 +121,7 @@ export const phase = {
 };
 
 /**
- * Display a stack info box
+ * Display a stack info box (with properly colored borders)
  */
 export function stackBox(stack: {
   framework?: string;
@@ -131,20 +131,26 @@ export function stackBox(stack: {
 }): string {
   const lines: string[] = [];
   const maxLabelWidth = 10;
+  const boxWidth = 45;
 
   const addLine = (label: string, value: string | undefined) => {
     if (value) {
       const paddedLabel = label.padEnd(maxLabelWidth);
-      lines.push(`│  ${simpson.brown(paddedLabel)} ${value}`);
+      const content = `  ${paddedLabel} ${value}`;
+      const visibleLen = content.length;
+      const padding = boxWidth - visibleLen;
+      // Color the labels but not the values, color the borders
+      const coloredContent = `  ${simpson.brown(paddedLabel)} ${value}`;
+      lines.push(simpson.brown('│') + coloredContent + ' '.repeat(Math.max(0, padding)) + simpson.brown('│'));
     }
   };
 
-  lines.push(simpson.brown('┌─ Detected Stack ────────────────────────────┐'));
+  lines.push(simpson.brown('┌─ Detected Stack ' + '─'.repeat(boxWidth - 17) + '┐'));
   addLine('Framework:', stack.framework);
   addLine('Language:', stack.language);
   addLine('Testing:', stack.testing);
   addLine('Package:', stack.packageManager);
-  lines.push(simpson.brown('└─────────────────────────────────────────────┘'));
+  lines.push(simpson.brown('└' + '─'.repeat(boxWidth) + '┘'));
 
   return lines.join('\n');
 }
