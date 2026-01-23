@@ -13,3 +13,6 @@ export type { StreamingTextProps } from './StreamingText.js';
 
 export { ToolCallCard } from './ToolCallCard.js';
 export type { ToolCallCardProps, ToolCallStatus } from './ToolCallCard.js';
+
+export { MessageList } from './MessageList.js';
+export type { MessageListProps, Message, ToolCall } from './MessageList.js';
