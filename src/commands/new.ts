@@ -12,6 +12,7 @@ import { loadConfigWithDefaults, hasConfig } from '../utils/config.js';
 import { getAvailableProvider, type AIProvider, AVAILABLE_MODELS } from '../ai/providers.js';
 import { SpecGenerator } from '../ai/conversation/index.js';
 import { Scanner, type ScanResult } from '../scanner/index.js';
+import { flushTracing } from '../utils/tracing.js';
 import pc from 'picocolors';
 import * as prompts from '@clack/prompts';
 
@@ -281,6 +282,9 @@ export async function newCommand(feature: string, options: NewOptions = {}): Pro
     });
 
     const generatedSpec = await specGenerator.run();
+
+    // Flush any pending Braintrust tracing spans (Task 2)
+    await flushTracing();
 
     if (!generatedSpec) {
       logger.info('Spec generation cancelled');

@@ -26,6 +26,9 @@ import {
 /** Maximum number of interview questions before auto-completing */
 const MAX_INTERVIEW_QUESTIONS = 10;
 
+/** Minimum number of questions before AI can indicate "enough information" */
+const MIN_INTERVIEW_QUESTIONS = 2;
+
 /**
  * Session context from /init analysis
  */
@@ -161,6 +164,27 @@ USE THESE TOOLS PROACTIVELY:
 - When unsure about implementation, search the codebase for similar code
 - When discussing best practices, search the web for current recommendations
 - Don't ask the user to paste code - read it yourself`);
+    }
+
+    // Add emphatic web search guidance when Tavily is available (Task 4)
+    if (hasTools.tavily) {
+      parts.push(`
+## IMPORTANT: Web Search Available
+You have tavily_search to look up current best practices and documentation.
+
+WHEN YOU MUST USE WEB SEARCH:
+- User mentions a library, framework, or API you should verify
+- User asks about "best practices" or "how to" patterns
+- You need current (2026+) information not in your training data
+- Discussing implementation approaches for modern libraries
+
+EXAMPLE SEARCHES:
+- tavily_search({ query: "React Server Components authentication patterns", timeRange: "year" })
+- tavily_search({ query: "Next.js 14 app router middleware", timeRange: "year" })
+- tavily_search({ query: "TypeScript strict mode best practices", timeRange: "year" })
+
+DO NOT skip web search when the user discusses implementation approaches or mentions specific libraries.
+Use timeRange: "year" to get recent results.`);
     }
   }
 
@@ -340,10 +364,12 @@ export class SpecGenerator {
    * Display the current phase header
    */
   private displayHeader(): void {
-    displayPhaseHeader(this.featureName, this.phase, {
-      current: this.questionCount,
-      max: MAX_INTERVIEW_QUESTIONS,
-    });
+    // Only show question count during interview phase (Task 5 fix)
+    const questionCount = this.phase === 'interview'
+      ? { current: this.questionCount, max: MAX_INTERVIEW_QUESTIONS }
+      : undefined;
+
+    displayPhaseHeader(this.featureName, this.phase, questionCount);
   }
 
   /**
@@ -385,7 +411,13 @@ export class SpecGenerator {
         console.log(pc.red(`Error: ${result.error}`));
       } else {
         this.conversation.addReference(result.content, result.source);
-        console.log(pc.green(`Added reference from ${result.source}${result.truncated ? ' (truncated)' : ''}`));
+        // Show a preview of what was fetched (Task 3 fix)
+        const preview = result.content.slice(0, 150).replace(/\n/g, ' ').trim();
+        console.log(pc.green(`✓ Added reference from ${result.source}`));
+        console.log(pc.dim(`    "${preview}..."`));
+        if (result.truncated) {
+          console.log(pc.dim(`    (truncated to ${result.content.length} chars)`));
+        }
       }
     }
 
@@ -393,7 +425,7 @@ export class SpecGenerator {
   }
 
   /**
-   * Phase 2: Discuss goals
+   * Phase 2: Discuss goals - collect user goals
    */
   private async discussGoals(): Promise<void> {
     this.displayHeader();
@@ -417,16 +449,54 @@ export class SpecGenerator {
       });
     }
 
-    console.log('');
-    const response = await this.conversation.chat(
-      `The user wants to create a feature called "${this.featureName}". First, use your tools to explore the codebase and understand the existing structure. Then acknowledge their goals and ask your first clarifying question.`
-    );
+    // Phase 2a: Explore project silently (separate from interview)
+    await this.exploreProject();
 
+    // Phase 2b: Start interview with first question (separate AI turn)
+    await this.startInterview();
+
+    this.phase = 'interview';
+  }
+
+  /**
+   * Phase 2a: Explore project silently
+   * AI explores the codebase WITHOUT asking questions - just gathering context
+   */
+  private async exploreProject(): Promise<void> {
     console.log('');
+    console.log(pc.dim('    Exploring project...'));
+
+    // AI explores without asking questions - this prevents "two answers" bug
+    const prompt = `Explore the codebase to understand the project structure for the feature "${this.featureName}".
+Use your tools to read key files that are relevant to this feature.
+DO NOT ask any questions yet - just gather information silently.
+Respond with a VERY brief (1-2 sentence) summary of what you found relevant to this feature.`;
+
+    const summary = await this.conversation.chat(prompt);
+
+    // Show a brief summary of exploration
+    const shortSummary = summary.slice(0, 120).replace(/\n/g, ' ');
+    console.log(pc.dim(`    Context: ${shortSummary}${summary.length > 120 ? '...' : ''}`));
+  }
+
+  /**
+   * Phase 2b: Start interview - acknowledge goals and ask FIRST question
+   * This is a SEPARATE AI turn from exploration to prevent "two answers" bug
+   */
+  private async startInterview(): Promise<void> {
+    console.log('');
+
+    // Now ask the first question - this is a separate turn
+    const prompt = `Based on what you learned about the project, briefly acknowledge the user's goals for "${this.featureName}" and ask your FIRST clarifying question.
+Ask only ONE question. Be concise.`;
+
+    const response = await this.conversation.chat(prompt);
+
     console.log(simpson.blue('AI:'), response);
     console.log('');
 
-    this.phase = 'interview';
+    // questionCount stays at 0 - it represents completed Q&A cycles
+    // Will be incremented in processAnswer() after user responds
   }
 
   /**
@@ -486,6 +556,12 @@ export class SpecGenerator {
     this.questionCount++;
 
     // Check if AI indicates it has enough information
+    // But ONLY allow this after minimum questions (Task 6 fix)
+    if (this.questionCount < MIN_INTERVIEW_QUESTIONS) {
+      // Force more questions - AI must ask at least MIN_INTERVIEW_QUESTIONS
+      return false;
+    }
+
     const lowerResponse = response.toLowerCase();
     if (
       lowerResponse.includes('enough information') ||
