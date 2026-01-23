@@ -10,3 +10,6 @@ export type { PhaseHeaderProps } from './PhaseHeader.js';
 
 export { StreamingText } from './StreamingText.js';
 export type { StreamingTextProps } from './StreamingText.js';
+
+export { ToolCallCard } from './ToolCallCard.js';
+export type { ToolCallCardProps, ToolCallStatus } from './ToolCallCard.js';
