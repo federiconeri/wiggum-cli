@@ -2,4 +2,5 @@
  * Screen components for the Wiggum TUI
  */
 
-// Screens will be exported here as they are created
+export { InterviewScreen } from './InterviewScreen.js';
+export type { InterviewScreenProps } from './InterviewScreen.js';
