@@ -181,3 +181,106 @@ export async function confirm(options: {
 export function isCancel(value: unknown): value is null {
   return value === null;
 }
+
+/**
+ * Multi-line input for paste support
+ * Reads input until an empty line (after content) or Ctrl+D
+ *
+ * @param prompt - The prompt to display
+ * @returns The collected input or null if cancelled
+ */
+export async function multilineInput(options: {
+  prompt?: string;
+  /** Hint to show for how to end input */
+  endHint?: string;
+}): Promise<string | null> {
+  const { prompt = '>', endHint = 'Press Enter twice when done' } = options;
+
+  console.log(pc.dim(`  (${endHint})`));
+
+  return new Promise((resolve) => {
+    const lines: string[] = [];
+    let lastLineEmpty = false;
+
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+      prompt: `${pc.dim(prompt)} `,
+    });
+
+    rl.prompt();
+
+    rl.on('line', (line) => {
+      const trimmed = line.trim();
+
+      // If we get an empty line after having content, we're done
+      if (trimmed === '' && lines.length > 0 && lastLineEmpty) {
+        rl.close();
+        // Remove the trailing empty line we added
+        const result = lines.slice(0, -1).join('\n').trim();
+        if (result) {
+          console.log(pc.green('✓') + pc.dim(` Received ${result.split('\n').length} line(s)`));
+        }
+        resolve(result || null);
+        return;
+      }
+
+      lastLineEmpty = trimmed === '';
+      lines.push(line);
+      rl.prompt();
+    });
+
+    rl.on('close', () => {
+      // Ctrl+D or EOF
+      const result = lines.join('\n').trim();
+      if (result) {
+        console.log(pc.green('✓') + pc.dim(` Received ${result.split('\n').length} line(s)`));
+      }
+      resolve(result || null);
+    });
+
+    rl.on('SIGINT', () => {
+      rl.close();
+      console.log('');
+      resolve(null);
+    });
+  });
+}
+
+/**
+ * Simple text input prompt
+ *
+ * @param prompt - The prompt to display
+ * @returns The input text or null if cancelled
+ */
+export async function textInput(options: {
+  message: string;
+  placeholder?: string;
+}): Promise<string | null> {
+  const { message, placeholder } = options;
+
+  const hint = placeholder ? pc.dim(` (${placeholder})`) : '';
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(`${simpson.yellow('?')} ${message}${hint}: `, (answer) => {
+      rl.close();
+      const trimmed = answer.trim();
+      if (trimmed) {
+        resolve(trimmed);
+      } else {
+        resolve(null);
+      }
+    });
+
+    rl.on('SIGINT', () => {
+      rl.close();
+      console.log('');
+      resolve(null);
+    });
+  });
+}

@@ -369,12 +369,13 @@ export async function runInitWorkflow(
       logger.success('Wiggum initialized successfully!');
 
       // Load config and return result
+      // Use enhancedResult to preserve aiAnalysis for session context
       const config = await loadConfigWithDefaults(projectRoot);
       return {
         success: true,
         provider: apiKeys.provider,
         model: apiKeys.model,
-        scanResult,
+        scanResult: enhancedResult,
         config,
       };
     } else {
@@ -384,7 +385,7 @@ export async function runInitWorkflow(
         success: true, // Still return success to continue
         provider: apiKeys.provider,
         model: apiKeys.model,
-        scanResult,
+        scanResult: enhancedResult,
         config,
       };
     }

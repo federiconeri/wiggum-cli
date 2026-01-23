@@ -3,7 +3,7 @@
  * Manages multi-turn AI conversations for spec generation
  */
 
-import { generateText, streamText } from 'ai';
+import { generateText, streamText, stepCountIs, type Tool } from 'ai';
 import { getModel, isReasoningModel, type AIProvider } from '../providers.js';
 import type { ScanResult } from '../../scanner/types.js';
 
@@ -32,12 +32,23 @@ export interface ConversationContext {
 }
 
 /**
+ * Tool use callback for displaying tool usage
+ */
+export type ToolUseCallback = (toolName: string, args: Record<string, unknown>) => void;
+
+/**
  * Conversation manager options
  */
 export interface ConversationManagerOptions {
   provider: AIProvider;
   model: string;
   systemPrompt?: string;
+  /** Tools available to the AI */
+  tools?: Record<string, Tool>;
+  /** Callback when a tool is used */
+  onToolUse?: ToolUseCallback;
+  /** Maximum tool calling steps (default: 5) */
+  maxToolSteps?: number;
 }
 
 /**
@@ -79,12 +90,46 @@ export class ConversationManager {
   private context: ConversationContext = { references: [] };
   private readonly provider: AIProvider;
   private readonly modelId: string;
-  private readonly systemPrompt: string;
+  private systemPrompt: string;
+  private tools?: Record<string, Tool>;
+  private onToolUse?: ToolUseCallback;
+  private maxToolSteps: number;
 
   constructor(options: ConversationManagerOptions) {
     this.provider = options.provider;
     this.modelId = options.model;
     this.systemPrompt = options.systemPrompt || this.getDefaultSystemPrompt();
+    this.tools = options.tools;
+    this.onToolUse = options.onToolUse;
+    this.maxToolSteps = options.maxToolSteps ?? 5;
+  }
+
+  /**
+   * Set tools for the conversation
+   */
+  setTools(tools: Record<string, Tool>): void {
+    this.tools = tools;
+  }
+
+  /**
+   * Set tool use callback
+   */
+  setOnToolUse(callback: ToolUseCallback): void {
+    this.onToolUse = callback;
+  }
+
+  /**
+   * Update the system prompt
+   */
+  setSystemPrompt(prompt: string): void {
+    this.systemPrompt = prompt;
+  }
+
+  /**
+   * Append to the system prompt
+   */
+  appendSystemPrompt(addition: string): void {
+    this.systemPrompt = `${this.systemPrompt}\n\n${addition}`;
   }
 
   private getDefaultSystemPrompt(): string {
@@ -166,11 +211,28 @@ Be concise but thorough. Focus on understanding the user's needs before proposin
     const { model } = getModel(this.provider, this.modelId);
     const messages = this.buildMessages();
 
-    const result = await generateText({
+    // Build options based on whether we have tools
+    const options: Parameters<typeof generateText>[0] = {
       model,
       messages,
       ...(isReasoningModel(this.modelId) ? {} : { temperature: 0.7 }),
-    });
+    };
+
+    if (this.tools && Object.keys(this.tools).length > 0) {
+      options.tools = this.tools;
+      options.stopWhen = stepCountIs(this.maxToolSteps);
+      options.onStepFinish = (step) => {
+        // Call onToolUse callback for each tool call
+        if (step.toolCalls && this.onToolUse) {
+          for (const toolCall of step.toolCalls) {
+            // AI SDK uses 'input' for tool arguments
+            this.onToolUse(toolCall.toolName, toolCall.input as Record<string, unknown>);
+          }
+        }
+      };
+    }
+
+    const result = await generateText(options);
 
     const assistantMessage = result.text;
 
