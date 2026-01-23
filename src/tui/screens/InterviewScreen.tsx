@@ -149,6 +149,7 @@ export function InterviewScreen({
         <ChatInput
           onSubmit={handleSubmit}
           disabled={inputDisabled}
+          allowEmpty={state.phase === 'context'}
           placeholder={
             state.phase === 'context'
               ? 'Enter URL or file path, or press Enter to continue...'

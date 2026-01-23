@@ -164,6 +164,12 @@ export interface UseSpecGeneratorReturn {
   completeStreamingMessage: () => void;
 
   /**
+   * Clear working state and re-enable input
+   * Call this when AI response is complete and ready for next user input
+   */
+  setReady: () => void;
+
+  /**
    * Start a tool execution (shows ToolCallCard)
    */
   startToolCall: (toolName: string, input: Record<string, unknown>) => string;
@@ -281,6 +287,8 @@ export function useSpecGenerator(): UseSpecGeneratorReturn {
     setState({
       ...initialState,
       messages: [systemMessage],
+      // Enable input immediately so users can enter context/goals
+      awaitingInput: true,
     });
   }, []);
 
@@ -359,6 +367,19 @@ export function useSpecGenerator(): UseSpecGeneratorReturn {
     }));
 
     streamingMessageIdRef.current = null;
+  }, []);
+
+  /**
+   * Clear working state and re-enable input
+   * Call this when AI response is complete and ready for next user input
+   */
+  const setReady = useCallback(() => {
+    setState((prev) => ({
+      ...prev,
+      isWorking: false,
+      workingStatus: '',
+      awaitingInput: true,
+    }));
   }, []);
 
   /**
@@ -561,6 +582,7 @@ export function useSpecGenerator(): UseSpecGeneratorReturn {
     addMessage,
     updateStreamingMessage,
     completeStreamingMessage,
+    setReady,
     startToolCall,
     completeToolCall,
   };

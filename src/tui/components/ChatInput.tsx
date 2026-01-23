@@ -22,6 +22,8 @@ export interface ChatInputProps {
   disabled?: boolean;
   /** Prompt character/text shown before input (default "> ") */
   prompt?: string;
+  /** Allow empty submissions (e.g., to continue/skip phases) */
+  allowEmpty?: boolean;
 }
 
 /**
@@ -45,6 +47,7 @@ export function ChatInput({
   placeholder = 'Type your message...',
   disabled = false,
   prompt = '> ',
+  allowEmpty = false,
 }: ChatInputProps): React.ReactElement {
   const [value, setValue] = useState('');
 
@@ -53,8 +56,13 @@ export function ChatInput({
    * Calls onSubmit with current value and clears the input
    */
   const handleSubmit = (submittedValue: string): void => {
-    // Don't submit empty values or when disabled
-    if (disabled || !submittedValue.trim()) {
+    // Don't submit when disabled
+    if (disabled) {
+      return;
+    }
+
+    // Don't submit empty values unless allowEmpty is true
+    if (!submittedValue.trim() && !allowEmpty) {
       return;
     }
 
