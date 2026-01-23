@@ -17,12 +17,17 @@ const MAX_SEARCH_RESULTS = 20;
 
 /**
  * Validate path is within project root (security)
+ * Ensures the resolved path is exactly the project root or a child of it,
+ * preventing prefix-based escapes like ../project-secret
  */
 function validatePath(projectRoot: string, targetPath: string): string | null {
   const absolutePath = resolve(projectRoot, targetPath);
   const normalizedProjectRoot = resolve(projectRoot);
 
-  if (!absolutePath.startsWith(normalizedProjectRoot)) {
+  // Must be exactly the project root OR start with project root + separator
+  // This prevents prefix attacks like /project-secret matching /project
+  if (absolutePath !== normalizedProjectRoot &&
+      !absolutePath.startsWith(normalizedProjectRoot + '/')) {
     return null; // Path traversal attempt
   }
 
@@ -163,7 +168,9 @@ Returns matching files with line snippets.`,
             if (literal) args.push('-F');
             if (filePattern) args.push(`--include=${filePattern}`);
 
-            args.push(pattern, searchPath);
+            // Use -- to signal end of options, preventing patterns starting with -
+            // from being interpreted as grep flags
+            args.push('--', pattern, searchPath);
 
             result = spawnSync('grep', args, {
               encoding: 'utf-8',
