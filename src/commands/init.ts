@@ -28,7 +28,7 @@ import {
   fileTree,
   nextStepsBox,
 } from '../utils/colors.js';
-import { flushTracing } from '../utils/tracing.js';
+import { flushTracing, traced, initTracing } from '../utils/tracing.js';
 import { createShimmerSpinner, type ShimmerSpinner } from '../utils/spinner.js';
 import { startRepl, createSessionState } from '../repl/index.js';
 import { loadConfigWithDefaults } from '../utils/config.js';
@@ -288,8 +288,19 @@ export async function runInitWorkflow(
 
   let enhancedResult: EnhancedScanResult;
 
+  // Initialize tracing before creating parent span
+  initTracing();
+
   try {
-    enhancedResult = await aiEnhancer.enhance(scanResult);
+    enhancedResult = await traced(
+      async () => {
+        return await aiEnhancer.enhance(scanResult);
+      },
+      {
+        name: 'ai-analysis',
+        type: 'task',
+      }
+    );
 
     if (enhancedResult.aiEnhanced && enhancedResult.aiAnalysis) {
       // Set token usage on spinner before stopping

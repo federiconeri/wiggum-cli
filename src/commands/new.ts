@@ -12,7 +12,7 @@ import { loadConfigWithDefaults, hasConfig } from '../utils/config.js';
 import { getAvailableProvider, type AIProvider, AVAILABLE_MODELS } from '../ai/providers.js';
 import { SpecGenerator } from '../ai/conversation/index.js';
 import { Scanner, type ScanResult } from '../scanner/index.js';
-import { flushTracing } from '../utils/tracing.js';
+import { flushTracing, traced, initTracing } from '../utils/tracing.js';
 import pc from 'picocolors';
 import * as prompts from '@clack/prompts';
 
@@ -281,9 +281,21 @@ export async function newCommand(feature: string, options: NewOptions = {}): Pro
       scanResult,
     });
 
-    const generatedSpec = await specGenerator.run();
+    // Initialize tracing BEFORE creating parent span (ensures logger is ready)
+    initTracing();
 
-    // Flush any pending Braintrust tracing spans (Task 2)
+    const generatedSpec = await traced(
+      async () => {
+        // All AI calls inside run() automatically become child spans
+        return await specGenerator.run();
+      },
+      {
+        name: `generate-spec-${feature}`,
+        type: 'task',
+      }
+    );
+
+    // Flush any pending Braintrust tracing spans
     await flushTracing();
 
     if (!generatedSpec) {
