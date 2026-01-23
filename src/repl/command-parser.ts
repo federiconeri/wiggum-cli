@@ -53,6 +53,11 @@ export const REPL_COMMANDS = {
     usage: '/monitor <feature-name>',
     aliases: ['m'],
   },
+  config: {
+    description: 'Manage API keys and settings',
+    usage: '/config [set <service> <key>]',
+    aliases: ['cfg'],
+  },
   help: {
     description: 'Show available commands',
     usage: '/help',

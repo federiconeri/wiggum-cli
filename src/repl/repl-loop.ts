@@ -10,6 +10,7 @@ import { simpson } from '../utils/colors.js';
 import { runCommand } from '../commands/run.js';
 import { monitorCommand } from '../commands/monitor.js';
 import { runInitWorkflow } from '../commands/init.js';
+import { handleConfigCommand } from '../commands/config.js';
 import { hasConfig } from '../utils/config.js';
 import type { SessionState } from './session-state.js';
 import { updateSessionState } from './session-state.js';
@@ -224,6 +225,9 @@ async function executeCommand(
 
     case 'monitor':
       return { state: await handleMonitorCommand(args, state, rl), shouldExit: false, needsRlRecreate: true };
+
+    case 'config':
+      return { state: await handleConfigCommand(args, state), shouldExit: false, needsRlRecreate: false };
 
     case 'help':
       handleHelpCommand();

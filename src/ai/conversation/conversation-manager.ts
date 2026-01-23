@@ -3,9 +3,10 @@
  * Manages multi-turn AI conversations for spec generation
  */
 
-import { generateText, streamText, stepCountIs, type Tool } from 'ai';
+import { generateText, stepCountIs, type Tool } from 'ai';
 import { getModel, isReasoningModel, type AIProvider } from '../providers.js';
 import type { ScanResult } from '../../scanner/types.js';
+import { getTracedAI } from '../../utils/tracing.js';
 
 /**
  * Message type for AI SDK
@@ -232,7 +233,9 @@ Be concise but thorough. Focus on understanding the user's needs before proposin
       };
     }
 
-    const result = await generateText(options);
+    // Use traced AI for automatic Braintrust logging
+    const tracedAI = getTracedAI();
+    const result = await tracedAI.generateText(options);
 
     const assistantMessage = result.text;
 
@@ -252,7 +255,9 @@ Be concise but thorough. Focus on understanding the user's needs before proposin
     const { model } = getModel(this.provider, this.modelId);
     const messages = this.buildMessages();
 
-    const result = streamText({
+    // Use traced AI for automatic Braintrust logging
+    const tracedAI = getTracedAI();
+    const result = tracedAI.streamText({
       model,
       messages,
       ...(isReasoningModel(this.modelId) ? {} : { temperature: 0.7 }),
