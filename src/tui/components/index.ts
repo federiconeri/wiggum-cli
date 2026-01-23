@@ -2,4 +2,5 @@
  * Reusable Ink components for the Wiggum TUI
  */
 
-// Components will be exported here as they are created
+export { WorkingIndicator } from './WorkingIndicator.js';
+export type { WorkingIndicatorProps, WorkingState } from './WorkingIndicator.js';
