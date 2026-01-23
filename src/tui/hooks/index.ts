@@ -2,4 +2,12 @@
  * Custom React hooks for the Wiggum TUI
  */
 
-// Hooks will be exported here as they are created
+export { useSpecGenerator } from './useSpecGenerator.js';
+export type {
+  GeneratorPhase,
+  PhaseConfig,
+  SpecGeneratorState,
+  SpecGeneratorOptions,
+  UseSpecGeneratorReturn,
+} from './useSpecGenerator.js';
+export { PHASE_CONFIGS, TOTAL_DISPLAY_PHASES } from './useSpecGenerator.js';
