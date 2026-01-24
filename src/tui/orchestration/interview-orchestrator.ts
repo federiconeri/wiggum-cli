@@ -260,7 +260,8 @@ export class InterviewOrchestrator {
   private readonly onReady: InterviewOrchestratorOptions['onReady'];
 
   // Track active tool calls for result mapping
-  private activeToolCalls: Map<string, string> = new Map();
+  // Uses a queue per tool name to handle multiple calls of the same tool
+  private activeToolCalls: Map<string, string[]> = new Map();
 
   constructor(options: InterviewOrchestratorOptions) {
     this.featureName = options.featureName;
@@ -324,18 +325,25 @@ export class InterviewOrchestrator {
       onToolUse: (toolName, args) => {
         // Create tool ID and notify TUI
         const toolId = this.onToolStart(toolName, args);
-        // Store mapping for later result
-        this.activeToolCalls.set(toolName, toolId);
+        // Store in queue for this tool name (handles multiple concurrent calls)
+        const queue = this.activeToolCalls.get(toolName) || [];
+        queue.push(toolId);
+        this.activeToolCalls.set(toolName, queue);
       },
       onToolResult: (toolName, result) => {
-        const toolId = this.activeToolCalls.get(toolName);
+        const queue = this.activeToolCalls.get(toolName);
+        // Get the first (oldest) tool ID from the queue (FIFO order)
+        const toolId = queue?.shift();
         if (toolId) {
           // Format result for display
           const output = typeof result === 'string'
             ? result
             : JSON.stringify(result, null, 2).slice(0, 200);
           this.onToolEnd(toolId, output);
-          this.activeToolCalls.delete(toolName);
+          // Clean up empty queues
+          if (queue && queue.length === 0) {
+            this.activeToolCalls.delete(toolName);
+          }
         }
       },
       maxToolSteps: 8,

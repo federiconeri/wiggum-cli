@@ -87,8 +87,18 @@ export function InterviewScreen({
   const isStreamingRef = useRef(false);
   const streamContentRef = useRef('');
 
+  // Track if component is unmounted to prevent callbacks after cleanup
+  const isCancelledRef = useRef(false);
+
+  // Use refs for callbacks to avoid stale closures and unnecessary effect re-runs
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
   // Initialize the orchestrator when the component mounts
   useEffect(() => {
+    // Reset cancelled flag on mount
+    isCancelledRef.current = false;
+
     // Initialize hook state
     initialize({
       featureName,
@@ -97,7 +107,7 @@ export function InterviewScreen({
       model,
     });
 
-    // Create orchestrator with callbacks
+    // Create orchestrator with callbacks that check for cancellation
     const orchestrator = new InterviewOrchestrator({
       featureName,
       projectRoot,
@@ -105,9 +115,11 @@ export function InterviewScreen({
       model,
       scanResult,
       onMessage: (role, content) => {
+        if (isCancelledRef.current) return;
         addMessage(role, content);
       },
       onStreamChunk: (chunk) => {
+        if (isCancelledRef.current) return;
         if (!isStreamingRef.current) {
           // Start a new streaming message
           isStreamingRef.current = true;
@@ -120,6 +132,7 @@ export function InterviewScreen({
         }
       },
       onStreamComplete: () => {
+        if (isCancelledRef.current) return;
         if (isStreamingRef.current) {
           completeStreamingMessage();
           isStreamingRef.current = false;
@@ -127,25 +140,33 @@ export function InterviewScreen({
         }
       },
       onToolStart: (toolName, input) => {
+        if (isCancelledRef.current) return '';
         return startToolCall(toolName, input);
       },
       onToolEnd: (toolId, output, error) => {
+        if (isCancelledRef.current) return;
         completeToolCall(toolId, output, error);
       },
       onPhaseChange: (phase: GeneratorPhase) => {
+        if (isCancelledRef.current) return;
         setPhase(phase);
       },
       onComplete: (spec) => {
+        if (isCancelledRef.current) return;
         setGeneratedSpec(spec);
-        onComplete(spec);
+        // Use ref to avoid stale closure
+        onCompleteRef.current(spec);
       },
       onError: (error) => {
+        if (isCancelledRef.current) return;
         setError(error);
       },
       onWorkingChange: (isWorking, status) => {
+        if (isCancelledRef.current) return;
         setWorking(isWorking, status);
       },
       onReady: () => {
+        if (isCancelledRef.current) return;
         setReady();
       },
     });
@@ -155,8 +176,9 @@ export function InterviewScreen({
     // Start the orchestrator
     orchestrator.start();
 
-    // Cleanup (orchestrator doesn't need explicit cleanup)
+    // Cleanup: mark as cancelled to prevent callbacks after unmount
     return () => {
+      isCancelledRef.current = true;
       orchestratorRef.current = null;
     };
   }, [featureName, projectRoot, provider, model, scanResult]);

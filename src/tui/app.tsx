@@ -96,16 +96,27 @@ export function App({
    */
   const handleInterviewComplete = useCallback((spec: string) => {
     onComplete?.(spec);
-    // Return to shell after completion
-    navigate('shell');
-  }, [onComplete, navigate]);
+    // If started on interview (--tui mode), call onExit to resolve promise
+    // Otherwise, return to shell
+    if (initialScreen === 'interview') {
+      onExit?.();
+    } else {
+      navigate('shell');
+    }
+  }, [onComplete, navigate, initialScreen, onExit]);
 
   /**
    * Handle interview cancel
    */
   const handleInterviewCancel = useCallback(() => {
-    navigate('shell');
-  }, [navigate]);
+    // If started on interview (--tui mode), call onExit to resolve promise
+    // Otherwise, return to shell
+    if (initialScreen === 'interview') {
+      onExit?.();
+    } else {
+      navigate('shell');
+    }
+  }, [navigate, initialScreen, onExit]);
 
   /**
    * Handle welcome continue

@@ -70,7 +70,6 @@ export function MainShell({
 }: MainShellProps): React.ReactElement {
   const { exit } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
-  const [inputDisabled, setInputDisabled] = useState(false);
 
   /**
    * Add a system message to the conversation
@@ -205,8 +204,8 @@ export function MainShell({
   /**
    * Handle natural language input
    */
-  const handleNaturalLanguage = useCallback((text: string) => {
-    // For now, just show a tip
+  const handleNaturalLanguage = useCallback((_text: string) => {
+    // For now, just show a tip (text parameter reserved for future AI chat)
     addSystemMessage('Tip: Use /help to see available commands, or /new <feature> to create a spec.');
   }, [addSystemMessage]);
 
@@ -281,7 +280,7 @@ export function MainShell({
       <Box marginTop={1}>
         <ChatInput
           onSubmit={handleSubmit}
-          disabled={inputDisabled}
+          disabled={false}
           placeholder="Enter command or type /help..."
           prompt="wiggum> "
         />
