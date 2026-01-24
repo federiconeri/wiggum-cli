@@ -23,6 +23,10 @@ export const colors = {
   white: '#ffffff',
   /** Danger/warnings/errors */
   pink: '#ff81c1',
+  /** Success/completion */
+  green: '#4ade80',
+  /** Warnings/caution */
+  orange: '#fb923c',
 } as const;
 
 /**

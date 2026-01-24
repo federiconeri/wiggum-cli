@@ -38,6 +38,11 @@ export interface ConversationContext {
 export type ToolUseCallback = (toolName: string, args: Record<string, unknown>) => void;
 
 /**
+ * Tool result callback for capturing tool completion
+ */
+export type ToolResultCallback = (toolName: string, result: unknown) => void;
+
+/**
  * Conversation manager options
  */
 export interface ConversationManagerOptions {
@@ -48,6 +53,8 @@ export interface ConversationManagerOptions {
   tools?: Record<string, Tool>;
   /** Callback when a tool is used */
   onToolUse?: ToolUseCallback;
+  /** Callback when a tool completes with result */
+  onToolResult?: ToolResultCallback;
   /** Maximum tool calling steps (default: 5) */
   maxToolSteps?: number;
 }
@@ -94,6 +101,7 @@ export class ConversationManager {
   private systemPrompt: string;
   private tools?: Record<string, Tool>;
   private onToolUse?: ToolUseCallback;
+  private onToolResult?: ToolResultCallback;
   private maxToolSteps: number;
 
   constructor(options: ConversationManagerOptions) {
@@ -102,6 +110,7 @@ export class ConversationManager {
     this.systemPrompt = options.systemPrompt || this.getDefaultSystemPrompt();
     this.tools = options.tools;
     this.onToolUse = options.onToolUse;
+    this.onToolResult = options.onToolResult;
     this.maxToolSteps = options.maxToolSteps ?? 5;
   }
 
@@ -117,6 +126,13 @@ export class ConversationManager {
    */
   setOnToolUse(callback: ToolUseCallback): void {
     this.onToolUse = callback;
+  }
+
+  /**
+   * Set tool result callback
+   */
+  setOnToolResult(callback: ToolResultCallback): void {
+    this.onToolResult = callback;
   }
 
   /**
@@ -228,6 +244,12 @@ Be concise but thorough. Focus on understanding the user's needs before proposin
           for (const toolCall of step.toolCalls) {
             // AI SDK uses 'input' for tool arguments
             this.onToolUse(toolCall.toolName, toolCall.input as Record<string, unknown>);
+          }
+        }
+        // Call onToolResult callback for each tool result
+        if (step.toolResults && this.onToolResult) {
+          for (const toolResult of step.toolResults) {
+            this.onToolResult(toolResult.toolName, toolResult.output);
           }
         }
       };

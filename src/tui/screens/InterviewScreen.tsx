@@ -9,8 +9,8 @@
  * 4. Generation - Generate the specification
  */
 
-import React, { useEffect, useCallback } from 'react';
-import { Box, useInput } from 'ink';
+import React, { useEffect, useCallback, useRef } from 'react';
+import { Box, Text, useInput } from 'ink';
 import type { AIProvider } from '../../ai/providers.js';
 import type { ScanResult } from '../../scanner/types.js';
 import { PhaseHeader } from '../components/PhaseHeader.js';
@@ -21,7 +21,10 @@ import {
   useSpecGenerator,
   PHASE_CONFIGS,
   TOTAL_DISPLAY_PHASES,
+  type GeneratorPhase,
 } from '../hooks/useSpecGenerator.js';
+import { InterviewOrchestrator } from '../orchestration/interview-orchestrator.js';
+import { colors } from '../theme.js';
 
 /**
  * Props for the InterviewScreen component
@@ -50,19 +53,8 @@ export interface InterviewScreenProps {
  * components (PhaseHeader, MessageList, WorkingIndicator, ChatInput) to
  * create the complete interview experience.
  *
- * Uses the useSpecGenerator hook to manage state and actions.
- *
- * @example
- * ```tsx
- * <InterviewScreen
- *   featureName="user-auth"
- *   projectRoot="/path/to/project"
- *   provider="anthropic"
- *   model="claude-sonnet-4-5-20250514"
- *   onComplete={(spec) => writeSpec(spec)}
- *   onCancel={() => process.exit(0)}
- * />
- * ```
+ * Uses the useSpecGenerator hook for state and InterviewOrchestrator
+ * to bridge to the AI conversation.
  */
 export function InterviewScreen({
   featureName,
@@ -75,33 +67,145 @@ export function InterviewScreen({
 }: InterviewScreenProps): React.ReactElement {
   const {
     state,
-    submitAnswer,
     initialize,
+    addMessage,
+    updateStreamingMessage,
+    completeStreamingMessage,
+    startToolCall,
+    completeToolCall,
+    setPhase,
+    setGeneratedSpec,
+    setError,
+    setWorking,
+    setReady,
   } = useSpecGenerator();
 
-  // Initialize the generator when the component mounts
+  // Track orchestrator instance
+  const orchestratorRef = useRef<InterviewOrchestrator | null>(null);
+
+  // Track if we're in streaming mode for the current message
+  const isStreamingRef = useRef(false);
+  const streamContentRef = useRef('');
+
+  // Initialize the orchestrator when the component mounts
   useEffect(() => {
+    // Initialize hook state
     initialize({
       featureName,
       projectRoot,
       provider,
       model,
     });
-  }, [featureName, projectRoot, provider, model, initialize]);
 
-  // Call onComplete when spec is generated
-  useEffect(() => {
-    if (state.generatedSpec) {
-      onComplete(state.generatedSpec);
-    }
-  }, [state.generatedSpec, onComplete]);
+    // Create orchestrator with callbacks
+    const orchestrator = new InterviewOrchestrator({
+      featureName,
+      projectRoot,
+      provider,
+      model,
+      scanResult,
+      onMessage: (role, content) => {
+        addMessage(role, content);
+      },
+      onStreamChunk: (chunk) => {
+        if (!isStreamingRef.current) {
+          // Start a new streaming message
+          isStreamingRef.current = true;
+          streamContentRef.current = chunk;
+          addMessage('assistant', chunk);
+        } else {
+          // Append to existing streaming content
+          streamContentRef.current += chunk;
+          updateStreamingMessage(streamContentRef.current);
+        }
+      },
+      onStreamComplete: () => {
+        if (isStreamingRef.current) {
+          completeStreamingMessage();
+          isStreamingRef.current = false;
+          streamContentRef.current = '';
+        }
+      },
+      onToolStart: (toolName, input) => {
+        return startToolCall(toolName, input);
+      },
+      onToolEnd: (toolId, output, error) => {
+        completeToolCall(toolId, output, error);
+      },
+      onPhaseChange: (phase: GeneratorPhase) => {
+        setPhase(phase);
+      },
+      onComplete: (spec) => {
+        setGeneratedSpec(spec);
+        onComplete(spec);
+      },
+      onError: (error) => {
+        setError(error);
+      },
+      onWorkingChange: (isWorking, status) => {
+        setWorking(isWorking, status);
+      },
+      onReady: () => {
+        setReady();
+      },
+    });
 
-  // Handle user input submission
+    orchestratorRef.current = orchestrator;
+
+    // Start the orchestrator
+    orchestrator.start();
+
+    // Cleanup (orchestrator doesn't need explicit cleanup)
+    return () => {
+      orchestratorRef.current = null;
+    };
+  }, [featureName, projectRoot, provider, model, scanResult]);
+
+  // Handle user input submission based on current phase
   const handleSubmit = useCallback(
     async (value: string) => {
-      await submitAnswer(value);
+      const orchestrator = orchestratorRef.current;
+      if (!orchestrator) return;
+
+      // Add user message to display
+      if (value) {
+        addMessage('user', value);
+      }
+
+      const currentPhase = orchestrator.getPhase();
+
+      switch (currentPhase) {
+        case 'context':
+          if (value) {
+            // User entered a reference URL/path
+            await orchestrator.addReference(value);
+          } else {
+            // Empty input = done with context, advance to goals
+            await orchestrator.advanceToGoals();
+          }
+          break;
+
+        case 'goals':
+          // User entered their goals
+          await orchestrator.submitGoals(value);
+          break;
+
+        case 'interview':
+          if (value.toLowerCase() === 'done' || value.toLowerCase() === 'skip') {
+            // Skip to generation
+            await orchestrator.skipToGeneration();
+          } else {
+            // Submit answer
+            await orchestrator.submitAnswer(value);
+          }
+          break;
+
+        default:
+          // In generation or complete phase, ignore input
+          break;
+      }
     },
-    [submitAnswer]
+    [addMessage]
   );
 
   // Handle keyboard input for Escape key
@@ -115,14 +219,31 @@ export function InterviewScreen({
   const phaseConfig = PHASE_CONFIGS[state.phase];
 
   // Determine if input should be disabled
-  // Input is enabled when awaiting input and not working
-  const inputDisabled = !state.awaitingInput || state.isWorking;
+  const inputDisabled = !state.awaitingInput || state.isWorking || state.phase === 'complete';
 
   // Build the working indicator state
   const workingState = {
     isWorking: state.isWorking,
     status: state.workingStatus,
     hint: 'esc to cancel',
+  };
+
+  // Get placeholder text based on phase
+  const getPlaceholder = () => {
+    switch (state.phase) {
+      case 'context':
+        return 'Enter URL or file path, or press Enter to continue...';
+      case 'goals':
+        return 'Describe what you want to build...';
+      case 'interview':
+        return 'Type your response (or "done" to generate spec)...';
+      case 'generation':
+        return 'Generating specification...';
+      case 'complete':
+        return 'Specification complete!';
+      default:
+        return 'Type your response...';
+    }
   };
 
   return (
@@ -134,31 +255,43 @@ export function InterviewScreen({
         phaseName={phaseConfig.name}
       />
 
+      {/* Error display */}
+      {state.error && (
+        <Box marginY={1}>
+          <Text color="red">Error: {state.error}</Text>
+        </Box>
+      )}
+
       {/* Conversation history */}
       <Box marginY={1}>
         <MessageList messages={state.messages} />
       </Box>
 
       {/* Working indicator when AI is processing */}
-      <Box marginY={1}>
-        <WorkingIndicator state={workingState} />
-      </Box>
+      {state.isWorking && (
+        <Box marginY={1}>
+          <WorkingIndicator state={workingState} />
+        </Box>
+      )}
+
+      {/* Completion message */}
+      {state.phase === 'complete' && (
+        <Box marginY={1}>
+          <Text color={colors.green}>Specification generated successfully!</Text>
+        </Box>
+      )}
 
       {/* User input area */}
-      <Box marginTop={1}>
-        <ChatInput
-          onSubmit={handleSubmit}
-          disabled={inputDisabled}
-          allowEmpty={state.phase === 'context'}
-          placeholder={
-            state.phase === 'context'
-              ? 'Enter URL or file path, or press Enter to continue...'
-              : state.phase === 'goals'
-                ? 'Describe what you want to build...'
-                : 'Type your response...'
-          }
-        />
-      </Box>
+      {state.phase !== 'complete' && (
+        <Box marginTop={1}>
+          <ChatInput
+            onSubmit={handleSubmit}
+            disabled={inputDisabled}
+            allowEmpty={state.phase === 'context'}
+            placeholder={getPlaceholder()}
+          />
+        </Box>
+      )}
     </Box>
   );
 }

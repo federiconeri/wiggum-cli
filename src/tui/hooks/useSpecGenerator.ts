@@ -178,6 +178,28 @@ export interface UseSpecGeneratorReturn {
    * Complete a tool execution
    */
   completeToolCall: (toolId: string, output?: string, error?: string) => void;
+
+  // Orchestrator-specific actions
+
+  /**
+   * Set the current phase (used by orchestrator)
+   */
+  setPhase: (phase: GeneratorPhase) => void;
+
+  /**
+   * Set the generated spec (used by orchestrator on completion)
+   */
+  setGeneratedSpec: (spec: string) => void;
+
+  /**
+   * Set an error state (used by orchestrator on error)
+   */
+  setError: (error: string) => void;
+
+  /**
+   * Set working state with status message (used by orchestrator)
+   */
+  setWorking: (isWorking: boolean, status: string) => void;
 }
 
 /**
@@ -571,6 +593,52 @@ export function useSpecGenerator(): UseSpecGeneratorReturn {
     setState(initialState);
   }, []);
 
+  /**
+   * Set the current phase (used by orchestrator)
+   */
+  const setPhase = useCallback((phase: GeneratorPhase) => {
+    setState((prev) => ({
+      ...prev,
+      phase,
+    }));
+  }, []);
+
+  /**
+   * Set the generated spec (used by orchestrator on completion)
+   */
+  const setGeneratedSpec = useCallback((spec: string) => {
+    setState((prev) => ({
+      ...prev,
+      generatedSpec: spec,
+      phase: 'complete',
+      isWorking: false,
+      awaitingInput: false,
+    }));
+  }, []);
+
+  /**
+   * Set an error state (used by orchestrator on error)
+   */
+  const setError = useCallback((error: string) => {
+    setState((prev) => ({
+      ...prev,
+      error,
+      isWorking: false,
+    }));
+  }, []);
+
+  /**
+   * Set working state with status message (used by orchestrator)
+   */
+  const setWorking = useCallback((isWorking: boolean, status: string) => {
+    setState((prev) => ({
+      ...prev,
+      isWorking,
+      workingStatus: status,
+      awaitingInput: !isWorking && prev.phase !== 'complete',
+    }));
+  }, []);
+
   return {
     state,
     submitAnswer,
@@ -585,5 +653,10 @@ export function useSpecGenerator(): UseSpecGeneratorReturn {
     setReady,
     startToolCall,
     completeToolCall,
+    // Orchestrator-specific actions
+    setPhase,
+    setGeneratedSpec,
+    setError,
+    setWorking,
   };
 }

@@ -205,6 +205,7 @@ Dashboard Shows:
     .option('-y, --yes', 'Skip confirmation prompts')
     .option('-f, --force', 'Overwrite existing spec file without prompting')
     .option('--ai', 'Use AI interview to generate the spec')
+    .option('--tui', 'Use Ink TUI for AI interview (with --ai)')
     .option(
       '--provider <name>',
       'AI provider for spec generation (anthropic, openai, openrouter)'
@@ -216,6 +217,7 @@ Dashboard Shows:
 Examples:
   $ wiggum new user-dashboard              Create spec from template
   $ wiggum new user-dashboard --ai         Use AI interview to generate spec
+  $ wiggum new user-dashboard --ai --tui   Use AI with Ink TUI interface
   $ wiggum new user-dashboard --edit       Create and open in editor
   $ wiggum new user-dashboard -e --editor vim  Open in vim
   $ wiggum new user-dashboard --yes        Skip confirmations
@@ -228,6 +230,7 @@ AI Mode (--ai):
   - Gathers context from URLs/files you provide
   - Conducts an interview to understand your requirements
   - Generates a detailed, project-specific specification
+  - Add --tui for a beautiful Ink-based terminal interface
 
 Template Mode (default):
   - Uses a standard template with sections for:
@@ -242,6 +245,7 @@ Template Mode (default):
           yes: options.yes,
           force: options.force,
           ai: options.ai,
+          tui: options.tui,
           provider: options.provider,
           model: options.model,
         };

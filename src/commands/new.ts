@@ -15,6 +15,8 @@ import { Scanner, type ScanResult } from '../scanner/index.js';
 import { flushTracing, traced, initTracing } from '../utils/tracing.js';
 import pc from 'picocolors';
 import * as prompts from '@clack/prompts';
+import { renderApp } from '../tui/app.js';
+import { createSessionState } from '../repl/session-state.js';
 
 export interface NewOptions {
   /** Open in editor after creation */
@@ -27,6 +29,8 @@ export interface NewOptions {
   force?: boolean;
   /** Use AI interview to generate spec */
   ai?: boolean;
+  /** Use Ink TUI for AI interview (instead of readline) */
+  tui?: boolean;
   /** AI provider (anthropic, openai, openrouter) */
   provider?: AIProvider;
   /** Model to use for AI generation */
@@ -273,37 +277,85 @@ export async function newCommand(feature: string, options: NewOptions = {}): Pro
       scanResult = await scanner.scan(projectRoot);
     }
 
-    const specGenerator = new SpecGenerator({
-      featureName: feature,
-      projectRoot,
-      provider,
-      model,
-      scanResult,
-    });
+    // Check if TUI mode is requested
+    if (options.tui) {
+      // Use Ink TUI for interview
+      logger.info('Starting interactive TUI mode...');
+      console.log('');
 
-    // Initialize tracing BEFORE creating parent span (ensures logger is ready)
-    initTracing();
+      // Create session state for TUI
+      const sessionState = createSessionState(
+        projectRoot,
+        provider,
+        model,
+        scanResult,
+        config,
+        true // initialized
+      );
 
-    const generatedSpec = await traced(
-      async () => {
-        // All AI calls inside run() automatically become child spans
-        return await specGenerator.run();
-      },
-      {
-        name: `generate-spec-${feature}`,
-        type: 'task',
+      // Wrap in a promise to get the generated spec
+      const generatedSpec = await new Promise<string | null>((resolve) => {
+        const instance = renderApp({
+          screen: 'interview',
+          initialSessionState: sessionState,
+          interviewProps: {
+            featureName: feature,
+            projectRoot,
+            provider,
+            model,
+            scanResult,
+          },
+          onComplete: (spec) => {
+            instance.unmount();
+            resolve(spec);
+          },
+          onExit: () => {
+            instance.unmount();
+            resolve(null);
+          },
+        });
+      });
+
+      if (!generatedSpec) {
+        logger.info('Spec generation cancelled');
+        return;
       }
-    );
 
-    // Flush any pending Braintrust tracing spans
-    await flushTracing();
+      specContent = generatedSpec;
+    } else {
+      // Use readline-based SpecGenerator
+      const specGenerator = new SpecGenerator({
+        featureName: feature,
+        projectRoot,
+        provider,
+        model,
+        scanResult,
+      });
 
-    if (!generatedSpec) {
-      logger.info('Spec generation cancelled');
-      return;
+      // Initialize tracing BEFORE creating parent span (ensures logger is ready)
+      initTracing();
+
+      const generatedSpec = await traced(
+        async () => {
+          // All AI calls inside run() automatically become child spans
+          return await specGenerator.run();
+        },
+        {
+          name: `generate-spec-${feature}`,
+          type: 'task',
+        }
+      );
+
+      // Flush any pending Braintrust tracing spans
+      await flushTracing();
+
+      if (!generatedSpec) {
+        logger.info('Spec generation cancelled');
+        return;
+      }
+
+      specContent = generatedSpec;
     }
-
-    specContent = generatedSpec;
 
     // Confirm saving (unless --yes)
     if (!options.yes) {

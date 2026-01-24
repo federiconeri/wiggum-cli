@@ -1,20 +1,36 @@
 import { createCli } from './cli.js';
-import { startRepl, createSessionState } from './repl/index.js';
+import { createSessionState } from './repl/index.js';
 import { hasConfig, loadConfigWithDefaults } from './utils/config.js';
 import { getAvailableProvider } from './ai/providers.js';
-import { displayHeader } from './utils/header.js';
 import { notifyIfUpdateAvailable } from './utils/update-check.js';
+import { renderApp } from './tui/app.js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
 /**
- * Start REPL-first mode
+ * Get version from package.json
+ */
+function getVersion(): string {
+  try {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = dirname(__filename);
+    const packagePath = join(__dirname, '..', 'package.json');
+    const pkg = JSON.parse(readFileSync(packagePath, 'utf-8'));
+    return pkg.version || '0.8.0';
+  } catch {
+    return '0.8.0';
+  }
+}
+
+/**
+ * Start Ink TUI mode
  * Called when wiggum is invoked with no arguments
  */
-async function startReplFirst(): Promise<void> {
+async function startInkTui(): Promise<void> {
   const projectRoot = process.cwd();
   const provider = getAvailableProvider();
-
-  // Display header
-  displayHeader();
+  const version = getVersion();
 
   // Check if already initialized
   const isInitialized = hasConfig(projectRoot);
@@ -34,12 +50,28 @@ async function startReplFirst(): Promise<void> {
     isInitialized
   );
 
-  await startRepl(initialState);
+  // Render Ink app
+  const instance = renderApp({
+    screen: 'welcome',
+    initialSessionState: initialState,
+    version,
+    onComplete: (spec) => {
+      // Spec generated - could save to file here
+      console.log('\nSpec generated successfully!');
+    },
+    onExit: () => {
+      instance.unmount();
+      process.exit(0);
+    },
+  });
+
+  // Wait for the app to exit
+  await instance.waitUntilExit();
 }
 
 /**
- * Main entry point for the Ralph CLI
- * REPL-first: no args = start REPL, otherwise use CLI
+ * Main entry point for the Wiggum CLI
+ * TUI-first: no args = start Ink TUI, otherwise use CLI
  */
 export async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -47,9 +79,9 @@ export async function main(): Promise<void> {
   // Check for updates (non-blocking, fails silently)
   await notifyIfUpdateAvailable();
 
-  // REPL-first: no args = start REPL
+  // TUI-first: no args = start Ink TUI
   if (args.length === 0) {
-    await startReplFirst();
+    await startInkTui();
     return;
   }
 
@@ -89,3 +121,6 @@ export type {
   WriteOptions,
   WriteSummary,
 } from './generator/index.js';
+
+// Export TUI components for programmatic use
+export { renderApp, type RenderAppOptions, type AppScreen } from './tui/app.js';
