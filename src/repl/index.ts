@@ -1,9 +1,9 @@
 /**
- * REPL Module
- * Interactive command-line interface for Wiggum
+ * State and Command Parsing Module
+ * Shared utilities for session state and slash command parsing
+ * (Originally REPL module, now used by TUI)
  */
 
-export { startRepl, processInput, executeCommand } from './repl-loop.js';
 export {
   type SessionState,
   createSessionState,

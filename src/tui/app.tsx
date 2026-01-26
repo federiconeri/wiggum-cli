@@ -55,8 +55,6 @@ export interface AppProps {
   onComplete?: (result: string) => void;
   /** Called when the user exits/cancels */
   onExit?: () => void;
-  /** Called when init workflow should run (outside of Ink) */
-  onRunInit?: () => void;
 }
 
 /**
@@ -82,7 +80,6 @@ export function App({
   interviewProps,
   onComplete,
   onExit,
-  onRunInit,
 }: AppProps): React.ReactElement | null {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(initialScreen);
   const [screenProps, setScreenProps] = useState<NavigationProps | null>(
@@ -218,19 +215,17 @@ export function App({
     }
 
     case 'init': {
-      // Handle init workflow - requires running outside Ink due to readline prompts
-      const handleRunInit = () => {
-        if (onRunInit) {
-          onRunInit();
-        } else {
-          // No init handler provided, return to shell with message
-          navigate('shell');
-        }
+      // Handle init completion by updating session state
+      const handleInitComplete = (newState: SessionState) => {
+        setSessionState(newState);
+        navigate('shell');
       };
 
       return (
         <InitScreen
-          onRunInit={handleRunInit}
+          projectRoot={sessionState.projectRoot}
+          sessionState={sessionState}
+          onComplete={handleInitComplete}
           onCancel={() => navigate('shell')}
         />
       );
@@ -257,8 +252,6 @@ export interface RenderAppOptions {
   onComplete?: (result: string) => void;
   /** Called when user exits */
   onExit?: () => void;
-  /** Called when init workflow should run (outside of Ink) */
-  onRunInit?: () => void;
 }
 
 /**
@@ -291,7 +284,6 @@ export function renderApp(options: RenderAppOptions): Instance {
       interviewProps={options.interviewProps}
       onComplete={options.onComplete}
       onExit={options.onExit}
-      onRunInit={options.onRunInit}
     />
   );
 }

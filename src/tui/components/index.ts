@@ -19,3 +19,12 @@ export type { MessageListProps, Message, ToolCall } from './MessageList.js';
 
 export { ChatInput } from './ChatInput.js';
 export type { ChatInputProps } from './ChatInput.js';
+
+export { Select } from './Select.js';
+export type { SelectProps, SelectOption } from './Select.js';
+
+export { PasswordInput } from './PasswordInput.js';
+export type { PasswordInputProps } from './PasswordInput.js';
+
+export { Confirm } from './Confirm.js';
+export type { ConfirmProps } from './Confirm.js';
