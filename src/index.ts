@@ -39,6 +39,19 @@ async function startInkTui(): Promise<void> {
   let shouldRestart = false;
 
   /**
+   * Ensure stdin is active for readline-based prompts after Ink unmount
+   */
+  const resetStdinForReadline = () => {
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(false);
+    }
+    process.stdin.resume();
+    if (typeof process.stdin.ref === 'function') {
+      process.stdin.ref();
+    }
+  };
+
+  /**
    * Create session state based on current project state
    */
   async function createCurrentSessionState() {
@@ -83,7 +96,16 @@ async function startInkTui(): Promise<void> {
       onRunInit: async () => {
         // Unmount Ink to run init workflow with readline prompts
         shouldRestart = true;
-        instance?.unmount();
+        const currentInstance = instance;
+        currentInstance?.unmount();
+        // Keep stdin alive for readline prompts before awaiting
+        resetStdinForReadline();
+        // Wait for Ink to fully clean up stdin handlers
+        if (currentInstance?.waitUntilExit) {
+          await currentInstance.waitUntilExit();
+        }
+        // Reset stdin again after Ink cleanup
+        resetStdinForReadline();
 
         // Clear screen for init workflow
         console.clear();
