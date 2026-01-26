@@ -143,8 +143,26 @@ export async function select<T>(options: {
     // Drain any buffered input before setting up keypress handling.
     // When transitioning from a REPL readline (e.g., after /init command),
     // there may be a buffered newline that would immediately trigger selection.
-    // Using setTimeout allows the event loop to process and discard buffered input.
-    setTimeout(setupKeypress, 50);
+    // We must actively consume the buffer by enabling raw mode and reading data.
+    if (process.stdin.isTTY) {
+      // Temporarily consume and discard any buffered input
+      const drainHandler = () => {
+        // Intentionally discard - this drains the buffer
+      };
+      process.stdin.on('data', drainHandler);
+      process.stdin.setRawMode(true);
+      process.stdin.resume();
+
+      // After buffer is drained, set up real keypress handling
+      setTimeout(() => {
+        process.stdin.removeListener('data', drainHandler);
+        process.stdin.setRawMode(false);
+        process.stdin.pause();
+        setupKeypress();
+      }, 50);
+    } else {
+      setupKeypress();
+    }
   });
 }
 
