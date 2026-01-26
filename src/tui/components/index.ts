@@ -20,6 +20,9 @@ export type { MessageListProps, Message, ToolCall } from './MessageList.js';
 export { ChatInput } from './ChatInput.js';
 export type { ChatInputProps } from './ChatInput.js';
 
+export { CommandDropdown, DEFAULT_COMMANDS } from './CommandDropdown.js';
+export type { CommandDropdownProps, Command } from './CommandDropdown.js';
+
 export { Select } from './Select.js';
 export type { SelectProps, SelectOption } from './Select.js';
 

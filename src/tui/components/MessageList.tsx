@@ -1,11 +1,10 @@
 /**
- * MessageList - Scrollable conversation history display
+ * MessageList - Conversation history display
  *
- * Displays the full conversation history including:
- * - User messages
- * - Assistant messages (with optional streaming)
- * - System messages
- * - Tool call cards inline with assistant messages
+ * Displays the full conversation history with clean formatting:
+ * - User messages: › prefix
+ * - Assistant messages: ● bullet with clean markdown-like styling
+ * - Tool calls: Inline action indicators
  */
 
 import React from 'react';
@@ -57,13 +56,13 @@ export interface MessageListProps {
 }
 
 /**
- * Renders a single user message
+ * Renders a single user message with › prefix
  */
 function UserMessage({ content }: { content: string }): React.ReactElement {
   return (
     <Box flexDirection="row" marginY={1}>
-      <Text color={colors.white} bold>
-        You:{' '}
+      <Text color={colors.blue} bold>
+        ›{' '}
       </Text>
       <Text color={colors.white}>{content}</Text>
     </Box>
@@ -71,7 +70,7 @@ function UserMessage({ content }: { content: string }): React.ReactElement {
 }
 
 /**
- * Renders a single assistant message with optional tool calls and streaming
+ * Renders a single assistant message with ● prefix and tool calls
  */
 function AssistantMessage({
   content,
@@ -84,45 +83,46 @@ function AssistantMessage({
 }): React.ReactElement {
   return (
     <Box flexDirection="column" marginY={1}>
-      {/* Tool calls appear before the message content */}
-      {toolCalls &&
-        toolCalls.length > 0 &&
-        toolCalls.map((toolCall, index) => (
-          <Box key={`tool-${index}`} marginBottom={1}>
+      {/* Tool calls appear first */}
+      {toolCalls && toolCalls.length > 0 && (
+        <Box flexDirection="column" marginBottom={1}>
+          {toolCalls.map((toolCall, index) => (
             <ToolCallCard
+              key={`tool-${index}`}
               toolName={toolCall.toolName}
               status={toolCall.status}
               input={toolCall.input}
               output={toolCall.output}
               error={toolCall.error}
             />
-          </Box>
-        ))}
+          ))}
+        </Box>
+      )}
 
-      {/* Message content with prefix */}
-      <Box flexDirection="row">
-        <Text color={colors.yellow} bold>
-          AI:{' '}
-        </Text>
-        {isStreaming ? (
-          <StreamingText text={content} isStreaming={true} color={colors.yellow} />
-        ) : (
-          <Text color={colors.yellow}>{content}</Text>
-        )}
-      </Box>
+      {/* Message content with bullet prefix */}
+      {content && (
+        <Box flexDirection="row">
+          <Text color={colors.yellow}>●{' '}</Text>
+          <Box flexDirection="column" flexGrow={1}>
+            {isStreaming ? (
+              <StreamingText text={content} isStreaming={true} color={colors.yellow} />
+            ) : (
+              <Text color={colors.yellow}>{content}</Text>
+            )}
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 }
 
 /**
- * Renders a system message (dimmed text)
+ * Renders a system message (dimmed, no prefix)
  */
 function SystemMessage({ content }: { content: string }): React.ReactElement {
   return (
-    <Box flexDirection="row" marginY={1}>
-      <Text color={colors.brown} dimColor>
-        {content}
-      </Text>
+    <Box marginY={1}>
+      <Text dimColor>{content}</Text>
     </Box>
   );
 }
@@ -130,35 +130,25 @@ function SystemMessage({ content }: { content: string }): React.ReactElement {
 /**
  * MessageList component
  *
- * Displays the full conversation history. Each message type has
- * distinct styling:
- * - User messages: "You: " prefix in white
- * - Assistant messages: "AI: " prefix in yellow, with inline tool cards
- * - System messages: dimmed brown text
- *
- * For streaming messages, uses the StreamingText component to show
- * the cursor indicator.
+ * Displays the full conversation history with clean styling:
+ * - User messages: `› ` prefix in blue
+ * - Assistant messages: `● ` prefix in yellow, with inline tool cards
+ * - System messages: dimmed text
  *
  * @example
  * ```tsx
  * <MessageList
  *   messages={[
- *     { id: '1', role: 'system', content: 'Interview started' },
- *     { id: '2', role: 'assistant', content: 'Hello! What would you like to build?' },
- *     { id: '3', role: 'user', content: 'A todo app' },
- *     { id: '4', role: 'assistant', content: 'Let me check...',
- *       toolCalls: [{ toolName: 'Read File', status: 'running', input: 'package.json' }],
- *       isStreaming: true
- *     },
+ *     { id: '1', role: 'user', content: 'Hello' },
+ *     { id: '2', role: 'assistant', content: 'Hi! How can I help?' },
  *   ]}
  * />
+ * // Renders:
+ * // › Hello
+ * // ● Hi! How can I help?
  * ```
  */
 export function MessageList({ messages, maxHeight }: MessageListProps): React.ReactElement {
-  // Note: maxHeight is accepted for future scrolling support
-  // Currently renders all messages - parent handles any scroll-like behavior
-  // by controlling which messages are passed in
-
   return (
     <Box
       flexDirection="column"

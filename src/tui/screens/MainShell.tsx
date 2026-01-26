@@ -282,7 +282,7 @@ export function MainShell({
           onSubmit={handleSubmit}
           disabled={false}
           placeholder="Enter command or type /help..."
-          prompt="wiggum> "
+          onCommand={(cmd) => handleSubmit(`/${cmd}`)}
         />
       </Box>
     </Box>
