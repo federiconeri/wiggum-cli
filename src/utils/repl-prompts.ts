@@ -15,7 +15,7 @@ export interface SelectOption<T> {
 }
 
 /**
- * Simple select prompt for REPL
+ * Interactive select prompt with arrow key navigation
  */
 export async function select<T>(options: {
   message: string;
@@ -23,40 +23,98 @@ export async function select<T>(options: {
 }): Promise<T | null> {
   const { message, options: choices } = options;
 
-  console.log('');
-  console.log(`${simpson.yellow('?')} ${message}`);
-  console.log('');
+  let selectedIndex = 0;
 
-  choices.forEach((choice, index) => {
-    const hint = choice.hint ? pc.dim(` (${choice.hint})`) : '';
-    console.log(`  ${pc.cyan(`${index + 1})`)} ${choice.label}${hint}`);
-  });
+  // Render the options with current selection highlighted
+  const render = () => {
+    // Move cursor up to rewrite options (except on first render)
+    const output: string[] = [];
 
-  console.log('');
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(`${pc.dim('Enter number (1-' + choices.length + '):')} `, (answer) => {
-      rl.close();
-      const num = parseInt(answer.trim(), 10);
-      if (num >= 1 && num <= choices.length) {
-        const selected = choices[num - 1];
-        console.log(`${pc.green('✓')} Selected: ${selected.label}`);
-        resolve(selected.value);
+    choices.forEach((choice, index) => {
+      const hint = choice.hint ? pc.dim(` (${choice.hint})`) : '';
+      if (index === selectedIndex) {
+        output.push(`  ${pc.cyan('❯')} ${pc.cyan(choice.label)}${hint}`);
       } else {
-        console.log(pc.red('Invalid selection'));
-        resolve(null);
+        output.push(`    ${pc.dim(choice.label)}${hint}`);
       }
     });
 
-    rl.on('SIGINT', () => {
-      rl.close();
-      resolve(null);
-    });
+    return output.join('\n');
+  };
+
+  // Initial render
+  console.log('');
+  console.log(`${simpson.yellow('?')} ${message}`);
+  console.log('');
+  process.stdout.write(render());
+  console.log('');
+  process.stdout.write(pc.dim('  (Use arrow keys, Enter to select, Ctrl+C to cancel)'));
+
+  return new Promise((resolve) => {
+    const cleanup = () => {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(false);
+      }
+      process.stdin.removeListener('data', onData);
+      process.stdin.pause();
+    };
+
+    const onData = (key: string) => {
+      // Ctrl+C
+      if (key === '\u0003') {
+        cleanup();
+        // Clear the hint line and show cancelled
+        process.stdout.write('\r' + ' '.repeat(60) + '\r');
+        console.log(pc.red('Cancelled'));
+        resolve(null);
+        return;
+      }
+
+      // Enter
+      if (key === '\r' || key === '\n') {
+        cleanup();
+        const selected = choices[selectedIndex];
+        // Clear the hint line and move up to rewrite final state
+        process.stdout.write('\r' + ' '.repeat(60) + '\r');
+        // Move up past all options and the message
+        process.stdout.write(`\x1b[${choices.length + 3}A`);
+        // Rewrite the question with the answer
+        console.log(`${pc.green('✓')} ${message}`);
+        console.log(`  ${pc.cyan(selected.label)}`);
+        console.log('');
+        resolve(selected.value);
+        return;
+      }
+
+      // Arrow keys come as escape sequences
+      if (key === '\x1b[A' || key === 'k') {
+        // Up arrow or k
+        selectedIndex = (selectedIndex - 1 + choices.length) % choices.length;
+      } else if (key === '\x1b[B' || key === 'j') {
+        // Down arrow or j
+        selectedIndex = (selectedIndex + 1) % choices.length;
+      } else {
+        // Ignore other keys
+        return;
+      }
+
+      // Re-render options
+      // Move cursor up to the first option line (past hint + blank line)
+      process.stdout.write(`\x1b[${choices.length + 1}A`);
+      // Clear from cursor to end of screen
+      process.stdout.write('\x1b[J');
+      // Write new options
+      process.stdout.write(render());
+      console.log('');
+      process.stdout.write(pc.dim('  (Use arrow keys, Enter to select, Ctrl+C to cancel)'));
+    };
+
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
+    }
+    process.stdin.resume();
+    process.stdin.setEncoding('utf8');
+    process.stdin.on('data', onData);
   });
 }
 
