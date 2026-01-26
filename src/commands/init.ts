@@ -345,6 +345,10 @@ export async function runInitWorkflow(
     existingFiles: 'backup',
     generateConfig: true,
     verbose: false,
+    customVariables: {
+      defaultModel: apiKeys.model,
+      planningModel: apiKeys.model,
+    },
   });
 
   try {

@@ -83,6 +83,32 @@ const DEFAULT_MODELS: Record<AIProvider, string> = {
 };
 
 /**
+ * Anthropic shorthand aliases for legacy configs
+ */
+const ANTHROPIC_MODEL_ALIASES: Record<string, string> = {
+  sonnet: 'claude-sonnet-4-5-20250514',
+  opus: 'claude-opus-4-5-20250514',
+  haiku: 'claude-haiku-4-5-20250514',
+};
+
+/**
+ * Check if a model id is an Anthropic alias (sonnet/opus/haiku)
+ */
+export function isAnthropicAlias(modelId: string): boolean {
+  return Object.prototype.hasOwnProperty.call(ANTHROPIC_MODEL_ALIASES, modelId);
+}
+
+/**
+ * Normalize model ids for a provider (maps legacy aliases where possible)
+ */
+export function normalizeModelId(provider: AIProvider, modelId: string): string {
+  if (provider === 'anthropic' && isAnthropicAlias(modelId)) {
+    return ANTHROPIC_MODEL_ALIASES[modelId];
+  }
+  return modelId;
+}
+
+/**
  * Check if an API key is available for a provider
  */
 export function hasApiKey(provider: AIProvider): boolean {
@@ -111,7 +137,8 @@ function getApiKey(provider: AIProvider): string {
  * Get a configured AI model for the specified provider
  */
 export function getModel(provider: AIProvider = 'anthropic', customModelId?: string): ProviderConfig {
-  const modelId = customModelId || DEFAULT_MODELS[provider];
+  const rawModelId = customModelId || DEFAULT_MODELS[provider];
+  const modelId = normalizeModelId(provider, rawModelId);
 
   switch (provider) {
     case 'anthropic': {

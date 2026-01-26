@@ -1,7 +1,8 @@
 import { createCli } from './cli.js';
 import { createSessionState } from './repl/index.js';
 import { hasConfig, loadConfigWithDefaults } from './utils/config.js';
-import { getAvailableProvider } from './ai/providers.js';
+import { AVAILABLE_MODELS, getAvailableProvider, isAnthropicAlias } from './ai/providers.js';
+import type { AIProvider } from './ai/providers.js';
 import { notifyIfUpdateAvailable } from './utils/update-check.js';
 import { renderApp } from './tui/app.js';
 import { runInitWorkflow } from './commands/init.js';
@@ -63,10 +64,25 @@ async function startInkTui(): Promise<void> {
       config = await loadConfigWithDefaults(projectRoot);
     }
 
+    const getRecommendedModel = (p: AIProvider): string => {
+      const models = AVAILABLE_MODELS[p];
+      const recommended = models.find(m => m.hint?.includes('recommended'));
+      return recommended?.value || models[0].value;
+    };
+
+    let model = provider ? getRecommendedModel(provider) : 'sonnet';
+    const configuredModel = config?.loop?.defaultModel;
+    if (configuredModel) {
+      // Avoid applying Anthropic shorthand when using a non-Anthropic provider
+      if (!(provider && provider !== 'anthropic' && isAnthropicAlias(configuredModel))) {
+        model = configuredModel;
+      }
+    }
+
     return createSessionState(
       projectRoot,
       provider, // May be null if no API key
-      'sonnet', // Default model, will be updated after /init
+      model,
       undefined, // No scan result yet
       config,
       isInitialized

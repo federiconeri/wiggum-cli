@@ -53,6 +53,8 @@ export interface RalphConfig {
  */
 export function generateConfig(scanResult: ScanResult, customVars: Record<string, string> = {}): RalphConfig {
   const vars = extractVariables(scanResult, customVars);
+  const defaultModel = customVars.defaultModel || 'sonnet';
+  const planningModel = customVars.planningModel || 'opus';
 
   return {
     name: vars.projectName,
@@ -88,8 +90,8 @@ export function generateConfig(scanResult: ScanResult, customVars: Record<string
     loop: {
       maxIterations: 10,
       maxE2eAttempts: 5,
-      defaultModel: 'sonnet',
-      planningModel: 'opus',
+      defaultModel,
+      planningModel,
     },
   };
 }
