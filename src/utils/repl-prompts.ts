@@ -27,7 +27,6 @@ export async function select<T>(options: {
 
   // Render the options with current selection highlighted
   const render = () => {
-    // Move cursor up to rewrite options (except on first render)
     const output: string[] = [];
 
     choices.forEach((choice, index) => {
@@ -51,15 +50,20 @@ export async function select<T>(options: {
   process.stdout.write(pc.dim('  (Use arrow keys, Enter to select, Ctrl+C to cancel)'));
 
   return new Promise((resolve) => {
+    let isActive = true;
+
     const cleanup = () => {
+      if (!isActive) return;
+      isActive = false;
       if (process.stdin.isTTY) {
         process.stdin.setRawMode(false);
       }
       process.stdin.removeListener('data', onData);
-      process.stdin.pause();
     };
 
     const onData = (key: string) => {
+      if (!isActive) return;
+
       // Ctrl+C
       if (key === '\u0003') {
         cleanup();
@@ -109,12 +113,17 @@ export async function select<T>(options: {
       process.stdout.write(pc.dim('  (Use arrow keys, Enter to select, Ctrl+C to cancel)'));
     };
 
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(true);
-    }
-    process.stdin.resume();
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', onData);
+    // Small delay to let any buffered input clear before setting up raw mode
+    setTimeout(() => {
+      if (!isActive) return;
+
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true);
+      }
+      process.stdin.resume();
+      process.stdin.setEncoding('utf8');
+      process.stdin.on('data', onData);
+    }, 50);
   });
 }
 
