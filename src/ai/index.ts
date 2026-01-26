@@ -73,6 +73,8 @@ export {
   type MultiAgentAnalysis,
   type AgentCapabilities,
   type AgentOptions,
+  type ToolCallCallback,
+  type ToolCallEvent,
   // Legacy agents (deprecated, kept for backward compatibility)
   runCodebaseAnalyst,
   runStackResearcher,

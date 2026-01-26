@@ -214,6 +214,31 @@ export interface AgentCapabilities {
 export type ProgressCallback = (phase: string, detail?: string) => void;
 
 /**
+ * Tool call event for tracking agent actions
+ */
+export interface ToolCallEvent {
+  /** Unique ID for this tool call */
+  id: string;
+  /** Tool name (e.g., "readFile", "listDirectory", "searchCode") */
+  toolName: string;
+  /** Human-readable action name for display */
+  actionName: string;
+  /** Brief description of what the tool is doing */
+  description: string;
+  /** Tool call status */
+  status: 'running' | 'success' | 'error';
+  /** Tool output (when complete) */
+  output?: string;
+  /** Error message (when failed) */
+  error?: string;
+}
+
+/**
+ * Callback for tool call events
+ */
+export type ToolCallCallback = (event: ToolCallEvent) => void;
+
+/**
  * Options for running agents
  */
 export interface AgentOptions {
@@ -225,6 +250,8 @@ export interface AgentOptions {
   verbose?: boolean;
   /** Progress callback for phase updates */
   onProgress?: ProgressCallback;
+  /** Tool call callback for tracking agent actions */
+  onToolCall?: ToolCallCallback;
 }
 
 /**

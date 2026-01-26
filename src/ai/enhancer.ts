@@ -8,7 +8,7 @@ import type { ScanResult, DetectedStack, DetectionResult } from '../scanner/type
 import { getModel, type AIProvider, hasApiKey, getApiKeyEnvVar, isReasoningModel } from './providers.js';
 import { SYSTEM_PROMPT, SYSTEM_PROMPT_AGENTIC, createAnalysisPrompt } from './prompts.js';
 import { createExplorationTools } from './tools.js';
-import { runMultiAgentAnalysis, type MultiAgentAnalysis, type ProgressCallback } from './agents/index.js';
+import { runMultiAgentAnalysis, type MultiAgentAnalysis, type ProgressCallback, type ToolCallCallback, type ToolCallEvent } from './agents/index.js';
 import { logger } from '../utils/logger.js';
 import { parseJsonSafe } from '../utils/json-repair.js';
 import { getTracedAI, traced } from '../utils/tracing.js';
@@ -146,6 +146,8 @@ export interface EnhancerOptions {
   context7ApiKey?: string;
   /** Progress callback for phase updates */
   onProgress?: ProgressCallback;
+  /** Tool call callback for tracking agent actions */
+  onToolCall?: ToolCallCallback;
 }
 
 /**
@@ -223,6 +225,7 @@ export class AIEnhancer {
   private tavilyApiKey?: string;
   private context7ApiKey?: string;
   private onProgress?: ProgressCallback;
+  private onToolCall?: ToolCallCallback;
 
   constructor(options: EnhancerOptions = {}) {
     this.provider = options.provider || 'anthropic';
@@ -232,6 +235,7 @@ export class AIEnhancer {
     this.tavilyApiKey = options.tavilyApiKey;
     this.context7ApiKey = options.context7ApiKey;
     this.onProgress = options.onProgress;
+    this.onToolCall = options.onToolCall;
   }
 
   /**
@@ -364,6 +368,7 @@ export class AIEnhancer {
         context7ApiKey: this.context7ApiKey,
         verbose: this.verbose,
         onProgress: this.onProgress,
+        onToolCall: this.onToolCall,
       }
     );
 

@@ -16,7 +16,8 @@
 import { useState, useCallback, useRef } from 'react';
 import type { AIProvider } from '../../ai/providers.js';
 import type { ScanResult } from '../../scanner/types.js';
-import type { EnhancedScanResult } from '../../ai/index.js';
+import type { EnhancedScanResult, ToolCallEvent } from '../../ai/index.js';
+import type { ActionStatus } from '../components/ActionOutput.js';
 
 /**
  * Init workflow phases
@@ -107,6 +108,18 @@ export const INIT_PHASE_CONFIGS: Record<InitPhase, InitPhaseConfig> = {
 export const INIT_TOTAL_PHASES = 5;
 
 /**
+ * Tool call for display
+ */
+export interface ToolCallDisplay {
+  id: string;
+  actionName: string;
+  description: string;
+  status: ActionStatus;
+  output?: string;
+  error?: string;
+}
+
+/**
  * State managed by the useInit hook
  */
 export interface InitState {
@@ -138,6 +151,8 @@ export interface InitState {
   generatedFiles: string[];
   /** Token usage from AI analysis */
   tokenUsage: { inputTokens: number; outputTokens: number; totalTokens: number } | null;
+  /** Tool calls during AI analysis */
+  toolCalls: ToolCallDisplay[];
 }
 
 /**
@@ -158,6 +173,7 @@ const initialState: InitState = {
   error: null,
   generatedFiles: [],
   tokenUsage: null,
+  toolCalls: [],
 };
 
 /**
@@ -190,6 +206,9 @@ export interface UseInitReturn {
 
   /** Set AI analysis progress */
   setAiProgress: (status: string) => void;
+
+  /** Update tool call (add or update status) */
+  updateToolCall: (event: ToolCallEvent) => void;
 
   /** Set enhanced result from AI analysis */
   setEnhancedResult: (result: EnhancedScanResult, tokenUsage?: { inputTokens: number; outputTokens: number; totalTokens: number }) => void;
@@ -309,6 +328,7 @@ export function useInit(): UseInitReturn {
       phase: 'ai-analysis',
       isWorking: true,
       workingStatus: 'Initializing AI analysis...',
+      toolCalls: [], // Clear tool calls when starting new analysis
     }));
   }, []);
 
@@ -320,6 +340,47 @@ export function useInit(): UseInitReturn {
       ...prev,
       workingStatus: status,
     }));
+  }, []);
+
+  /**
+   * Update tool call (add new or update existing)
+   */
+  const updateToolCall = useCallback((event: ToolCallEvent) => {
+    setState((prev) => {
+      const existing = prev.toolCalls.find((tc) => tc.id === event.id);
+      if (existing) {
+        // Update existing tool call
+        return {
+          ...prev,
+          toolCalls: prev.toolCalls.map((tc) =>
+            tc.id === event.id
+              ? {
+                  ...tc,
+                  status: event.status,
+                  output: event.output ?? tc.output,
+                  error: event.error ?? tc.error,
+                }
+              : tc
+          ),
+        };
+      } else {
+        // Add new tool call
+        return {
+          ...prev,
+          toolCalls: [
+            ...prev.toolCalls,
+            {
+              id: event.id,
+              actionName: event.actionName,
+              description: event.description,
+              status: event.status,
+              output: event.output,
+              error: event.error,
+            },
+          ],
+        };
+      }
+    });
   }, []);
 
   /**
@@ -451,6 +512,7 @@ export function useInit(): UseInitReturn {
     setSaveKey,
     selectModel,
     setAiProgress,
+    updateToolCall,
     setEnhancedResult,
     setAiError,
     confirmGeneration,

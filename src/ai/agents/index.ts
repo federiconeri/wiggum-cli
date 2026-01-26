@@ -16,6 +16,8 @@ export type {
   CodebaseAnalyzerInput,
   RalphMcpServers,
   ProgressCallback,
+  ToolCallCallback,
+  ToolCallEvent,
   // Legacy types (backward compatibility)
   AnalysisPlan,
   EnrichedContext,
@@ -80,7 +82,7 @@ export async function runMultiAgentAnalysis(
   scanResult: ScanResult,
   options: AgentOptions = {}
 ): Promise<MultiAgentAnalysis | null> {
-  const { verbose = false, onProgress } = options;
+  const { verbose = false, onProgress, onToolCall } = options;
 
   // Helper to report progress
   const report = (phase: string, detail?: string) => {
@@ -105,7 +107,8 @@ export async function runMultiAgentAnalysis(
       model,
       modelId,
       { scanResult },
-      verbose && !onProgress
+      verbose && !onProgress,
+      onToolCall
     );
 
     report('Phase 1/2: Analyzing codebase', 'complete');

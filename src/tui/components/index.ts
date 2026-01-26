@@ -28,3 +28,6 @@ export type { PasswordInputProps } from './PasswordInput.js';
 
 export { Confirm } from './Confirm.js';
 export type { ConfirmProps } from './Confirm.js';
+
+export { ActionOutput, ActionList } from './ActionOutput.js';
+export type { ActionOutputProps, ActionListProps, ActionStatus } from './ActionOutput.js';

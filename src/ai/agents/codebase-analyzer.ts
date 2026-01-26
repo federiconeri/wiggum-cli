@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stepCountIs, type LanguageModel } from 'ai';
 import type { ScanResult } from '../../scanner/types.js';
-import type { MultiAgentAnalysis, CodebaseAnalysis, StackResearch, RalphMcpServers, TokenUsage } from './types.js';
+import type { MultiAgentAnalysis, CodebaseAnalysis, StackResearch, RalphMcpServers, TokenUsage, ToolCallCallback, ToolCallEvent } from './types.js';
 import { createExplorationTools } from '../tools.js';
 import { isReasoningModel } from '../providers.js';
 import { logger } from '../../utils/logger.js';
@@ -17,6 +17,44 @@ import { getTracedAI } from '../../utils/tracing.js';
 import { detectProjectType } from './stack-utils.js';
 import { detectRalphMcpServers, convertToLegacyMcpRecommendations } from './mcp-detector.js';
 import { deriveCommandsFromScripts } from './context-enricher.js';
+
+/**
+ * Format tool name for display
+ */
+function formatToolName(toolName: string): string {
+  const names: Record<string, string> = {
+    readFile: 'Read',
+    listDirectory: 'List',
+    searchCode: 'Search',
+    getPackageInfo: 'Package',
+  };
+  return names[toolName] || toolName;
+}
+
+/**
+ * Format tool args for description
+ */
+function formatToolDescription(toolName: string, args: Record<string, unknown>): string {
+  switch (toolName) {
+    case 'readFile':
+      return String(args.path || '');
+    case 'listDirectory':
+      return String(args.path || '.');
+    case 'searchCode':
+      return `"${args.pattern}" in ${args.directory || '.'}`;
+    case 'getPackageInfo':
+      return args.field ? String(args.field) : 'package.json';
+    default:
+      return JSON.stringify(args).slice(0, 50);
+  }
+}
+
+/**
+ * Generate unique ID
+ */
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
 
 /**
  * Input for the Codebase Analyzer
@@ -120,7 +158,8 @@ export async function runCodebaseAnalyzer(
   model: LanguageModel,
   modelId: string,
   input: CodebaseAnalyzerInput,
-  verbose: boolean = false
+  verbose: boolean = false,
+  onToolCall?: ToolCallCallback
 ): Promise<MultiAgentAnalysis> {
   const tools = createExplorationTools(input.scanResult.projectRoot);
   const stack = input.scanResult.stack;
@@ -154,6 +193,9 @@ After exploring, output your complete analysis as JSON.`;
 
     const MAX_TOOL_CALLS = 10;
 
+    // Track pending tool calls for event emission
+    const pendingToolCalls = new Map<string, ToolCallEvent>();
+
     const result = await generateText({
       model,
       system: CODEBASE_ANALYZER_SYSTEM_PROMPT,
@@ -175,6 +217,55 @@ After exploring, output your complete analysis as JSON.`;
         }
 
         return {};
+      },
+      onStepFinish: (step) => {
+        // Emit tool call events when we have tool results
+        if (onToolCall && step.toolCalls && step.toolResults) {
+          for (let i = 0; i < step.toolCalls.length; i++) {
+            const call = step.toolCalls[i];
+            const result = step.toolResults[i];
+
+            if (call && result) {
+              const id = generateId();
+              const toolName = call.toolName;
+              const args = (call.input || {}) as Record<string, unknown>;
+
+              // Determine status based on output
+              const resultOutput = result.output;
+              const hasError = resultOutput && typeof resultOutput === 'object' &&
+                'error' in resultOutput;
+              const status: 'success' | 'error' = hasError ? 'error' : 'success';
+
+              // Format output for display
+              let output: string | undefined;
+              let error: string | undefined;
+
+              if (hasError) {
+                error = String((resultOutput as Record<string, unknown>).error);
+              } else if (resultOutput) {
+                // Truncate large outputs
+                const resultStr = typeof resultOutput === 'string'
+                  ? resultOutput
+                  : JSON.stringify(resultOutput, null, 2);
+                output = resultStr.length > 500
+                  ? resultStr.slice(0, 500) + '\n... (truncated)'
+                  : resultStr;
+              }
+
+              const event: ToolCallEvent = {
+                id,
+                toolName,
+                actionName: formatToolName(toolName),
+                description: formatToolDescription(toolName, args),
+                status,
+                output,
+                error,
+              };
+
+              onToolCall(event);
+            }
+          }
+        }
       },
       ...(isReasoningModel(modelId) ? {} : { temperature: 0.3 }),
       experimental_telemetry: {

@@ -18,6 +18,7 @@ import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { Select, type SelectOption } from '../components/Select.js';
 import { PasswordInput } from '../components/PasswordInput.js';
 import { Confirm } from '../components/Confirm.js';
+import { ActionList } from '../components/ActionOutput.js';
 import { Scanner } from '../../scanner/index.js';
 import {
   AIEnhancer,
@@ -120,6 +121,7 @@ export function InitScreen({
     setSaveKey,
     selectModel,
     setAiProgress,
+    updateToolCall,
     setEnhancedResult,
     setAiError,
     confirmGeneration,
@@ -209,6 +211,9 @@ export function InitScreen({
             setAiProgress(phase);
           }
         },
+        onToolCall: (event) => {
+          updateToolCall(event);
+        },
       });
 
       try {
@@ -237,7 +242,7 @@ export function InitScreen({
     };
 
     runAnalysis();
-  }, [state.phase, state.scanResult, state.provider, state.model, setAiProgress, setEnhancedResult, setAiError]);
+  }, [state.phase, state.scanResult, state.provider, state.model, setAiProgress, updateToolCall, setEnhancedResult, setAiError]);
 
   // Run generation when in generating phase
   useEffect(() => {
@@ -444,6 +449,12 @@ export function InitScreen({
                 </Text>
               </Text>
             </Box>
+            {/* Tool call activity */}
+            {state.toolCalls.length > 0 && (
+              <Box marginBottom={1} flexDirection="column">
+                <ActionList actions={state.toolCalls} previewLines={2} />
+              </Box>
+            )}
             <WorkingIndicator
               state={{
                 isWorking: true,
