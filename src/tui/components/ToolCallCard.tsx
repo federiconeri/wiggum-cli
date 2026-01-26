@@ -1,13 +1,15 @@
 /**
- * ToolCallCard - Collapsible tool execution display
+ * ToolCallCard - Clean Claude Code-style tool execution display
  *
- * Shows tool executions in a bordered card format, similar to Claude Code.
- * Displays tool name, input, status indicator, and output/error.
+ * Shows tool executions with:
+ * - Colored status dot (green/yellow/red)
+ * - Tool name and input as description
+ * - Condensed output preview (not raw JSON)
  */
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { colors, box, phase } from '../theme.js';
+import { colors } from '../theme.js';
 
 /**
  * Tool execution status
@@ -18,7 +20,7 @@ export type ToolCallStatus = 'pending' | 'running' | 'complete' | 'error';
  * Props for the ToolCallCard component
  */
 export interface ToolCallCardProps {
-  /** Name of the tool (e.g., "Read File", "Search Codebase") */
+  /** Name of the tool (e.g., "read_file", "search_codebase") */
   toolName: string;
   /** Tool execution status */
   status: ToolCallStatus;
@@ -28,91 +30,130 @@ export interface ToolCallCardProps {
   output?: string;
   /** Error message when status is 'error' */
   error?: string;
-  /** Whether to show full details (default: false = collapsed) */
-  expanded?: boolean;
 }
 
 /**
- * Maps status to phase indicator character
+ * Format tool name for display (snake_case → Title Case)
  */
-function getStatusIndicator(status: ToolCallStatus): string {
+function formatToolName(toolName: string): string {
+  // Convert snake_case or camelCase to readable format
+  return toolName
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .split(' ')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+}
+
+/**
+ * Get status dot character and color
+ */
+function getStatusDisplay(status: ToolCallStatus): { dot: string; color: string } {
   switch (status) {
     case 'pending':
-      return phase.pending;
+      return { dot: '○', color: colors.brown };
     case 'running':
-      return phase.active;
+      return { dot: '◐', color: colors.yellow };
     case 'complete':
-      return phase.complete;
+      return { dot: '●', color: colors.green };
     case 'error':
-      return phase.error;
+      return { dot: '●', color: colors.pink };
   }
 }
 
 /**
- * Gets the color for the status indicator
+ * Format output for display - extract key info, not raw JSON
  */
-function getStatusColor(status: ToolCallStatus): string {
-  switch (status) {
-    case 'pending':
-      return colors.brown;
-    case 'running':
-      return colors.yellow;
-    case 'complete':
-      return colors.yellow;
-    case 'error':
-      return colors.pink;
+function formatOutput(output: string | undefined, toolName: string): string | undefined {
+  if (!output) return undefined;
+
+  // Try to parse as JSON and extract meaningful summary
+  try {
+    const parsed = JSON.parse(output);
+
+    // Handle different tool output patterns
+    if (typeof parsed === 'object' && parsed !== null) {
+      // For list_directory - show item count
+      if (parsed.items && Array.isArray(parsed.items)) {
+        return `${parsed.items.length} items`;
+      }
+
+      // For read_file - show line count or truncated content
+      if (parsed.content && typeof parsed.content === 'string') {
+        const lines = parsed.content.split('\n').length;
+        return `${lines} lines`;
+      }
+
+      // For search results - show match count
+      if (parsed.matches && Array.isArray(parsed.matches)) {
+        return `${parsed.matches.length} matches`;
+      }
+
+      // For results array
+      if (parsed.results && Array.isArray(parsed.results)) {
+        return `${parsed.results.length} results`;
+      }
+    }
+
+    // If it's a simple string
+    if (typeof parsed === 'string') {
+      return parsed.length > 50 ? parsed.slice(0, 50) + '...' : parsed;
+    }
+  } catch {
+    // Not JSON - use as-is but truncate
+    if (output.length > 60) {
+      return output.slice(0, 60) + '...';
+    }
+    return output;
   }
+
+  return undefined;
 }
 
 /**
- * Gets human-readable status text
+ * Format input for display - extract the key part
  */
-function getStatusText(status: ToolCallStatus): string {
-  switch (status) {
-    case 'pending':
-      return 'Pending';
-    case 'running':
-      return 'Running';
-    case 'complete':
-      return 'Complete';
-    case 'error':
-      return 'Error';
+function formatInput(input: string): string {
+  // Try to parse as JSON and extract path or query
+  try {
+    const parsed = JSON.parse(input);
+    if (typeof parsed === 'object' && parsed !== null) {
+      // Common input patterns
+      if (parsed.path) return String(parsed.path);
+      if (parsed.filePath) return String(parsed.filePath);
+      if (parsed.query) return `"${parsed.query}"`;
+      if (parsed.pattern) return `"${parsed.pattern}"`;
+      if (parsed.directory) return String(parsed.directory);
+    }
+  } catch {
+    // Not JSON - use as-is
   }
+
+  // Truncate if too long
+  if (input.length > 50) {
+    return input.slice(0, 50) + '...';
+  }
+  return input;
 }
 
 /**
  * ToolCallCard component
  *
- * Displays a tool execution in a bordered card format.
+ * Displays a tool execution in Claude Code style:
+ * - Status dot (colored based on status)
+ * - Tool name with input as description
+ * - Clean output summary (not raw JSON)
  *
  * @example
  * ```tsx
- * // Collapsed (default)
  * <ToolCallCard
- *   toolName="Read File"
+ *   toolName="read_file"
  *   status="complete"
- *   input="src/utils/config.ts"
- *   output="45 lines read"
+ *   input='{"path": "src/utils/config.ts"}'
+ *   output='{"content": "...", "lines": 45}'
  * />
  * // Renders:
- * // ┌─ Read File ────────────────────────────────┐
- * // │ src/utils/config.ts   ✓ 45 lines read      │
- * // └────────────────────────────────────────────┘
- *
- * // Expanded
- * <ToolCallCard
- *   toolName="Read File"
- *   status="complete"
- *   input="src/utils/config.ts"
- *   output="45 lines read"
- *   expanded={true}
- * />
- * // Renders:
- * // ┌─ Read File ────────────────────────────────┐
- * // │ Input: src/utils/config.ts                 │
- * // │ Status: Complete                           │
- * // │ Result: 45 lines read                      │
- * // └────────────────────────────────────────────┘
+ * // ● Read File(src/utils/config.ts)  45 lines
  * ```
  */
 export function ToolCallCard({
@@ -121,95 +162,34 @@ export function ToolCallCard({
   input,
   output,
   error,
-  expanded = false,
 }: ToolCallCardProps): React.ReactElement {
-  const statusIndicator = getStatusIndicator(status);
-  const statusColor = getStatusColor(status);
-  const statusText = getStatusText(status);
+  const { dot, color } = getStatusDisplay(status);
+  const displayName = formatToolName(toolName);
+  const displayInput = formatInput(input);
+  const displayOutput = status === 'error' ? error : formatOutput(output, toolName);
 
-  // Build the title with box drawing
-  const titlePadding = box.horizontal.repeat(3);
-  const title = `${box.horizontal} ${toolName} ${titlePadding}`;
-
-  // Determine result text
-  const resultText = status === 'error' ? error : output;
-
-  if (expanded) {
-    // Expanded layout: multiple lines with labels
-    return (
-      <Box flexDirection="column">
-        {/* Top border with title */}
-        <Box flexDirection="row">
-          <Text color={colors.brown}>{box.topLeft}</Text>
-          <Text color={colors.yellow}>{title}</Text>
-        </Box>
-
-        {/* Input line */}
-        <Box flexDirection="row">
-          <Text color={colors.brown}>{box.vertical} </Text>
-          <Text color={colors.brown}>Input: </Text>
-          <Text color={colors.white}>{input}</Text>
-        </Box>
-
-        {/* Status line */}
-        <Box flexDirection="row">
-          <Text color={colors.brown}>{box.vertical} </Text>
-          <Text color={colors.brown}>Status: </Text>
-          <Text color={statusColor}>
-            {statusIndicator} {statusText}
-          </Text>
-        </Box>
-
-        {/* Result/Error line (if present) */}
-        {resultText && (
-          <Box flexDirection="row">
-            <Text color={colors.brown}>{box.vertical} </Text>
-            <Text color={colors.brown}>{status === 'error' ? 'Error: ' : 'Result: '}</Text>
-            <Text color={status === 'error' ? colors.pink : colors.white}>{resultText}</Text>
-          </Box>
-        )}
-
-        {/* Bottom border */}
-        <Box flexDirection="row">
-          <Text color={colors.brown}>
-            {box.bottomLeft}
-            {box.horizontal.repeat(40)}
-          </Text>
-        </Box>
-      </Box>
-    );
-  }
-
-  // Collapsed layout: single content line
   return (
-    <Box flexDirection="column">
-      {/* Top border with title */}
-      <Box flexDirection="row">
-        <Text color={colors.brown}>{box.topLeft}</Text>
-        <Text color={colors.yellow}>{title}</Text>
-      </Box>
+    <Box flexDirection="row" gap={1}>
+      {/* Status dot */}
+      <Text color={color}>{dot}</Text>
 
-      {/* Content line: input + status + result */}
-      <Box flexDirection="row">
-        <Text color={colors.brown}>{box.vertical} </Text>
-        <Text color={colors.white}>{input}</Text>
-        <Text>   </Text>
-        <Text color={statusColor}>{statusIndicator}</Text>
-        {resultText && (
-          <>
-            <Text> </Text>
-            <Text color={status === 'error' ? colors.pink : colors.white}>{resultText}</Text>
-          </>
-        )}
-      </Box>
+      {/* Tool name and input */}
+      <Text color={color} bold>
+        {displayName}
+      </Text>
+      <Text color={color}>(</Text>
+      <Text>{displayInput}</Text>
+      <Text color={color}>)</Text>
 
-      {/* Bottom border */}
-      <Box flexDirection="row">
-        <Text color={colors.brown}>
-          {box.bottomLeft}
-          {box.horizontal.repeat(40)}
-        </Text>
-      </Box>
+      {/* Output summary */}
+      {displayOutput && (
+        <>
+          <Text dimColor> → </Text>
+          <Text color={status === 'error' ? colors.pink : undefined} dimColor={status !== 'error'}>
+            {displayOutput}
+          </Text>
+        </>
+      )}
     </Box>
   );
 }
