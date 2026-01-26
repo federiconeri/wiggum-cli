@@ -51,9 +51,6 @@ export async function select<T>(options: {
   console.log(pc.dim('  (Use arrow keys, Enter to select, Ctrl+C to cancel)'));
 
   return new Promise((resolve) => {
-    // Enable keypress events on stdin
-    readline.emitKeypressEvents(process.stdin);
-
     // Track if we've already resolved
     let resolved = false;
 
@@ -129,14 +126,25 @@ export async function select<T>(options: {
       }
     };
 
-    // Set up keypress listener
-    process.stdin.on('keypress', onKeypress);
+    const setupKeypress = () => {
+      // Enable keypress events on stdin
+      readline.emitKeypressEvents(process.stdin);
 
-    // Enable raw mode for keypress detection
-    if (process.stdin.isTTY) {
-      process.stdin.setRawMode(true);
-      process.stdin.resume();
-    }
+      // Set up keypress listener
+      process.stdin.on('keypress', onKeypress);
+
+      // Enable raw mode for keypress detection
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true);
+        process.stdin.resume();
+      }
+    };
+
+    // Drain any buffered input before setting up keypress handling.
+    // When transitioning from a REPL readline (e.g., after /init command),
+    // there may be a buffered newline that would immediately trigger selection.
+    // Using setTimeout allows the event loop to process and discard buffered input.
+    setTimeout(setupKeypress, 50);
   });
 }
 
