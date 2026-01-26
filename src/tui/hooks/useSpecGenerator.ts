@@ -154,6 +154,11 @@ export interface UseSpecGeneratorReturn {
   addMessage: (role: 'user' | 'assistant' | 'system', content: string, toolCalls?: ToolCall[]) => void;
 
   /**
+   * Add a streaming message (assistant) that will be updated
+   */
+  addStreamingMessage: (initialContent?: string, toolCalls?: ToolCall[]) => string;
+
+  /**
    * Update the streaming message content
    */
   updateStreamingMessage: (content: string) => void;
@@ -490,7 +495,17 @@ export function useSpecGenerator(): UseSpecGeneratorReturn {
               error,
             };
           }
-          return { ...msg, toolCalls: updatedToolCalls };
+          // If this message was only for tool calls and has no content, stop streaming
+          const allDone = updatedToolCalls.every(tc => tc.status !== 'running');
+          const shouldStopStreaming = msg.isStreaming && allDone && msg.content.trim() === '';
+          if (shouldStopStreaming && streamingMessageIdRef.current === msg.id) {
+            streamingMessageIdRef.current = null;
+          }
+          return {
+            ...msg,
+            toolCalls: updatedToolCalls,
+            isStreaming: shouldStopStreaming ? false : msg.isStreaming,
+          };
         }
         return msg;
       }),
@@ -648,6 +663,7 @@ export function useSpecGenerator(): UseSpecGeneratorReturn {
     reset,
     initialize,
     addMessage,
+    addStreamingMessage,
     updateStreamingMessage,
     completeStreamingMessage,
     setReady,

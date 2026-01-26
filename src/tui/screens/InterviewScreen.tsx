@@ -69,6 +69,7 @@ export function InterviewScreen({
     state,
     initialize,
     addMessage,
+    addStreamingMessage,
     updateStreamingMessage,
     completeStreamingMessage,
     startToolCall,
@@ -124,7 +125,7 @@ export function InterviewScreen({
           // Start a new streaming message
           isStreamingRef.current = true;
           streamContentRef.current = chunk;
-          addMessage('assistant', chunk);
+          addStreamingMessage(chunk);
         } else {
           // Append to existing streaming content
           streamContentRef.current += chunk;
