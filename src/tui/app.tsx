@@ -7,11 +7,15 @@
 
 import React, { useState, useCallback } from 'react';
 import { render, type Instance } from 'ink';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { AIProvider } from '../ai/providers.js';
 import type { ScanResult } from '../scanner/types.js';
 import type { SessionState } from '../repl/session-state.js';
+import { loadConfigWithDefaults } from '../utils/config.js';
 import { InterviewScreen } from './screens/InterviewScreen.js';
 import { WelcomeScreen } from './screens/WelcomeScreen.js';
+import { InitScreen } from './screens/InitScreen.js';
 import { MainShell, type NavigationTarget, type NavigationProps } from './screens/MainShell.js';
 
 /**
@@ -51,6 +55,8 @@ export interface AppProps {
   onComplete?: (result: string) => void;
   /** Called when the user exits/cancels */
   onExit?: () => void;
+  /** Called when init workflow should run (outside of Ink) */
+  onRunInit?: () => void;
 }
 
 /**
@@ -76,6 +82,7 @@ export function App({
   interviewProps,
   onComplete,
   onExit,
+  onRunInit,
 }: AppProps): React.ReactElement | null {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(initialScreen);
   const [screenProps, setScreenProps] = useState<NavigationProps | null>(
@@ -92,10 +99,37 @@ export function App({
   }, []);
 
   /**
-   * Handle interview completion
+   * Handle interview completion - save spec to disk and notify
    */
-  const handleInterviewComplete = useCallback((spec: string) => {
-    onComplete?.(spec);
+  const handleInterviewComplete = useCallback(async (spec: string) => {
+    // Get feature name from navigation props or initial interview props
+    const featureName = screenProps?.featureName || interviewProps?.featureName;
+
+    if (featureName && typeof featureName === 'string') {
+      try {
+        // Load config to get specs directory
+        const config = await loadConfigWithDefaults(sessionState.projectRoot);
+        const specsDir = join(sessionState.projectRoot, config.paths.specs);
+
+        // Create specs directory if it doesn't exist
+        if (!existsSync(specsDir)) {
+          mkdirSync(specsDir, { recursive: true });
+        }
+
+        // Write spec to file
+        const specPath = join(specsDir, `${featureName}.md`);
+        writeFileSync(specPath, spec, 'utf-8');
+
+        // Call onComplete with the spec path for logging
+        onComplete?.(specPath);
+      } catch (error) {
+        // If saving fails, still call onComplete with spec content
+        onComplete?.(spec);
+      }
+    } else {
+      onComplete?.(spec);
+    }
+
     // If started on interview (--tui mode), call onExit to resolve promise
     // Otherwise, return to shell
     if (initialScreen === 'interview') {
@@ -103,7 +137,7 @@ export function App({
     } else {
       navigate('shell');
     }
-  }, [onComplete, navigate, initialScreen, onExit]);
+  }, [onComplete, navigate, initialScreen, onExit, screenProps, interviewProps, sessionState.projectRoot]);
 
   /**
    * Handle interview cancel
@@ -183,12 +217,24 @@ export function App({
       );
     }
 
-    case 'init':
-      // TODO: Implement InitScreen
-      // For now, show message and return to shell
-      // The init workflow is complex and may need to be handled differently
-      navigate('shell');
-      return null;
+    case 'init': {
+      // Handle init workflow - requires running outside Ink due to readline prompts
+      const handleRunInit = () => {
+        if (onRunInit) {
+          onRunInit();
+        } else {
+          // No init handler provided, return to shell with message
+          navigate('shell');
+        }
+      };
+
+      return (
+        <InitScreen
+          onRunInit={handleRunInit}
+          onCancel={() => navigate('shell')}
+        />
+      );
+    }
 
     default:
       return null;
@@ -211,6 +257,8 @@ export interface RenderAppOptions {
   onComplete?: (result: string) => void;
   /** Called when user exits */
   onExit?: () => void;
+  /** Called when init workflow should run (outside of Ink) */
+  onRunInit?: () => void;
 }
 
 /**
@@ -243,6 +291,7 @@ export function renderApp(options: RenderAppOptions): Instance {
       interviewProps={options.interviewProps}
       onComplete={options.onComplete}
       onExit={options.onExit}
+      onRunInit={options.onRunInit}
     />
   );
 }

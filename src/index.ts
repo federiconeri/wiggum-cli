@@ -4,9 +4,12 @@ import { hasConfig, loadConfigWithDefaults } from './utils/config.js';
 import { getAvailableProvider } from './ai/providers.js';
 import { notifyIfUpdateAvailable } from './utils/update-check.js';
 import { renderApp } from './tui/app.js';
+import { runInitWorkflow } from './commands/init.js';
+import { logger } from './utils/logger.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import type { Instance } from 'ink';
 
 /**
  * Get version from package.json
@@ -29,44 +32,88 @@ function getVersion(): string {
  */
 async function startInkTui(): Promise<void> {
   const projectRoot = process.cwd();
-  const provider = getAvailableProvider();
   const version = getVersion();
 
-  // Check if already initialized
-  const isInitialized = hasConfig(projectRoot);
-  let config = null;
+  // Track current Ink instance for init workflow
+  let instance: Instance | null = null;
+  let shouldRestart = false;
 
-  if (isInitialized) {
-    config = await loadConfigWithDefaults(projectRoot);
+  /**
+   * Create session state based on current project state
+   */
+  async function createCurrentSessionState() {
+    const provider = getAvailableProvider();
+    const isInitialized = hasConfig(projectRoot);
+    let config = null;
+
+    if (isInitialized) {
+      config = await loadConfigWithDefaults(projectRoot);
+    }
+
+    return createSessionState(
+      projectRoot,
+      provider, // May be null if no API key
+      'sonnet', // Default model, will be updated after /init
+      undefined, // No scan result yet
+      config,
+      isInitialized
+    );
   }
 
-  // Create initial state (may not have config yet)
-  const initialState = createSessionState(
-    projectRoot,
-    provider, // May be null if no API key
-    'sonnet', // Default model, will be updated after /init
-    undefined, // No scan result yet
-    config,
-    isInitialized
-  );
+  /**
+   * Render the TUI app
+   */
+  async function renderTui(screen: 'welcome' | 'shell' = 'welcome') {
+    const initialState = await createCurrentSessionState();
 
-  // Render Ink app
-  const instance = renderApp({
-    screen: 'welcome',
-    initialSessionState: initialState,
-    version,
-    onComplete: (spec) => {
-      // Spec generated - could save to file here
-      console.log('\nSpec generated successfully!');
-    },
-    onExit: () => {
-      instance.unmount();
-      process.exit(0);
-    },
-  });
+    instance = renderApp({
+      screen,
+      initialSessionState: initialState,
+      version,
+      onComplete: (specPath) => {
+        // Spec was saved to disk by app.tsx
+        logger.success(`Created spec: ${specPath}`);
+      },
+      onExit: () => {
+        instance?.unmount();
+        if (!shouldRestart) {
+          process.exit(0);
+        }
+      },
+      onRunInit: async () => {
+        // Unmount Ink to run init workflow with readline prompts
+        shouldRestart = true;
+        instance?.unmount();
 
-  // Wait for the app to exit
-  await instance.waitUntilExit();
+        // Clear screen for init workflow
+        console.clear();
+
+        try {
+          const result = await runInitWorkflow(projectRoot, {});
+
+          if (result) {
+            logger.success('Initialization complete!');
+            console.log('');
+          } else {
+            logger.info('Initialization cancelled');
+            console.log('');
+          }
+        } catch (error) {
+          logger.error(`Init failed: ${error instanceof Error ? error.message : String(error)}`);
+          console.log('');
+        }
+
+        // Re-render TUI with updated state
+        shouldRestart = false;
+        await renderTui('shell');
+      },
+    });
+
+    await instance.waitUntilExit();
+  }
+
+  // Start with welcome screen
+  await renderTui('welcome');
 }
 
 /**
