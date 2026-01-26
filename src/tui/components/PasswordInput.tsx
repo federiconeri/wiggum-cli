@@ -70,10 +70,18 @@ export function PasswordInput({
       return;
     }
 
-    // Add printable characters
-    // Filter out control characters and special keys
-    if (input && input.length === 1 && input.charCodeAt(0) >= 32 && input.charCodeAt(0) <= 126) {
-      setValue((prev) => prev + input);
+    // Add printable characters (including pasted content)
+    // Filter out control characters but allow multiple characters (paste)
+    if (input && input.length > 0) {
+      // Filter to only printable ASCII characters
+      const printable = input.split('').filter(char => {
+        const code = char.charCodeAt(0);
+        return code >= 32 && code <= 126;
+      }).join('');
+
+      if (printable) {
+        setValue((prev) => prev + printable);
+      }
     }
   });
 
