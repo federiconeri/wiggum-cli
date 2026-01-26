@@ -53,6 +53,8 @@ export async function select<T>(options: {
   return new Promise((resolve) => {
     // Track if we've already resolved
     let resolved = false;
+    // Track when keypress handling becomes active (to ignore stale buffered input)
+    let acceptingInput = false;
 
     const cleanup = () => {
       if (resolved) return;
@@ -103,6 +105,13 @@ export async function select<T>(options: {
     const onKeypress = (_str: string | undefined, key: readline.Key | undefined) => {
       if (resolved || !key) return;
 
+      // Ignore enter/return until we're ready to accept input.
+      // This prevents buffered newlines from REPL transitions from
+      // immediately triggering selection.
+      if (!acceptingInput && (key.name === 'return' || key.name === 'enter')) {
+        return;
+      }
+
       if (key.ctrl && key.name === 'c') {
         finishWithCancel();
         return;
@@ -126,43 +135,23 @@ export async function select<T>(options: {
       }
     };
 
-    const setupKeypress = () => {
-      // Enable keypress events on stdin
-      readline.emitKeypressEvents(process.stdin);
+    // Enable keypress events on stdin
+    readline.emitKeypressEvents(process.stdin);
 
-      // Set up keypress listener
-      process.stdin.on('keypress', onKeypress);
+    // Set up keypress listener
+    process.stdin.on('keypress', onKeypress);
 
-      // Enable raw mode for keypress detection
-      if (process.stdin.isTTY) {
-        process.stdin.setRawMode(true);
-        process.stdin.resume();
-      }
-    };
-
-    // Drain any buffered input before setting up keypress handling.
-    // When transitioning from a REPL readline (e.g., after /init command),
-    // there may be a buffered newline that would immediately trigger selection.
-    // We must actively consume the buffer by enabling raw mode and reading data.
+    // Enable raw mode for keypress detection
     if (process.stdin.isTTY) {
-      // Temporarily consume and discard any buffered input
-      const drainHandler = () => {
-        // Intentionally discard - this drains the buffer
-      };
-      process.stdin.on('data', drainHandler);
       process.stdin.setRawMode(true);
       process.stdin.resume();
-
-      // After buffer is drained, set up real keypress handling
-      setTimeout(() => {
-        process.stdin.removeListener('data', drainHandler);
-        process.stdin.setRawMode(false);
-        process.stdin.pause();
-        setupKeypress();
-      }, 50);
-    } else {
-      setupKeypress();
     }
+
+    // Delay accepting enter/return to allow buffered input to be discarded.
+    // Any enter keypress arriving before this timeout is from buffered REPL input.
+    setTimeout(() => {
+      acceptingInput = true;
+    }, 100);
   });
 }
 
