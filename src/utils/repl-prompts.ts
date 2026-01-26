@@ -16,6 +16,7 @@ export interface SelectOption<T> {
 
 /**
  * Interactive select prompt with arrow key navigation
+ * Uses readline's emitKeypressEvents for robust keypress handling
  */
 export async function select<T>(options: {
   message: string;
@@ -47,83 +48,95 @@ export async function select<T>(options: {
   console.log('');
   process.stdout.write(render());
   console.log('');
-  process.stdout.write(pc.dim('  (Use arrow keys, Enter to select, Ctrl+C to cancel)'));
+  console.log(pc.dim('  (Use arrow keys, Enter to select, Ctrl+C to cancel)'));
 
   return new Promise((resolve) => {
-    let isActive = true;
+    // Enable keypress events on stdin
+    readline.emitKeypressEvents(process.stdin);
+
+    // Track if we've already resolved
+    let resolved = false;
 
     const cleanup = () => {
-      if (!isActive) return;
-      isActive = false;
-      if (process.stdin.isTTY) {
+      if (resolved) return;
+      resolved = true;
+      process.stdin.removeListener('keypress', onKeypress);
+      if (process.stdin.isTTY && process.stdin.isRaw) {
         process.stdin.setRawMode(false);
       }
-      process.stdin.removeListener('data', onData);
     };
 
-    const onData = (key: string) => {
-      if (!isActive) return;
+    const finishWithSelection = () => {
+      cleanup();
+      const selected = choices[selectedIndex];
+      // Move up past hint + options + blank line + question
+      process.stdout.write(`\x1b[${choices.length + 3}A`);
+      // Clear from cursor to end of screen
+      process.stdout.write('\x1b[J');
+      // Rewrite the question with the answer
+      console.log(`${pc.green('✓')} ${message}`);
+      console.log(`  ${pc.cyan(selected.label)}`);
+      console.log('');
+      resolve(selected.value);
+    };
 
-      // Ctrl+C
-      if (key === '\u0003') {
-        cleanup();
-        // Clear the hint line and show cancelled
-        process.stdout.write('\r' + ' '.repeat(60) + '\r');
-        console.log(pc.red('Cancelled'));
-        resolve(null);
-        return;
-      }
+    const finishWithCancel = () => {
+      cleanup();
+      // Move up past hint + options + blank line + question
+      process.stdout.write(`\x1b[${choices.length + 3}A`);
+      // Clear from cursor to end of screen
+      process.stdout.write('\x1b[J');
+      console.log(`${pc.red('✗')} ${message}`);
+      console.log(pc.dim('  Cancelled'));
+      console.log('');
+      resolve(null);
+    };
 
-      // Enter
-      if (key === '\r' || key === '\n') {
-        cleanup();
-        const selected = choices[selectedIndex];
-        // Clear the hint line and move up to rewrite final state
-        process.stdout.write('\r' + ' '.repeat(60) + '\r');
-        // Move up past all options and the message
-        process.stdout.write(`\x1b[${choices.length + 3}A`);
-        // Rewrite the question with the answer
-        console.log(`${pc.green('✓')} ${message}`);
-        console.log(`  ${pc.cyan(selected.label)}`);
-        console.log('');
-        resolve(selected.value);
-        return;
-      }
-
-      // Arrow keys come as escape sequences
-      if (key === '\x1b[A' || key === 'k') {
-        // Up arrow or k
-        selectedIndex = (selectedIndex - 1 + choices.length) % choices.length;
-      } else if (key === '\x1b[B' || key === 'j') {
-        // Down arrow or j
-        selectedIndex = (selectedIndex + 1) % choices.length;
-      } else {
-        // Ignore other keys
-        return;
-      }
-
-      // Re-render options
-      // Move cursor up to the first option line (past hint + blank line)
+    const redraw = () => {
+      // Move up past hint + options
       process.stdout.write(`\x1b[${choices.length + 1}A`);
       // Clear from cursor to end of screen
       process.stdout.write('\x1b[J');
       // Write new options
       process.stdout.write(render());
       console.log('');
-      process.stdout.write(pc.dim('  (Use arrow keys, Enter to select, Ctrl+C to cancel)'));
+      console.log(pc.dim('  (Use arrow keys, Enter to select, Ctrl+C to cancel)'));
     };
 
-    // Small delay to let any buffered input clear before setting up raw mode
-    setTimeout(() => {
-      if (!isActive) return;
+    const onKeypress = (_str: string | undefined, key: readline.Key | undefined) => {
+      if (resolved || !key) return;
 
-      if (process.stdin.isTTY) {
-        process.stdin.setRawMode(true);
+      if (key.ctrl && key.name === 'c') {
+        finishWithCancel();
+        return;
       }
+
+      if (key.name === 'return' || key.name === 'enter') {
+        finishWithSelection();
+        return;
+      }
+
+      if (key.name === 'up' || key.name === 'k') {
+        selectedIndex = (selectedIndex - 1 + choices.length) % choices.length;
+        redraw();
+        return;
+      }
+
+      if (key.name === 'down' || key.name === 'j') {
+        selectedIndex = (selectedIndex + 1) % choices.length;
+        redraw();
+        return;
+      }
+    };
+
+    // Set up keypress listener
+    process.stdin.on('keypress', onKeypress);
+
+    // Enable raw mode for keypress detection
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(true);
       process.stdin.resume();
-      process.stdin.setEncoding('utf8');
-      process.stdin.on('data', onData);
-    }, 50);
+    }
   });
 }
 
