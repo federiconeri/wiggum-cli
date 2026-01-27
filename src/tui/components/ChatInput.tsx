@@ -69,27 +69,17 @@ export function ChatInput({
     (submittedValue: string): void => {
       if (disabled) return;
 
-      // Handle slash commands
-      if (submittedValue.startsWith('/') && onCommand) {
-        const cmdName = submittedValue.slice(1).trim().split(' ')[0];
-        if (cmdName) {
-          onCommand(cmdName);
-          setValue('');
-          setShowDropdown(false);
-          return;
-        }
-      }
-
       // Don't submit empty values unless allowEmpty is true
       if (!submittedValue.trim() && !allowEmpty) {
         return;
       }
 
+      // Always pass the full value to onSubmit (including slash commands with args)
       onSubmit(submittedValue);
       setValue('');
       setShowDropdown(false);
     },
-    [disabled, allowEmpty, onSubmit, onCommand]
+    [disabled, allowEmpty, onSubmit]
   );
 
   /**
