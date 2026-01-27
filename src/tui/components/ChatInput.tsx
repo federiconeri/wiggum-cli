@@ -56,9 +56,11 @@ export function ChatInput({
   const [value, setValue] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
 
-  // Check if input is a slash command
+  // Check if input is a slash command (only show dropdown before space is typed)
   const isSlashCommand = value.startsWith('/');
-  const commandFilter = isSlashCommand ? value.slice(1) : '';
+  const hasSpace = value.includes(' ');
+  // Only filter on the command name part (before the first space)
+  const commandFilter = isSlashCommand ? value.slice(1).split(' ')[0] : '';
 
   /**
    * Handle input submission
@@ -98,8 +100,8 @@ export function ChatInput({
       if (disabled) return;
       setValue(newValue);
 
-      // Show dropdown when typing /
-      if (newValue.startsWith('/')) {
+      // Show dropdown when typing / but hide once a space is typed (entering arguments)
+      if (newValue.startsWith('/') && !newValue.includes(' ')) {
         setShowDropdown(true);
       } else {
         setShowDropdown(false);
@@ -145,8 +147,8 @@ export function ChatInput({
 
   return (
     <Box flexDirection="column">
-      {/* Command dropdown */}
-      {showDropdown && isSlashCommand && (
+      {/* Command dropdown - only show while typing command name, not arguments */}
+      {showDropdown && isSlashCommand && !hasSpace && (
         <CommandDropdown
           commands={commands}
           filter={commandFilter}
