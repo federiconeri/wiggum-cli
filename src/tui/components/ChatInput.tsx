@@ -1,15 +1,17 @@
 /**
- * ChatInput - Multi-line input with slash command support
+ * ChatInput - Multi-line input with slash command support and history
  *
  * Displays a `›` prompt character followed by a text input.
  * Shows command dropdown when typing `/`.
+ * Supports ↑/↓ arrow keys for command history navigation.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import { colors } from '../theme.js';
+import { colors, theme } from '../theme.js';
 import { CommandDropdown, DEFAULT_COMMANDS, type Command } from './CommandDropdown.js';
+import { useCommandHistory } from '../hooks/useCommandHistory.js';
 
 /**
  * Props for the ChatInput component
@@ -34,6 +36,7 @@ export interface ChatInputProps {
  *
  * Provides a text input with `›` prompt for chat-style interactions.
  * Shows command dropdown when input starts with `/`.
+ * Use ↑/↓ arrows to navigate command history.
  *
  * @example
  * ```tsx
@@ -55,12 +58,41 @@ export function ChatInput({
 }: ChatInputProps): React.ReactElement {
   const [value, setValue] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const { addToHistory, navigateUp, navigateDown, resetNavigation } = useCommandHistory();
+
+  // Track if we're navigating history (to prevent resetting on our own changes)
+  const isNavigatingRef = useRef(false);
 
   // Check if input is a slash command (only show dropdown before space is typed)
   const isSlashCommand = value.startsWith('/');
   const hasSpace = value.includes(' ');
   // Only filter on the command name part (before the first space)
   const commandFilter = isSlashCommand ? value.slice(1).split(' ')[0] : '';
+
+  // Handle keyboard input for history navigation
+  useInput((input, key) => {
+    if (disabled) return;
+
+    // Up arrow - navigate to previous command
+    if (key.upArrow && !showDropdown) {
+      const prev = navigateUp();
+      if (prev !== null) {
+        isNavigatingRef.current = true;
+        setValue(prev);
+        isNavigatingRef.current = false;
+      }
+      return;
+    }
+
+    // Down arrow - navigate to next command
+    if (key.downArrow && !showDropdown) {
+      const next = navigateDown();
+      isNavigatingRef.current = true;
+      setValue(next || '');
+      isNavigatingRef.current = false;
+      return;
+    }
+  });
 
   /**
    * Handle input submission
@@ -74,12 +106,15 @@ export function ChatInput({
         return;
       }
 
+      // Add to history before submitting
+      addToHistory(submittedValue);
+
       // Always pass the full value to onSubmit (including slash commands with args)
       onSubmit(submittedValue);
       setValue('');
       setShowDropdown(false);
     },
-    [disabled, allowEmpty, onSubmit]
+    [disabled, allowEmpty, onSubmit, addToHistory]
   );
 
   /**
@@ -90,6 +125,11 @@ export function ChatInput({
       if (disabled) return;
       setValue(newValue);
 
+      // Reset history navigation when user types (unless we triggered this change)
+      if (!isNavigatingRef.current) {
+        resetNavigation();
+      }
+
       // Show dropdown when typing / but hide once a space is typed (entering arguments)
       if (newValue.startsWith('/') && !newValue.includes(' ')) {
         setShowDropdown(true);
@@ -97,7 +137,7 @@ export function ChatInput({
         setShowDropdown(false);
       }
     },
-    [disabled]
+    [disabled, resetNavigation]
   );
 
   /**
@@ -109,12 +149,13 @@ export function ChatInput({
         onCommand(cmdName);
       } else {
         // If no onCommand handler, just submit the command
+        addToHistory(`/${cmdName}`);
         onSubmit(`/${cmdName}`);
       }
       setValue('');
       setShowDropdown(false);
     },
-    [onCommand, onSubmit]
+    [onCommand, onSubmit, addToHistory]
   );
 
   /**
@@ -128,8 +169,8 @@ export function ChatInput({
   if (disabled) {
     return (
       <Box flexDirection="row">
-        <Text dimColor color={colors.brown}>
-          › [waiting for AI...]
+        <Text dimColor color={theme.colors.aiDim}>
+          {theme.chars.prompt} [waiting for AI...]
         </Text>
       </Box>
     );
@@ -137,20 +178,10 @@ export function ChatInput({
 
   return (
     <Box flexDirection="column">
-      {/* Command dropdown - only show while typing command name, not arguments */}
-      {showDropdown && isSlashCommand && !hasSpace && (
-        <CommandDropdown
-          commands={commands}
-          filter={commandFilter}
-          onSelect={handleCommandSelect}
-          onCancel={handleDropdownCancel}
-        />
-      )}
-
-      {/* Input line */}
+      {/* Input line first */}
       <Box flexDirection="row">
-        <Text color={colors.blue} bold>
-          ›{' '}
+        <Text color={theme.colors.prompt} bold>
+          {theme.chars.prompt}{' '}
         </Text>
         <TextInput
           value={value}
@@ -159,6 +190,16 @@ export function ChatInput({
           placeholder={placeholder}
         />
       </Box>
+
+      {/* Command dropdown below input - only show while typing command name, not arguments */}
+      {showDropdown && isSlashCommand && !hasSpace && (
+        <CommandDropdown
+          commands={commands}
+          filter={commandFilter}
+          onSelect={handleCommandSelect}
+          onCancel={handleDropdownCancel}
+        />
+      )}
     </Box>
   );
 }

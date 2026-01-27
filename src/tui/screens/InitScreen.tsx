@@ -11,14 +11,15 @@
 
 import React, { useEffect, useRef, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { colors } from '../theme.js';
+import { colors, theme } from '../theme.js';
 import { useInit, INIT_PHASE_CONFIGS, INIT_TOTAL_PHASES } from '../hooks/useInit.js';
-import { PhaseHeader } from '../components/PhaseHeader.js';
+import { StatusLine } from '../components/StatusLine.js';
 import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { Select, type SelectOption } from '../components/Select.js';
 import { PasswordInput } from '../components/PasswordInput.js';
 import { Confirm } from '../components/Confirm.js';
 import { ActionList } from '../components/ActionOutput.js';
+import { ToolCallCard } from '../components/ToolCallCard.js';
 import { Scanner } from '../../scanner/index.js';
 import {
   AIEnhancer,
@@ -449,10 +450,19 @@ export function InitScreen({
                 </Text>
               </Text>
             </Box>
-            {/* Tool call activity */}
+            {/* Tool call activity - using ToolCallCard for consistent styling */}
             {state.toolCalls.length > 0 && (
               <Box marginBottom={1} flexDirection="column">
-                <ActionList actions={state.toolCalls} previewLines={2} />
+                {state.toolCalls.map((tc) => (
+                  <ToolCallCard
+                    key={tc.id}
+                    toolName={tc.actionName}
+                    status={tc.status === 'running' ? 'running' : tc.status === 'success' ? 'complete' : tc.status === 'error' ? 'error' : 'pending'}
+                    input={tc.description}
+                    output={tc.output}
+                    error={tc.error}
+                  />
+                ))}
               </Box>
             )}
             <WorkingIndicator
@@ -580,25 +590,22 @@ export function InitScreen({
     );
   };
 
+  // Build phase string for status line
+  const phaseString = `${phaseConfig.name} (${phaseConfig.number}/${INIT_TOTAL_PHASES})`;
+
   return (
     <Box flexDirection="column" padding={1}>
-      {/* Header */}
-      <Box marginBottom={1}>
-        <Text color={colors.yellow} bold>
-          Initialize Project
-        </Text>
-        <Text dimColor> │ {projectRoot}</Text>
-      </Box>
-
-      {/* Phase progress */}
-      <PhaseHeader
-        currentPhase={phaseConfig.number}
-        totalPhases={INIT_TOTAL_PHASES}
-        phaseName={phaseConfig.name}
+      {/* Status line: Action │ Phase (X/Y) │ Path */}
+      <StatusLine
+        action="Initialize Project"
+        phase={phaseString}
+        path={projectRoot}
       />
 
       {/* Scan summary */}
-      {renderScanSummary()}
+      <Box marginTop={1}>
+        {renderScanSummary()}
+      </Box>
 
       {/* Phase-specific content */}
       <Box marginTop={1}>{renderPhaseContent()}</Box>

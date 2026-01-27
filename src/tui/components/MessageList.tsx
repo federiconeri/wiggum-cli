@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { colors } from '../theme.js';
+import { colors, theme } from '../theme.js';
 import { StreamingText } from './StreamingText.js';
 import { ToolCallCard, type ToolCallStatus } from './ToolCallCard.js';
 
@@ -53,37 +53,41 @@ export interface MessageListProps {
   messages: Message[];
   /** Optional max height in lines (for future scrolling support) */
   maxHeight?: number;
+  /** Whether tool calls should show expanded preview (default: false) */
+  toolCallsExpanded?: boolean;
 }
 
 /**
- * Renders a single user message with › prefix
+ * Renders a single user message with › prefix in green
  */
 function UserMessage({ content }: { content: string }): React.ReactElement {
   return (
     <Box flexDirection="row" marginY={1}>
-      <Text color={colors.blue} bold>
-        ›{' '}
+      <Text color={theme.colors.prompt} bold>
+        {theme.chars.prompt}{' '}
       </Text>
-      <Text color={colors.white}>{content}</Text>
+      <Text color={theme.colors.userText}>{content}</Text>
     </Box>
   );
 }
 
 /**
- * Renders a single assistant message with ● prefix and tool calls
+ * Renders a single assistant message with tool calls (no prefix - distinguished by color)
  */
 function AssistantMessage({
   content,
   toolCalls,
   isStreaming,
+  toolCallsExpanded = false,
 }: {
   content: string;
   toolCalls?: ToolCall[];
   isStreaming?: boolean;
+  toolCallsExpanded?: boolean;
 }): React.ReactElement {
   return (
     <Box flexDirection="column" marginY={1}>
-      {/* Tool calls appear first */}
+      {/* Tool calls appear first, dimmed */}
       {toolCalls && toolCalls.length > 0 && (
         <Box flexDirection="column" marginBottom={1}>
           {toolCalls.map((toolCall, index) => (
@@ -94,22 +98,20 @@ function AssistantMessage({
               input={toolCall.input}
               output={toolCall.output}
               error={toolCall.error}
+              expanded={toolCallsExpanded}
             />
           ))}
         </Box>
       )}
 
-      {/* Message content with bullet prefix */}
+      {/* Message content - AI text in Simpson yellow, no prefix */}
       {content && (
-        <Box flexDirection="row">
-          <Text color={colors.yellow}>●{' '}</Text>
-          <Box flexDirection="column" flexGrow={1}>
-            {isStreaming ? (
-              <StreamingText text={content} isStreaming={true} color={colors.yellow} />
-            ) : (
-              <Text color={colors.yellow}>{content}</Text>
-            )}
-          </Box>
+        <Box flexDirection="column" flexGrow={1}>
+          {isStreaming ? (
+            <StreamingText text={content} isStreaming={true} color={theme.colors.aiText} />
+          ) : (
+            <Text color={theme.colors.aiText}>{content}</Text>
+          )}
         </Box>
       )}
     </Box>
@@ -148,7 +150,11 @@ function SystemMessage({ content }: { content: string }): React.ReactElement {
  * // ● Hi! How can I help?
  * ```
  */
-export function MessageList({ messages, maxHeight }: MessageListProps): React.ReactElement {
+export function MessageList({
+  messages,
+  maxHeight,
+  toolCallsExpanded = false,
+}: MessageListProps): React.ReactElement {
   return (
     <Box
       flexDirection="column"
@@ -165,6 +171,7 @@ export function MessageList({ messages, maxHeight }: MessageListProps): React.Re
                 content={message.content}
                 toolCalls={message.toolCalls}
                 isStreaming={message.isStreaming}
+                toolCallsExpanded={toolCallsExpanded}
               />
             );
           case 'system':

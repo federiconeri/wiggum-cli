@@ -8,6 +8,9 @@ export type { WorkingIndicatorProps, WorkingState } from './WorkingIndicator.js'
 export { PhaseHeader } from './PhaseHeader.js';
 export type { PhaseHeaderProps } from './PhaseHeader.js';
 
+export { StatusLine } from './StatusLine.js';
+export type { StatusLineProps } from './StatusLine.js';
+
 export { StreamingText } from './StreamingText.js';
 export type { StreamingTextProps } from './StreamingText.js';
 
@@ -34,3 +37,6 @@ export type { ConfirmProps } from './Confirm.js';
 
 export { ActionOutput, ActionList } from './ActionOutput.js';
 export type { ActionOutputProps, ActionListProps, ActionStatus } from './ActionOutput.js';
+
+export { ErrorCard, CommonErrors } from './ErrorCard.js';
+export type { ErrorCardProps, ErrorSuggestion } from './ErrorCard.js';

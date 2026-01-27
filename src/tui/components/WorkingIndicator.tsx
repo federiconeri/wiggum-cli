@@ -1,14 +1,14 @@
 /**
  * WorkingIndicator - Spinner + status display during AI calls
  *
- * Displays an animated spinner with status text when the AI is processing.
- * Similar to Claude Code's "Thinking..." indicator.
+ * Displays an animated spinner with status text and elapsed time when the AI is processing.
+ * Similar to Claude Code's "Thinking..." indicator with time tracking.
  */
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
-import { colors } from '../theme.js';
+import { colors, theme } from '../theme.js';
 
 /**
  * Working state object describing the current processing state
@@ -20,6 +20,8 @@ export interface WorkingState {
   status: string;
   /** Optional hint text (e.g., "esc to interrupt") */
   hint?: string;
+  /** Optional start time for elapsed time display (if not provided, tracks automatically) */
+  startTime?: number;
 }
 
 /**
@@ -28,12 +30,22 @@ export interface WorkingState {
 export interface WorkingIndicatorProps {
   /** Working state object */
   state: WorkingState;
+  /** Whether to show elapsed time (default: true) */
+  showElapsedTime?: boolean;
+}
+
+/**
+ * Format elapsed time in seconds
+ */
+function formatElapsedTime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  return `${seconds}s`;
 }
 
 /**
  * WorkingIndicator component
  *
- * Displays a spinner with status text when AI is processing.
+ * Displays a spinner with status text and elapsed time when AI is processing.
  * Returns null when not working.
  *
  * @example
@@ -45,11 +57,45 @@ export interface WorkingIndicatorProps {
  *     hint: "esc to interrupt"
  *   }}
  * />
- * // Renders: ⠋ Thinking... (esc to interrupt)
+ * // Renders: ⠋ Thinking... (12s) (esc to interrupt)
  * ```
  */
-export function WorkingIndicator({ state }: WorkingIndicatorProps): React.ReactElement | null {
-  const { isWorking, status, hint } = state;
+export function WorkingIndicator({
+  state,
+  showElapsedTime = true,
+}: WorkingIndicatorProps): React.ReactElement | null {
+  const { isWorking, status, hint, startTime } = state;
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const internalStartTimeRef = useRef<number | null>(null);
+
+  // Track elapsed time
+  useEffect(() => {
+    if (!isWorking) {
+      // Reset when not working
+      internalStartTimeRef.current = null;
+      setElapsedMs(0);
+      return;
+    }
+
+    // Use provided startTime or create internal one
+    const effectiveStartTime = startTime ?? internalStartTimeRef.current ?? Date.now();
+    if (!startTime && !internalStartTimeRef.current) {
+      internalStartTimeRef.current = effectiveStartTime;
+    }
+
+    // Update elapsed time every second
+    const updateElapsed = () => {
+      setElapsedMs(Date.now() - effectiveStartTime);
+    };
+
+    // Update immediately
+    updateElapsed();
+
+    // Then update every second
+    const interval = setInterval(updateElapsed, 1000);
+
+    return () => clearInterval(interval);
+  }, [isWorking, startTime]);
 
   // Don't render anything when not working
   if (!isWorking) {
@@ -62,6 +108,9 @@ export function WorkingIndicator({ state }: WorkingIndicatorProps): React.ReactE
         <Spinner type="dots" />
       </Text>
       <Text color={colors.yellow}>{status}</Text>
+      {showElapsedTime && elapsedMs >= 1000 && (
+        <Text dimColor>({formatElapsedTime(elapsedMs)})</Text>
+      )}
       {hint && (
         <Text color={colors.brown} dimColor>
           ({hint})
