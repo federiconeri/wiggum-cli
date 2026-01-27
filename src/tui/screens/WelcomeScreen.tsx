@@ -66,8 +66,8 @@ export function WelcomeScreen({
 
   // Auto-continue after render (remove friction)
   React.useEffect(() => {
-    // Small delay to let the banner render
-    const timer = setTimeout(onContinue, 100);
+    // Delay to let the banner render on slower terminals
+    const timer = setTimeout(onContinue, 250);
     return () => clearTimeout(timer);
   }, [onContinue]);
 

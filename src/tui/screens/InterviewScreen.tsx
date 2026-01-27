@@ -40,6 +40,8 @@ export interface InterviewScreenProps {
   model: string;
   /** Optional scan result with detected tech stack */
   scanResult?: ScanResult;
+  /** Path to specs directory (relative to project root, defaults to '.ralph/specs') */
+  specsPath?: string;
   /** Called when spec generation is complete */
   onComplete: (spec: string) => void;
   /** Called when user cancels the interview */
@@ -62,6 +64,7 @@ export function InterviewScreen({
   provider,
   model,
   scanResult,
+  specsPath = '.ralph/specs',
   onComplete,
   onCancel,
 }: InterviewScreenProps): React.ReactElement {
@@ -312,7 +315,7 @@ export function InterviewScreen({
         <Box marginY={1} flexDirection="column">
           <Text color={theme.colors.success}>✓ Specification generated successfully!</Text>
           <Box marginTop={1}>
-            <Text dimColor>Saved to: .ralph/specs/{featureName}.md</Text>
+            <Text dimColor>Saved to: {specsPath}/{featureName}.md</Text>
           </Box>
         </Box>
       )}

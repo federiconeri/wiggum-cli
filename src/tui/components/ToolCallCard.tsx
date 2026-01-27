@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { colors, theme } from '../theme.js';
+import { theme } from '../theme.js';
 
 /**
  * Tool execution status

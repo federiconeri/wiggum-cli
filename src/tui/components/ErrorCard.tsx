@@ -7,7 +7,7 @@
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { colors, theme, phase } from '../theme.js';
+import { theme, phase } from '../theme.js';
 
 /**
  * Suggestion for fixing the error

@@ -208,6 +208,7 @@ export function App({
           provider={sessionState.provider}
           model={sessionState.model}
           scanResult={sessionState.scanResult}
+          specsPath={sessionState.config?.paths.specs}
           onComplete={handleInterviewComplete}
           onCancel={handleInterviewCancel}
         />

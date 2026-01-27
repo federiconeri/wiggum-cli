@@ -58,7 +58,7 @@ export function ChatInput({
 }: ChatInputProps): React.ReactElement {
   const [value, setValue] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
-  const { addToHistory, navigateUp, navigateDown, resetNavigation } = useCommandHistory();
+  const { addToHistory, navigateUp, navigateDown, getCurrentItem, resetNavigation } = useCommandHistory();
 
   // Track if we're navigating history (to prevent resetting on our own changes)
   const isNavigatingRef = useRef(false);
@@ -69,12 +69,19 @@ export function ChatInput({
   // Only filter on the command name part (before the first space)
   const commandFilter = isSlashCommand ? value.slice(1).split(' ')[0] : '';
 
+  // Store draft input when starting history navigation
+  const draftRef = useRef<string>('');
+
   // Handle keyboard input for history navigation
   useInput((input, key) => {
     if (disabled) return;
 
     // Up arrow - navigate to previous command
     if (key.upArrow && !showDropdown) {
+      // Save draft when starting navigation
+      if (getCurrentItem() === null) {
+        draftRef.current = value;
+      }
       const prev = navigateUp();
       if (prev !== null) {
         isNavigatingRef.current = true;
@@ -84,12 +91,17 @@ export function ChatInput({
       return;
     }
 
-    // Down arrow - navigate to next command
+    // Down arrow - navigate to next command (only when in history)
     if (key.downArrow && !showDropdown) {
-      const next = navigateDown();
-      isNavigatingRef.current = true;
-      setValue(next || '');
-      isNavigatingRef.current = false;
+      const current = getCurrentItem();
+      // Only navigate if we're currently viewing history
+      if (current !== null) {
+        const next = navigateDown();
+        isNavigatingRef.current = true;
+        // Restore draft when exiting history, otherwise show next command
+        setValue(next !== null ? next : draftRef.current);
+        isNavigatingRef.current = false;
+      }
       return;
     }
   });
@@ -145,11 +157,13 @@ export function ChatInput({
    */
   const handleCommandSelect = useCallback(
     (cmdName: string) => {
+      // Always add to history for consistent recall
+      addToHistory(`/${cmdName}`);
+
       if (onCommand) {
         onCommand(cmdName);
       } else {
         // If no onCommand handler, just submit the command
-        addToHistory(`/${cmdName}`);
         onSubmit(`/${cmdName}`);
       }
       setValue('');
