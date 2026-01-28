@@ -165,12 +165,8 @@ export function InterviewScreen({
       onComplete: (spec) => {
         if (isCancelledRef.current) return;
         setGeneratedSpec(spec);
-        // Delay navigation to show completion UI first
-        setTimeout(() => {
-          if (!isCancelledRef.current) {
-            onCompleteRef.current(spec);
-          }
-        }, 3000); // Show completion view for 3 seconds
+        // Complete immediately - App will add summary to thread
+        onCompleteRef.current(spec);
       },
       onError: (error) => {
         if (isCancelledRef.current) return;
@@ -324,70 +320,11 @@ export function InterviewScreen({
         </Box>
       )}
 
-      {/* Completion message with spec preview - Codex style */}
+      {/* Completion message - full summary added to thread by App */}
       {state.phase === 'complete' && (
-        <Box marginY={1} flexDirection="column">
-          {/* Tool-call style preview */}
-          <Box flexDirection="row">
-            <Text color={theme.colors.tool.success}>●</Text>
-            <Text> </Text>
-            <Text bold>Write</Text>
-            <Text dimColor>({specsPath}/{featureName}.md)</Text>
-          </Box>
-
-          {/* Summary line and preview */}
-          {state.generatedSpec && (() => {
-            const specLines = state.generatedSpec.split('\n');
-            const totalLines = specLines.length;
-            const previewLines = specLines.slice(0, 5);
-            const remainingLines = Math.max(0, totalLines - 5);
-
-            return (
-              <>
-                <Box marginLeft={2}>
-                  <Text dimColor>└ Wrote {totalLines} lines to {specsPath}/{featureName}.md</Text>
-                </Box>
-
-                {/* Preview with line numbers */}
-                <Box marginLeft={4} flexDirection="column">
-                  {previewLines.map((line, i) => (
-                    <Box key={i} flexDirection="row">
-                      <Text dimColor>{String(i + 1).padStart(4)} </Text>
-                      <Text dimColor>{line}</Text>
-                    </Box>
-                  ))}
-                  {remainingLines > 0 && (
-                    <Text dimColor>… +{remainingLines} lines (ctrl+o to expand)</Text>
-                  )}
-                </Box>
-              </>
-            );
-          })()}
-
-          {/* Done message */}
-          <Box marginTop={1} flexDirection="row" gap={1}>
-            <Text color={theme.colors.success}>●</Text>
-            <Text>Done. Specification generated successfully.</Text>
-          </Box>
-
-          {/* What's next */}
-          <Box marginTop={1} flexDirection="column">
-            <Text bold>What's next:</Text>
-            <Box flexDirection="row" gap={1}>
-              <Text color={colors.green}>›</Text>
-              <Text dimColor>Review the spec in your editor</Text>
-            </Box>
-            <Box flexDirection="row" gap={1}>
-              <Text color={colors.green}>›</Text>
-              <Text color={colors.blue}>/help</Text>
-              <Text dimColor>See all commands</Text>
-            </Box>
-          </Box>
-
-          {/* Auto-continue hint */}
-          <Box marginTop={1}>
-            <Text dimColor italic>Returning to shell in 3s...</Text>
-          </Box>
+        <Box flexDirection="row" gap={1}>
+          <Text color={theme.colors.success}>●</Text>
+          <Text>Specification complete.</Text>
         </Box>
       )}
 

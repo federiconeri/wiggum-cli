@@ -3,10 +3,13 @@
  *
  * The root component for the Ink-based TUI. Routes to different screens
  * based on the current screen state. Manages session state and navigation.
+ *
+ * Uses a "continuous thread" model like Claude Code - all output stays
+ * visible in the terminal as a growing thread, rather than clearing screens.
  */
 
 import React, { useState, useCallback } from 'react';
-import { render, type Instance } from 'ink';
+import { render, Static, Box, Text, type Instance } from 'ink';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AIProvider } from '../ai/providers.js';
@@ -17,6 +20,17 @@ import { InterviewScreen } from './screens/InterviewScreen.js';
 import { WelcomeScreen } from './screens/WelcomeScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
 import { MainShell, type NavigationTarget, type NavigationProps } from './screens/MainShell.js';
+import { WiggumBanner } from './components/WiggumBanner.js';
+import { colors, theme } from './theme.js';
+
+/**
+ * Thread item representing a completed action in the history
+ */
+interface ThreadItem {
+  id: string;
+  type: 'banner' | 'init-complete' | 'spec-complete' | 'message';
+  content: React.ReactNode;
+}
 
 /**
  * Available screen types for the App component
@@ -73,6 +87,13 @@ export interface AppProps {
  * });
  * ```
  */
+/**
+ * Generate a unique ID for thread items
+ */
+function generateThreadId(): string {
+  return `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+}
+
 export function App({
   screen: initialScreen,
   initialSessionState,
@@ -87,6 +108,48 @@ export function App({
   );
   const [sessionState, setSessionState] = useState<SessionState>(initialSessionState);
 
+  // Thread history - preserves all output as a continuous thread
+  const [threadHistory, setThreadHistory] = useState<ThreadItem[]>(() => {
+    // Start with banner if showing welcome screen
+    if (initialScreen === 'welcome') {
+      return [{
+        id: generateThreadId(),
+        type: 'banner',
+        content: (
+          <Box flexDirection="column" padding={1}>
+            <WiggumBanner />
+            <Box marginTop={1} flexDirection="row">
+              <Text color={colors.pink}>v{version}</Text>
+              <Text dimColor>{theme.statusLine.separator}</Text>
+              {initialSessionState.provider ? (
+                <Text color={colors.blue}>{initialSessionState.provider}/{initialSessionState.model}</Text>
+              ) : (
+                <Text color={colors.orange}>not configured</Text>
+              )}
+              <Text dimColor>{theme.statusLine.separator}</Text>
+              <Text color={initialSessionState.initialized ? colors.green : colors.orange}>
+                {initialSessionState.initialized ? 'Ready' : 'Not initialized'}
+              </Text>
+            </Box>
+            <Box marginTop={1}>
+              <Text dimColor>
+                Tip: {initialSessionState.initialized ? '/new <feature> to create spec' : '/init to set up'}, /help for commands
+              </Text>
+            </Box>
+          </Box>
+        ),
+      }];
+    }
+    return [];
+  });
+
+  /**
+   * Add an item to the thread history
+   */
+  const addToThread = useCallback((type: ThreadItem['type'], content: React.ReactNode) => {
+    setThreadHistory(prev => [...prev, { id: generateThreadId(), type, content }]);
+  }, []);
+
   /**
    * Navigate to a different screen
    */
@@ -96,11 +159,12 @@ export function App({
   }, []);
 
   /**
-   * Handle interview completion - save spec to disk and notify
+   * Handle interview completion - save spec to disk and add to thread
    */
   const handleInterviewComplete = useCallback(async (spec: string) => {
     // Get feature name from navigation props or initial interview props
     const featureName = screenProps?.featureName || interviewProps?.featureName;
+    let specPath = '';
 
     if (featureName && typeof featureName === 'string') {
       try {
@@ -114,7 +178,7 @@ export function App({
         }
 
         // Write spec to file
-        const specPath = join(specsDir, `${featureName}.md`);
+        specPath = join(specsDir, `${featureName}.md`);
         writeFileSync(specPath, spec, 'utf-8');
 
         // Call onComplete with the spec path for logging
@@ -127,6 +191,60 @@ export function App({
       onComplete?.(spec);
     }
 
+    // Add completion summary to thread
+    const specLines = spec.split('\n');
+    const totalLines = specLines.length;
+    const previewLines = specLines.slice(0, 5);
+    const remainingLines = Math.max(0, totalLines - 5);
+
+    addToThread('spec-complete', (
+      <Box flexDirection="column" marginY={1}>
+        {/* Tool-call style preview */}
+        <Box flexDirection="row">
+          <Text color={colors.green}>●</Text>
+          <Text> </Text>
+          <Text bold>Write</Text>
+          <Text dimColor>({specPath || `${featureName}.md`})</Text>
+        </Box>
+        <Box marginLeft={2}>
+          <Text dimColor>└ Wrote {totalLines} lines</Text>
+        </Box>
+
+        {/* Preview with line numbers */}
+        <Box marginLeft={4} flexDirection="column">
+          {previewLines.map((line, i) => (
+            <Box key={i} flexDirection="row">
+              <Text dimColor>{String(i + 1).padStart(4)} </Text>
+              <Text dimColor>{line}</Text>
+            </Box>
+          ))}
+          {remainingLines > 0 && (
+            <Text dimColor>… +{remainingLines} lines</Text>
+          )}
+        </Box>
+
+        {/* Done message */}
+        <Box marginTop={1} flexDirection="row" gap={1}>
+          <Text color={colors.green}>●</Text>
+          <Text>Done. Specification generated successfully.</Text>
+        </Box>
+
+        {/* What's next */}
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>What's next:</Text>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>›</Text>
+            <Text dimColor>Review the spec in your editor</Text>
+          </Box>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>›</Text>
+            <Text color={colors.blue}>/help</Text>
+            <Text dimColor>See all commands</Text>
+          </Box>
+        </Box>
+      </Box>
+    ));
+
     // If started on interview (--tui mode), call onExit to resolve promise
     // Otherwise, return to shell
     if (initialScreen === 'interview') {
@@ -134,7 +252,7 @@ export function App({
     } else {
       navigate('shell');
     }
-  }, [onComplete, navigate, initialScreen, onExit, screenProps, interviewProps, sessionState.projectRoot]);
+  }, [onComplete, navigate, initialScreen, onExit, screenProps, interviewProps, sessionState.projectRoot, addToThread]);
 
   /**
    * Handle interview cancel
@@ -163,78 +281,136 @@ export function App({
     setSessionState(newState);
   }, []);
 
-  // Route to the appropriate screen
-  switch (currentScreen) {
-    case 'welcome':
-      return (
-        <WelcomeScreen
-          provider={sessionState.provider}
-          model={sessionState.model}
-          version={version}
-          isInitialized={sessionState.initialized}
-          onContinue={handleWelcomeContinue}
-        />
-      );
+  /**
+   * Handle init completion - add summary to thread and update state
+   */
+  const handleInitComplete = useCallback((newState: SessionState, generatedFiles?: string[]) => {
+    // Add init completion to thread
+    addToThread('init-complete', (
+      <Box flexDirection="column" marginY={1}>
+        {/* Tool-call style display for files */}
+        {generatedFiles && generatedFiles.slice(0, 5).map((file) => (
+          <Box key={file} flexDirection="column">
+            <Box flexDirection="row">
+              <Text color={colors.green}>●</Text>
+              <Text> </Text>
+              <Text bold>Write</Text>
+              <Text dimColor>({file})</Text>
+            </Box>
+            <Box marginLeft={2}>
+              <Text dimColor>└ Created {file}</Text>
+            </Box>
+          </Box>
+        ))}
+        {generatedFiles && generatedFiles.length > 5 && (
+          <Text dimColor>  ... and {generatedFiles.length - 5} more files</Text>
+        )}
 
-    case 'shell':
-      return (
-        <MainShell
-          sessionState={sessionState}
-          onNavigate={navigate}
-          onSessionStateChange={handleSessionStateChange}
-        />
-      );
+        {/* Done message */}
+        <Box marginTop={1} flexDirection="row" gap={1}>
+          <Text color={colors.green}>●</Text>
+          <Text>Done. Created Ralph configuration files.</Text>
+        </Box>
 
-    case 'interview': {
-      // Get feature name from props or navigation
-      const featureName = screenProps?.featureName || interviewProps?.featureName;
+        {/* What's next */}
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>What's next:</Text>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>›</Text>
+            <Text color={colors.blue}>/new {'<feature>'}</Text>
+            <Text dimColor>Create a feature specification</Text>
+          </Box>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>›</Text>
+            <Text color={colors.blue}>/help</Text>
+            <Text dimColor>See all commands</Text>
+          </Box>
+        </Box>
+      </Box>
+    ));
 
-      if (!featureName || typeof featureName !== 'string') {
-        // Missing feature name, go back to shell
-        navigate('shell');
+    setSessionState(newState);
+    navigate('shell');
+  }, [addToThread, navigate]);
+
+  // Render current screen content
+  const renderCurrentScreen = () => {
+    switch (currentScreen) {
+      case 'welcome':
+        // Banner is already in thread history, just continue to shell
         return null;
+
+      case 'shell':
+        return (
+          <MainShell
+            sessionState={sessionState}
+            onNavigate={navigate}
+            onSessionStateChange={handleSessionStateChange}
+          />
+        );
+
+      case 'interview': {
+        // Get feature name from props or navigation
+        const featureName = screenProps?.featureName || interviewProps?.featureName;
+
+        if (!featureName || typeof featureName !== 'string') {
+          // Missing feature name, go back to shell
+          navigate('shell');
+          return null;
+        }
+
+        if (!sessionState.provider) {
+          // No provider configured, can't run interview
+          navigate('shell');
+          return null;
+        }
+
+        return (
+          <InterviewScreen
+            featureName={featureName}
+            projectRoot={sessionState.projectRoot}
+            provider={sessionState.provider}
+            model={sessionState.model}
+            scanResult={sessionState.scanResult}
+            specsPath={sessionState.config?.paths.specs}
+            onComplete={handleInterviewComplete}
+            onCancel={handleInterviewCancel}
+          />
+        );
       }
 
-      if (!sessionState.provider) {
-        // No provider configured, can't run interview
-        navigate('shell');
-        return null;
+      case 'init': {
+        return (
+          <InitScreen
+            projectRoot={sessionState.projectRoot}
+            sessionState={sessionState}
+            onComplete={handleInitComplete}
+            onCancel={() => navigate('shell')}
+          />
+        );
       }
 
-      return (
-        <InterviewScreen
-          featureName={featureName}
-          projectRoot={sessionState.projectRoot}
-          provider={sessionState.provider}
-          model={sessionState.model}
-          scanResult={sessionState.scanResult}
-          specsPath={sessionState.config?.paths.specs}
-          onComplete={handleInterviewComplete}
-          onCancel={handleInterviewCancel}
-        />
-      );
+      default:
+        return null;
     }
+  };
 
-    case 'init': {
-      // Handle init completion by updating session state
-      const handleInitComplete = (newState: SessionState) => {
-        setSessionState(newState);
-        navigate('shell');
-      };
+  // Render with thread history (Static) + current screen
+  return (
+    <Box flexDirection="column">
+      {/* Static thread history - preserved output that doesn't re-render */}
+      <Static items={threadHistory}>
+        {(item) => (
+          <Box key={item.id}>
+            {item.content}
+          </Box>
+        )}
+      </Static>
 
-      return (
-        <InitScreen
-          projectRoot={sessionState.projectRoot}
-          sessionState={sessionState}
-          onComplete={handleInitComplete}
-          onCancel={() => navigate('shell')}
-        />
-      );
-    }
-
-    default:
-      return null;
-  }
+      {/* Current active screen */}
+      {renderCurrentScreen()}
+    </Box>
+  );
 }
 
 /**

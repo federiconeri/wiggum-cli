@@ -49,8 +49,8 @@ export interface InitScreenProps {
   projectRoot: string;
   /** Current session state */
   sessionState: SessionState;
-  /** Called when initialization is complete */
-  onComplete: (newState: SessionState) => void;
+  /** Called when initialization is complete (with optional generated files list) */
+  onComplete: (newState: SessionState, generatedFiles?: string[]) => void;
   /** Called when user cancels */
   onCancel: () => void;
 }
@@ -295,7 +295,8 @@ export function InitScreen({
           initialized: true,
         });
 
-        onComplete(newSessionState);
+        // Pass generated files to completion handler for thread history
+        onComplete(newSessionState, generatedFiles);
       } catch (error) {
         setError(`Failed to generate files: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -512,50 +513,11 @@ export function InitScreen({
         );
 
       case 'complete':
+        // Brief completion message - full summary added to thread by App
         return (
-          <Box flexDirection="column">
-            {/* Tool-call style display for each generated file */}
-            {state.generatedFiles.map((file) => (
-              <Box key={file} flexDirection="column" marginBottom={1}>
-                <Box flexDirection="row">
-                  <Text color={colors.green}>●</Text>
-                  <Text> </Text>
-                  <Text bold>Write</Text>
-                  <Text dimColor>({file})</Text>
-                </Box>
-                <Box marginLeft={2}>
-                  <Text dimColor>└ Created {file}</Text>
-                </Box>
-              </Box>
-            ))}
-
-            {/* Done message */}
-            <Box marginTop={1} flexDirection="row" gap={1}>
-              <Text color={colors.green}>●</Text>
-              <Text>Done. Created Ralph configuration files.</Text>
-            </Box>
-
-            {/* Created files summary */}
-            <Box marginTop={1} flexDirection="column">
-              <Text dimColor>Created files:</Text>
-              {state.generatedFiles.map((file) => (
-                <Text key={file} dimColor>  {file}</Text>
-              ))}
-            </Box>
-
-            <Box marginTop={1} flexDirection="column">
-              <Text bold>What's next:</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color={colors.green}>›</Text>
-                <Text color={colors.blue}>/new {'<feature>'}</Text>
-                <Text dimColor>Create a feature specification</Text>
-              </Box>
-              <Box flexDirection="row" gap={1}>
-                <Text color={colors.green}>›</Text>
-                <Text color={colors.blue}>/help</Text>
-                <Text dimColor>See all commands</Text>
-              </Box>
-            </Box>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>●</Text>
+            <Text>Initialization complete.</Text>
           </Box>
         );
 
