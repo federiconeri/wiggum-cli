@@ -235,13 +235,12 @@ export function ToolCallCard({
 
   return (
     <Box flexDirection="column">
-      {/* Main line: colored LED, dimmed name(input) */}
+      {/* Main line: colored LED, bold name, dimmed args */}
       <Box flexDirection="row">
         <Text color={color}>{dot}</Text>
         <Text> </Text>
-        <Text dimColor={status === 'complete'} bold={status === 'running'}>
-          {displayName}({displayInput})
-        </Text>
+        <Text bold>{displayName}</Text>
+        <Text dimColor>({displayInput})</Text>
       </Box>
 
       {/* Summary on next line with └ prefix */}

@@ -73,7 +73,8 @@ function UserMessage({ content }: { content: string }): React.ReactElement {
 
 /**
  * Renders a single assistant message with tool calls (no prefix - distinguished by color)
- * Differentiates between thinking/context (dimmed with ○) and questions (bold)
+ * Differentiates between thinking/context (solid LED, italic) and questions (bold with prefix)
+ * Preserves original paragraph order while styling differently
  */
 function AssistantMessage({
   content,
@@ -108,33 +109,37 @@ function AssistantMessage({
         </Box>
       )}
 
-      {/* Message content - differentiate thinking vs questions */}
-      {content && (
+      {/* Message content - single pass preserving order, style context vs questions differently */}
+      {content && !isStreaming && (
         <Box flexDirection="column" flexGrow={1}>
-          {isStreaming ? (
-            <StreamingText text={content} isStreaming={true} color={theme.colors.aiText} />
-          ) : (
-            paragraphs.map((para, index) => {
-              const isQuestion = para.trim().endsWith('?');
+          {paragraphs.map((para, index) => {
+            const isQuestion = para.trim().endsWith('?');
 
-              if (isQuestion) {
-                // Question - prominent, bold yellow
-                return (
-                  <Box key={index} marginY={1}>
-                    <Text color={theme.colors.aiText} bold>{para}</Text>
-                  </Box>
-                );
-              } else {
-                // Context/thinking - dimmed with ○ LED prefix
-                return (
-                  <Box key={index} flexDirection="row" gap={1}>
-                    <Text dimColor>○</Text>
-                    <Text dimColor>{para}</Text>
-                  </Box>
-                );
-              }
-            })
-          )}
+            if (isQuestion) {
+              // Question - prominent, with "Next question:" prefix
+              return (
+                <Box key={index} marginY={1} flexDirection="column">
+                  <Text bold>Next question:</Text>
+                  <Text color={theme.colors.aiText}>{para}</Text>
+                </Box>
+              );
+            } else {
+              // Context/thinking - solid grey LED, italic dimmed text
+              return (
+                <Box key={index} flexDirection="row" gap={1}>
+                  <Text dimColor>●</Text>
+                  <Text dimColor italic>{para}</Text>
+                </Box>
+              );
+            }
+          })}
+        </Box>
+      )}
+
+      {/* Streaming content */}
+      {content && isStreaming && (
+        <Box flexDirection="column" flexGrow={1}>
+          <StreamingText text={content} isStreaming={true} color={theme.colors.aiText} />
         </Box>
       )}
     </Box>

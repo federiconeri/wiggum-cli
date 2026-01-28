@@ -124,6 +124,8 @@ export function InterviewScreen({
       },
       onStreamChunk: (chunk) => {
         if (isCancelledRef.current) return;
+        // Don't stream during generation phase - show blocking indicator instead
+        if (orchestratorRef.current?.getPhase() === 'generation') return;
         if (!isStreamingRef.current) {
           // Start a new streaming message
           isStreamingRef.current = true;
@@ -313,28 +315,65 @@ export function InterviewScreen({
         </Box>
       )}
 
-      {/* Completion message with spec preview */}
+      {/* Completion message with spec preview - Codex style */}
       {state.phase === 'complete' && (
         <Box marginY={1} flexDirection="column">
-          <Text color={theme.colors.success}>✓ Specification generated successfully!</Text>
-          <Box marginTop={1}>
-            <Text dimColor>Saved to: {specsPath}/{featureName}.md</Text>
+          {/* Tool-call style preview */}
+          <Box flexDirection="row">
+            <Text color={theme.colors.tool.success}>●</Text>
+            <Text> </Text>
+            <Text bold>Write</Text>
+            <Text dimColor>({specsPath}/{featureName}.md)</Text>
           </Box>
 
-          {/* Spec preview with line numbers */}
-          {state.generatedSpec && (
-            <Box marginTop={1} flexDirection="column">
-              {state.generatedSpec.split('\n').slice(0, 5).map((line, i) => (
-                <Box key={i} flexDirection="row">
-                  <Text dimColor>{String(i + 1).padStart(4)} </Text>
-                  <Text dimColor>{line}</Text>
+          {/* Summary line and preview */}
+          {state.generatedSpec && (() => {
+            const specLines = state.generatedSpec.split('\n');
+            const totalLines = specLines.length;
+            const previewLines = specLines.slice(0, 5);
+            const remainingLines = Math.max(0, totalLines - 5);
+
+            return (
+              <>
+                <Box marginLeft={2}>
+                  <Text dimColor>└ Wrote {totalLines} lines to {specsPath}/{featureName}.md</Text>
                 </Box>
-              ))}
-              {state.generatedSpec.split('\n').length > 5 && (
-                <Text dimColor>... +{state.generatedSpec.split('\n').length - 5} lines (ctrl+o to expand)</Text>
-              )}
+
+                {/* Preview with line numbers */}
+                <Box marginLeft={4} flexDirection="column">
+                  {previewLines.map((line, i) => (
+                    <Box key={i} flexDirection="row">
+                      <Text dimColor>{String(i + 1).padStart(4)} </Text>
+                      <Text dimColor>{line}</Text>
+                    </Box>
+                  ))}
+                  {remainingLines > 0 && (
+                    <Text dimColor>… +{remainingLines} lines (ctrl+o to expand)</Text>
+                  )}
+                </Box>
+              </>
+            );
+          })()}
+
+          {/* Done message */}
+          <Box marginTop={1} flexDirection="row" gap={1}>
+            <Text color={theme.colors.success}>●</Text>
+            <Text>Done. Specification generated successfully.</Text>
+          </Box>
+
+          {/* What's next */}
+          <Box marginTop={1} flexDirection="column">
+            <Text bold>What's next:</Text>
+            <Box flexDirection="row" gap={1}>
+              <Text color={colors.green}>›</Text>
+              <Text dimColor>Review the spec in your editor</Text>
             </Box>
-          )}
+            <Box flexDirection="row" gap={1}>
+              <Text color={colors.green}>›</Text>
+              <Text color={colors.blue}>/help</Text>
+              <Text dimColor>See all commands</Text>
+            </Box>
+          </Box>
         </Box>
       )}
 

@@ -64,11 +64,13 @@ export function WelcomeScreen({
   const versionDisplay = getVersionDisplay(version);
   const separator = theme.statusLine.separator;
 
-  // Auto-continue after render (remove friction)
+  // Auto-continue after first render completes (no delay, banner persists naturally)
   React.useEffect(() => {
-    // Delay to let the banner render on slower terminals
-    const timer = setTimeout(onContinue, 800);
-    return () => clearTimeout(timer);
+    // Let banner render, then continue on next tick
+    const immediate = setImmediate(() => {
+      onContinue();
+    });
+    return () => clearImmediate(immediate);
   }, [onContinue]);
 
   // Build status text

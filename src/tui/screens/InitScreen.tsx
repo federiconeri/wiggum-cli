@@ -514,11 +514,28 @@ export function InitScreen({
       case 'complete':
         return (
           <Box flexDirection="column">
-            <Box flexDirection="row" gap={1}>
-              <Text color={colors.green}>✓</Text>
-              <Text color={colors.green} bold>Project initialized successfully!</Text>
+            {/* Tool-call style display for each generated file */}
+            {state.generatedFiles.map((file) => (
+              <Box key={file} flexDirection="column" marginBottom={1}>
+                <Box flexDirection="row">
+                  <Text color={colors.green}>●</Text>
+                  <Text> </Text>
+                  <Text bold>Write</Text>
+                  <Text dimColor>({file})</Text>
+                </Box>
+                <Box marginLeft={2}>
+                  <Text dimColor>└ Created {file}</Text>
+                </Box>
+              </Box>
+            ))}
+
+            {/* Done message */}
+            <Box marginTop={1} flexDirection="row" gap={1}>
+              <Text color={colors.green}>●</Text>
+              <Text>Done. Created Ralph configuration files.</Text>
             </Box>
 
+            {/* Created files summary */}
             <Box marginTop={1} flexDirection="column">
               <Text dimColor>Created files:</Text>
               {state.generatedFiles.map((file) => (
