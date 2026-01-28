@@ -431,7 +431,7 @@ Respond with a VERY brief (1-2 sentence) summary of what you found relevant to t
       this.onMessage('system', `Context: ${shortSummary}${summary.length > 120 ? '...' : ''}`);
 
       // Phase 2b: Start interview with first question
-      this.onWorkingChange(true, 'Preparing first question...');
+      this.onWorkingChange(true, 'Formulating first question based on analysis...');
 
       const interviewPrompt = `Based on what you learned about the project, briefly acknowledge the user's goals for "${this.featureName}" and ask your FIRST clarifying question.
 Ask only ONE question. Be concise.`;

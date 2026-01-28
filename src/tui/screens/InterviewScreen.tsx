@@ -91,6 +91,9 @@ export function InterviewScreen({
   const isStreamingRef = useRef(false);
   const streamContentRef = useRef('');
 
+  // Track if we're in generation phase (more reliable than checking orchestrator)
+  const isGeneratingRef = useRef(false);
+
   // Track if component is unmounted to prevent callbacks after cleanup
   const isCancelledRef = useRef(false);
 
@@ -125,7 +128,7 @@ export function InterviewScreen({
       onStreamChunk: (chunk) => {
         if (isCancelledRef.current) return;
         // Don't stream during generation phase - show blocking indicator instead
-        if (orchestratorRef.current?.getPhase() === 'generation') return;
+        if (isGeneratingRef.current) return;
         if (!isStreamingRef.current) {
           // Start a new streaming message
           isStreamingRef.current = true;
@@ -155,13 +158,19 @@ export function InterviewScreen({
       },
       onPhaseChange: (phase: GeneratorPhase) => {
         if (isCancelledRef.current) return;
+        // Track generation phase in ref for reliable streaming blocking
+        isGeneratingRef.current = phase === 'generation';
         setPhase(phase);
       },
       onComplete: (spec) => {
         if (isCancelledRef.current) return;
         setGeneratedSpec(spec);
-        // Use ref to avoid stale closure
-        onCompleteRef.current(spec);
+        // Delay navigation to show completion UI first
+        setTimeout(() => {
+          if (!isCancelledRef.current) {
+            onCompleteRef.current(spec);
+          }
+        }, 3000); // Show completion view for 3 seconds
       },
       onError: (error) => {
         if (isCancelledRef.current) return;
@@ -373,6 +382,11 @@ export function InterviewScreen({
               <Text color={colors.blue}>/help</Text>
               <Text dimColor>See all commands</Text>
             </Box>
+          </Box>
+
+          {/* Auto-continue hint */}
+          <Box marginTop={1}>
+            <Text dimColor italic>Returning to shell in 3s...</Text>
           </Box>
         </Box>
       )}
