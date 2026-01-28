@@ -21,6 +21,8 @@ import { WelcomeScreen } from './screens/WelcomeScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
 import { MainShell, type NavigationTarget, type NavigationProps } from './screens/MainShell.js';
 import { WiggumBanner } from './components/WiggumBanner.js';
+import { ToolCallCard } from './components/ToolCallCard.js';
+import type { Message } from './components/MessageList.js';
 import { colors, theme } from './theme.js';
 
 /**
@@ -161,7 +163,7 @@ export function App({
   /**
    * Handle interview completion - save spec to disk and add to thread
    */
-  const handleInterviewComplete = useCallback(async (spec: string) => {
+  const handleInterviewComplete = useCallback(async (spec: string, messages: Message[]) => {
     // Get feature name from navigation props or initial interview props
     const featureName = screenProps?.featureName || interviewProps?.featureName;
     let specPath = '';
@@ -190,6 +192,47 @@ export function App({
     } else {
       onComplete?.(spec);
     }
+
+    // Add interview conversation to thread first (preserves all messages)
+    addToThread('message', (
+      <Box flexDirection="column" marginY={1}>
+        {messages.map((msg) => {
+          if (msg.role === 'user') {
+            return (
+              <Box key={msg.id} flexDirection="row" marginY={1}>
+                <Text color={theme.colors.prompt} bold>{theme.chars.prompt} </Text>
+                <Text color={theme.colors.userText}>{msg.content}</Text>
+              </Box>
+            );
+          } else if (msg.role === 'assistant') {
+            return (
+              <Box key={msg.id} flexDirection="column" marginY={1}>
+                {/* Tool calls */}
+                {msg.toolCalls && msg.toolCalls.map((toolCall, idx) => (
+                  <ToolCallCard
+                    key={`${msg.id}-tool-${idx}`}
+                    toolName={toolCall.toolName}
+                    input={toolCall.input}
+                    output={toolCall.output}
+                    status={toolCall.status}
+                    error={toolCall.error}
+                    expanded={false}
+                  />
+                ))}
+                {/* Message content */}
+                {msg.content && (
+                  <Box flexDirection="row" gap={1}>
+                    <Text dimColor>●</Text>
+                    <Text dimColor italic>{msg.content}</Text>
+                  </Box>
+                )}
+              </Box>
+            );
+          }
+          return null;
+        })}
+      </Box>
+    ));
 
     // Add completion summary to thread
     const specLines = spec.split('\n');

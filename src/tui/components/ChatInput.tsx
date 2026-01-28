@@ -184,7 +184,7 @@ export function ChatInput({
     return (
       <Box flexDirection="row">
         <Text dimColor color={theme.colors.aiDim}>
-          {theme.chars.prompt} [waiting for AI...]
+          {theme.chars.prompt} [waiting for Wiggum...]
         </Text>
       </Box>
     );

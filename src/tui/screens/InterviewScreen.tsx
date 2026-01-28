@@ -42,8 +42,8 @@ export interface InterviewScreenProps {
   scanResult?: ScanResult;
   /** Path to specs directory (relative to project root, defaults to '.ralph/specs') */
   specsPath?: string;
-  /** Called when spec generation is complete */
-  onComplete: (spec: string) => void;
+  /** Called when spec generation is complete - receives spec and conversation messages */
+  onComplete: (spec: string, messages: import('../components/MessageList.js').Message[]) => void;
   /** Called when user cancels the interview */
   onCancel: () => void;
 }
@@ -97,9 +97,13 @@ export function InterviewScreen({
   // Track if component is unmounted to prevent callbacks after cleanup
   const isCancelledRef = useRef(false);
 
-  // Use refs for callbacks to avoid stale closures and unnecessary effect re-runs
+  // Use refs for callbacks and state to avoid stale closures
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+
+  // Track messages in ref for access in callbacks
+  const messagesRef = useRef(state.messages);
+  messagesRef.current = state.messages;
 
   // Initialize the orchestrator when the component mounts
   useEffect(() => {
@@ -166,7 +170,8 @@ export function InterviewScreen({
         if (isCancelledRef.current) return;
         setGeneratedSpec(spec);
         // Complete immediately - App will add summary to thread
-        onCompleteRef.current(spec);
+        // Pass messages so they can be added to thread history
+        onCompleteRef.current(spec, messagesRef.current);
       },
       onError: (error) => {
         if (isCancelledRef.current) return;
@@ -310,12 +315,12 @@ export function InterviewScreen({
         <MessageList messages={state.messages} toolCallsExpanded={toolCallsExpanded} />
       </Box>
 
-      {/* Working indicator when AI is processing */}
+      {/* Working indicator when AI is processing - always yellow */}
       {state.isWorking && (
         <Box marginY={1}>
           <WorkingIndicator
             state={workingState}
-            variant={state.phase === 'generation' ? 'thinking' : 'active'}
+            variant="active"
           />
         </Box>
       )}
