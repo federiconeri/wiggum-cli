@@ -9,11 +9,11 @@
  * 4. Generation - Generate the specification
  */
 
-import React, { useEffect, useCallback, useRef } from 'react';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { AIProvider } from '../../ai/providers.js';
 import type { ScanResult } from '../../scanner/types.js';
-import { PhaseHeader } from '../components/PhaseHeader.js';
+import { StatusLine } from '../components/StatusLine.js';
 import { MessageList } from '../components/MessageList.js';
 import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { ChatInput } from '../components/ChatInput.js';
@@ -24,7 +24,7 @@ import {
   type GeneratorPhase,
 } from '../hooks/useSpecGenerator.js';
 import { InterviewOrchestrator } from '../orchestration/interview-orchestrator.js';
-import { colors } from '../theme.js';
+import { colors, theme } from '../theme.js';
 
 /**
  * Props for the InterviewScreen component
@@ -40,6 +40,8 @@ export interface InterviewScreenProps {
   model: string;
   /** Optional scan result with detected tech stack */
   scanResult?: ScanResult;
+  /** Path to specs directory (relative to project root, defaults to '.ralph/specs') */
+  specsPath?: string;
   /** Called when spec generation is complete */
   onComplete: (spec: string) => void;
   /** Called when user cancels the interview */
@@ -62,6 +64,7 @@ export function InterviewScreen({
   provider,
   model,
   scanResult,
+  specsPath = '.ralph/specs',
   onComplete,
   onCancel,
 }: InterviewScreenProps): React.ReactElement {
@@ -231,10 +234,17 @@ export function InterviewScreen({
     [addMessage]
   );
 
-  // Handle keyboard input for Escape key
+  // State for tool call expansion (Ctrl+O toggle)
+  const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
+
+  // Handle keyboard input for Escape key and Ctrl+O
   useInput((input, key) => {
     if (key.escape) {
       onCancel();
+    }
+    // Ctrl+O to toggle tool call expansion
+    if (key.ctrl && input === 'o') {
+      setToolCallsExpanded((prev) => !prev);
     }
   });
 
@@ -269,25 +279,28 @@ export function InterviewScreen({
     }
   };
 
+  // Build phase string for status line
+  const phaseString = `${phaseConfig.name} (${phaseConfig.number}/${TOTAL_DISPLAY_PHASES})`;
+
   return (
     <Box flexDirection="column" padding={1}>
-      {/* Phase header showing current progress */}
-      <PhaseHeader
-        currentPhase={phaseConfig.number}
-        totalPhases={TOTAL_DISPLAY_PHASES}
-        phaseName={phaseConfig.name}
+      {/* Status line: Action │ Phase (X/Y) │ feature name */}
+      <StatusLine
+        action="New Spec"
+        phase={phaseString}
+        path={featureName}
       />
 
       {/* Error display */}
       {state.error && (
         <Box marginY={1}>
-          <Text color="red">Error: {state.error}</Text>
+          <Text color={theme.colors.error}>Error: {state.error}</Text>
         </Box>
       )}
 
-      {/* Conversation history */}
+      {/* Conversation history - inline, conversational flow */}
       <Box marginY={1}>
-        <MessageList messages={state.messages} />
+        <MessageList messages={state.messages} toolCallsExpanded={toolCallsExpanded} />
       </Box>
 
       {/* Working indicator when AI is processing */}
@@ -297,10 +310,13 @@ export function InterviewScreen({
         </Box>
       )}
 
-      {/* Completion message */}
+      {/* Completion message with summary */}
       {state.phase === 'complete' && (
-        <Box marginY={1}>
-          <Text color={colors.green}>Specification generated successfully!</Text>
+        <Box marginY={1} flexDirection="column">
+          <Text color={theme.colors.success}>✓ Specification generated successfully!</Text>
+          <Box marginTop={1}>
+            <Text dimColor>Saved to: {specsPath}/{featureName}.md</Text>
+          </Box>
         </Box>
       )}
 

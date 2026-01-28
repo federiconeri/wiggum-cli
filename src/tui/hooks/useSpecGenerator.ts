@@ -300,20 +300,14 @@ export function useSpecGenerator(): UseSpecGeneratorReturn {
 
   /**
    * Initialize with options
+   * Note: The orchestrator handles adding the initial system message to avoid duplicates
    */
   const initialize = useCallback((options: SpecGeneratorOptions) => {
     optionsRef.current = options;
 
-    // Add initial system message
-    const systemMessage: Message = {
-      id: generateId(),
-      role: 'system',
-      content: `Spec Generator initialized for feature: ${options.featureName}`,
-    };
-
     setState({
       ...initialState,
-      messages: [systemMessage],
+      messages: [],
       // Enable input immediately so users can enter context/goals
       awaitingInput: true,
     });

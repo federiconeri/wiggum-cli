@@ -1,15 +1,16 @@
 /**
- * ToolCallCard - Clean Claude Code-style tool execution display
+ * ToolCallCard - Claude Code-style tool execution display
  *
  * Shows tool executions with:
  * - Colored status dot (green/yellow/red)
  * - Tool name and input as description
- * - Condensed output preview (not raw JSON)
+ * - Condensed output preview with collapsible content
+ * - Dimmed by default to reduce visual weight
  */
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { colors } from '../theme.js';
+import { theme } from '../theme.js';
 
 /**
  * Tool execution status
@@ -30,6 +31,10 @@ export interface ToolCallCardProps {
   output?: string;
   /** Error message when status is 'error' */
   error?: string;
+  /** Whether the tool output is expanded (shows preview lines) */
+  expanded?: boolean;
+  /** Number of preview lines to show when expanded (default: 3) */
+  previewLines?: number;
 }
 
 /**
@@ -51,63 +56,105 @@ function formatToolName(toolName: string): string {
 function getStatusDisplay(status: ToolCallStatus): { dot: string; color: string } {
   switch (status) {
     case 'pending':
-      return { dot: '○', color: colors.brown };
+      return { dot: '○', color: theme.colors.tool.pending };
     case 'running':
-      return { dot: '◐', color: colors.yellow };
+      return { dot: '◐', color: theme.colors.tool.running };
     case 'complete':
-      return { dot: '●', color: colors.green };
+      return { dot: '●', color: theme.colors.tool.success };
     case 'error':
-      return { dot: '●', color: colors.pink };
+      return { dot: '●', color: theme.colors.tool.error };
   }
 }
 
 /**
- * Format output for display - extract key info, not raw JSON
+ * Parse output and extract summary and preview lines
  */
-function formatOutput(output: string | undefined, toolName: string): string | undefined {
-  if (!output) return undefined;
+interface ParsedOutput {
+  summary: string;
+  previewLines: string[];
+  totalLines: number;
+  remainingCount: number;
+}
 
-  // Try to parse as JSON and extract meaningful summary
+function parseOutput(output: string | undefined, toolName: string): ParsedOutput | null {
+  if (!output) return null;
+
+  let summary = '';
+  let lines: string[] = [];
+  let totalLines = 0;
+
+  // Try to parse as JSON and extract meaningful content
   try {
     const parsed = JSON.parse(output);
 
-    // Handle different tool output patterns
     if (typeof parsed === 'object' && parsed !== null) {
-      // For list_directory - show item count
+      // For list_directory - show item count and items
       if (parsed.items && Array.isArray(parsed.items)) {
-        return `${parsed.items.length} items`;
+        totalLines = parsed.items.length;
+        summary = `${totalLines} items`;
+        lines = parsed.items.slice(0, 10).map((item: string | { name: string; type: string }) => {
+          if (typeof item === 'string') return item;
+          const icon = item.type === 'directory' ? '📁' : '📄';
+          return `${icon} ${item.name}`;
+        });
       }
-
-      // For read_file - show line count or truncated content
-      if (parsed.content && typeof parsed.content === 'string') {
-        const lines = parsed.content.split('\n').length;
-        return `${lines} lines`;
+      // For read_file - show line count and content preview
+      else if (parsed.content && typeof parsed.content === 'string') {
+        const contentLines = parsed.content.split('\n');
+        totalLines = contentLines.length;
+        summary = `${totalLines} lines`;
+        lines = contentLines.slice(0, 10).map((line: string) =>
+          line.length > 80 ? line.slice(0, 77) + '...' : line
+        );
       }
-
-      // For search results - show match count
-      if (parsed.matches && Array.isArray(parsed.matches)) {
-        return `${parsed.matches.length} matches`;
+      // For search results - show match count and matches
+      else if (parsed.matches && Array.isArray(parsed.matches)) {
+        totalLines = parsed.matches.length;
+        summary = `${totalLines} matches`;
+        lines = parsed.matches.slice(0, 10).map((match: { file?: string; path?: string; line?: number }) => {
+          const file = match.file || match.path || '';
+          const lineNum = match.line ? `:${match.line}` : '';
+          return `${file}${lineNum}`;
+        });
       }
-
       // For results array
-      if (parsed.results && Array.isArray(parsed.results)) {
-        return `${parsed.results.length} results`;
+      else if (parsed.results && Array.isArray(parsed.results)) {
+        totalLines = parsed.results.length;
+        summary = `${totalLines} results`;
+        lines = parsed.results.slice(0, 10).map((r: unknown) =>
+          typeof r === 'string' ? r : JSON.stringify(r).slice(0, 60)
+        );
       }
-    }
-
-    // If it's a simple string
-    if (typeof parsed === 'string') {
-      return parsed.length > 50 ? parsed.slice(0, 50) + '...' : parsed;
+      // Generic object - stringify first few keys
+      else {
+        const keys = Object.keys(parsed);
+        summary = `${keys.length} fields`;
+        lines = keys.slice(0, 5).map((k) => `${k}: ${JSON.stringify(parsed[k]).slice(0, 40)}`);
+        totalLines = keys.length;
+      }
+    } else if (typeof parsed === 'string') {
+      // Simple string result
+      const stringLines = parsed.split('\n');
+      totalLines = stringLines.length;
+      summary = totalLines > 1 ? `${totalLines} lines` : (parsed.length > 50 ? parsed.slice(0, 50) + '...' : parsed);
+      lines = stringLines.slice(0, 10);
     }
   } catch {
-    // Not JSON - use as-is but truncate
-    if (output.length > 60) {
-      return output.slice(0, 60) + '...';
-    }
-    return output;
+    // Not JSON - treat as plain text
+    const textLines = output.split('\n');
+    totalLines = textLines.length;
+    summary = totalLines > 1 ? `${totalLines} lines` : (output.length > 50 ? output.slice(0, 50) + '...' : output);
+    lines = textLines.slice(0, 10).map((line: string) =>
+      line.length > 80 ? line.slice(0, 77) + '...' : line
+    );
   }
 
-  return undefined;
+  return {
+    summary,
+    previewLines: lines,
+    totalLines,
+    remainingCount: Math.max(0, totalLines - lines.length),
+  };
 }
 
 /**
@@ -142,7 +189,8 @@ function formatInput(input: string): string {
  * Displays a tool execution in Claude Code style:
  * - Status dot (colored based on status)
  * - Tool name with input as description
- * - Clean output summary (not raw JSON)
+ * - Clean output summary with optional preview lines
+ * - Dimmed by default for reduced visual weight
  *
  * @example
  * ```tsx
@@ -151,9 +199,13 @@ function formatInput(input: string): string {
  *   status="complete"
  *   input='{"path": "src/utils/config.ts"}'
  *   output='{"content": "...", "lines": 45}'
+ *   expanded={true}
  * />
  * // Renders:
- * // ● Read File(src/utils/config.ts)  45 lines
+ * // ● Read File(src/utils/config.ts) → 45 lines
+ * //   │ import { Config } from './types';
+ * //   │ export function loadConfig() {
+ * //   └ +43 more
  * ```
  */
 export function ToolCallCard({
@@ -162,33 +214,71 @@ export function ToolCallCard({
   input,
   output,
   error,
+  expanded = false,
+  previewLines: maxPreviewLines = 3,
 }: ToolCallCardProps): React.ReactElement {
   const { dot, color } = getStatusDisplay(status);
   const displayName = formatToolName(toolName);
   const displayInput = formatInput(input);
-  const displayOutput = status === 'error' ? error : formatOutput(output, toolName);
+
+  // Parse output for summary and preview
+  const parsedOutput = status === 'complete' ? parseOutput(output, toolName) : null;
+  const displayError = status === 'error' ? error : undefined;
+
+  // Determine what to show
+  const summary = displayError || parsedOutput?.summary;
+  const showPreview = expanded && parsedOutput && parsedOutput.previewLines.length > 0;
+  const linesToShow = showPreview ? parsedOutput.previewLines.slice(0, maxPreviewLines) : [];
+  const remainingCount = showPreview
+    ? parsedOutput.totalLines - linesToShow.length
+    : (parsedOutput?.remainingCount || 0);
 
   return (
-    <Box flexDirection="row" gap={1}>
-      {/* Status dot */}
-      <Text color={color}>{dot}</Text>
+    <Box flexDirection="column">
+      {/* Main summary line */}
+      <Box flexDirection="row" gap={1}>
+        {/* Status dot */}
+        <Text color={color} dimColor={status === 'complete'}>{dot}</Text>
 
-      {/* Tool name and input */}
-      <Text color={color} bold>
-        {displayName}
-      </Text>
-      <Text color={color}>(</Text>
-      <Text>{displayInput}</Text>
-      <Text color={color}>)</Text>
+        {/* Tool name and input - dimmed for completed tools */}
+        <Text color={color} dimColor={status === 'complete'} bold={status === 'running'}>
+          {displayName}
+        </Text>
+        <Text dimColor={status === 'complete'}>(</Text>
+        <Text dimColor={status === 'complete'}>{displayInput}</Text>
+        <Text dimColor={status === 'complete'}>)</Text>
 
-      {/* Output summary */}
-      {displayOutput && (
-        <>
-          <Text dimColor> → </Text>
-          <Text color={status === 'error' ? colors.pink : undefined} dimColor={status !== 'error'}>
-            {displayOutput}
-          </Text>
-        </>
+        {/* Output summary */}
+        {summary && (
+          <>
+            <Text dimColor> → </Text>
+            <Text color={status === 'error' ? theme.colors.error : undefined} dimColor={status !== 'error'}>
+              {summary}
+            </Text>
+          </>
+        )}
+      </Box>
+
+      {/* Preview lines when expanded */}
+      {showPreview && (
+        <Box flexDirection="column" marginLeft={2}>
+          {linesToShow.map((line, index) => {
+            const isLast = index === linesToShow.length - 1 && remainingCount === 0;
+            const prefix = isLast ? theme.chars.lineEnd : theme.chars.linePrefix;
+            return (
+              <Box key={index} flexDirection="row">
+                <Text dimColor>{prefix} </Text>
+                <Text dimColor>{line}</Text>
+              </Box>
+            );
+          })}
+          {remainingCount > 0 && (
+            <Box flexDirection="row">
+              <Text dimColor>{theme.chars.lineEnd} </Text>
+              <Text dimColor>+{remainingCount} more</Text>
+            </Box>
+          )}
+        </Box>
       )}
     </Box>
   );
