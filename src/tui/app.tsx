@@ -337,9 +337,7 @@ export function App({
   const renderCurrentScreen = () => {
     switch (currentScreen) {
       case 'welcome':
-        // Banner is already in thread history, just continue to shell
-        return null;
-
+        // Banner is already in thread history, fall through to shell
       case 'shell':
         return (
           <MainShell
