@@ -270,15 +270,12 @@ export function InitScreen({
         setGenerating('Writing configuration files...');
         const generationResult = await generator.generate(sourceResult as EnhancedScanResult);
 
-        // Extract generated file paths
+        // Extract generated file paths (keep full relative paths)
         const generatedFiles = generationResult.writeSummary.results
           .filter((f: { action: string }) =>
             f.action === 'created' || f.action === 'backed_up' || f.action === 'overwritten'
           )
-          .map((f: { path: string }) => {
-            const relativePath = path.relative(projectRoot, f.path);
-            return relativePath.replace(/^\.ralph[\\/]/, '');
-          });
+          .map((f: { path: string }) => path.relative(projectRoot, f.path));
 
         // Save API key to .env.local if requested
         if (state.apiKeyEnteredThisSession && state.saveKeyToEnv && state.provider && apiKeyRef.current) {
@@ -517,20 +514,30 @@ export function InitScreen({
       case 'complete':
         return (
           <Box flexDirection="column">
-            <Text color={colors.green} bold>
-              Initialization Complete!
-            </Text>
+            <Box flexDirection="row" gap={1}>
+              <Text color={colors.green}>✓</Text>
+              <Text color={colors.green} bold>Project initialized successfully!</Text>
+            </Box>
+
             <Box marginTop={1} flexDirection="column">
-              <Text>Generated files in .ralph/:</Text>
+              <Text dimColor>Created files:</Text>
               {state.generatedFiles.map((file) => (
-                <Text key={file} dimColor>
-                  {'  '}
-                  {file}
-                </Text>
+                <Text key={file} dimColor>  {file}</Text>
               ))}
             </Box>
-            <Box marginTop={1}>
-              <Text dimColor>Press any key to continue...</Text>
+
+            <Box marginTop={1} flexDirection="column">
+              <Text bold>What's next:</Text>
+              <Box flexDirection="row" gap={1}>
+                <Text color={colors.green}>›</Text>
+                <Text color={colors.blue}>/new {'<feature>'}</Text>
+                <Text dimColor>Create a feature specification</Text>
+              </Box>
+              <Box flexDirection="row" gap={1}>
+                <Text color={colors.green}>›</Text>
+                <Text color={colors.blue}>/help</Text>
+                <Text dimColor>See all commands</Text>
+              </Box>
             </Box>
           </Box>
         );

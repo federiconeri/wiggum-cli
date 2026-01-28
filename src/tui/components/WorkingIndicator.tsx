@@ -32,6 +32,8 @@ export interface WorkingIndicatorProps {
   state: WorkingState;
   /** Whether to show elapsed time (default: true) */
   showElapsedTime?: boolean;
+  /** Visual variant: 'active' (yellow) or 'thinking' (grey) */
+  variant?: 'active' | 'thinking';
 }
 
 /**
@@ -63,8 +65,10 @@ function formatElapsedTime(ms: number): string {
 export function WorkingIndicator({
   state,
   showElapsedTime = true,
+  variant = 'active',
 }: WorkingIndicatorProps): React.ReactElement | null {
   const { isWorking, status, hint, startTime } = state;
+  const indicatorColor = variant === 'thinking' ? colors.gray : colors.yellow;
   const [elapsedMs, setElapsedMs] = useState(0);
   const internalStartTimeRef = useRef<number | null>(null);
 
@@ -104,10 +108,10 @@ export function WorkingIndicator({
 
   return (
     <Box flexDirection="row" gap={1}>
-      <Text color={colors.yellow}>
+      <Text color={indicatorColor}>
         <Spinner type="dots" />
       </Text>
-      <Text color={colors.yellow}>{status}</Text>
+      <Text color={indicatorColor}>{status}</Text>
       {showElapsedTime && elapsedMs >= 1000 && (
         <Text dimColor>({formatElapsedTime(elapsedMs)})</Text>
       )}

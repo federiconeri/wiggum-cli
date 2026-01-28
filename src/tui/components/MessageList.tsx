@@ -73,6 +73,7 @@ function UserMessage({ content }: { content: string }): React.ReactElement {
 
 /**
  * Renders a single assistant message with tool calls (no prefix - distinguished by color)
+ * Differentiates between thinking/context (dimmed with ○) and questions (bold)
  */
 function AssistantMessage({
   content,
@@ -85,6 +86,9 @@ function AssistantMessage({
   isStreaming?: boolean;
   toolCallsExpanded?: boolean;
 }): React.ReactElement {
+  // Split content into paragraphs for differentiated styling
+  const paragraphs = content ? content.split('\n\n').filter((p) => p.trim()) : [];
+
   return (
     <Box flexDirection="column" marginY={1}>
       {/* Tool calls appear first, dimmed */}
@@ -104,13 +108,32 @@ function AssistantMessage({
         </Box>
       )}
 
-      {/* Message content - AI text in Simpson yellow, no prefix */}
+      {/* Message content - differentiate thinking vs questions */}
       {content && (
         <Box flexDirection="column" flexGrow={1}>
           {isStreaming ? (
             <StreamingText text={content} isStreaming={true} color={theme.colors.aiText} />
           ) : (
-            <Text color={theme.colors.aiText}>{content}</Text>
+            paragraphs.map((para, index) => {
+              const isQuestion = para.trim().endsWith('?');
+
+              if (isQuestion) {
+                // Question - prominent, bold yellow
+                return (
+                  <Box key={index} marginY={1}>
+                    <Text color={theme.colors.aiText} bold>{para}</Text>
+                  </Box>
+                );
+              } else {
+                // Context/thinking - dimmed with ○ LED prefix
+                return (
+                  <Box key={index} flexDirection="row" gap={1}>
+                    <Text dimColor>○</Text>
+                    <Text dimColor>{para}</Text>
+                  </Box>
+                );
+              }
+            })
           )}
         </Box>
       )}
@@ -119,9 +142,23 @@ function AssistantMessage({
 }
 
 /**
- * Renders a system message (dimmed, no prefix)
+ * Renders a system message
+ * Phase headers get bold yellow styling, other system messages are dimmed
  */
 function SystemMessage({ content }: { content: string }): React.ReactElement {
+  // Check if this is a phase header (e.g., "Phase 2: Goals - Describe what you want to build")
+  const phaseMatch = content.match(/^Phase (\d+): (.+?) - (.+)$/);
+
+  if (phaseMatch) {
+    const [, phaseNum, phaseName, description] = phaseMatch;
+    return (
+      <Box marginY={1} flexDirection="column">
+        <Text color={theme.colors.brand} bold>Phase {phaseNum}: {phaseName}</Text>
+        <Text dimColor>{description}</Text>
+      </Box>
+    );
+  }
+
   return (
     <Box marginY={1}>
       <Text dimColor>{content}</Text>

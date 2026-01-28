@@ -235,48 +235,36 @@ export function ToolCallCard({
 
   return (
     <Box flexDirection="column">
-      {/* Main summary line */}
-      <Box flexDirection="row" gap={1}>
-        {/* Status dot */}
-        <Text color={color} dimColor={status === 'complete'}>{dot}</Text>
-
-        {/* Tool name and input - dimmed for completed tools */}
-        <Text color={color} dimColor={status === 'complete'} bold={status === 'running'}>
-          {displayName}
+      {/* Main line: colored LED, dimmed name(input) */}
+      <Box flexDirection="row">
+        <Text color={color}>{dot}</Text>
+        <Text> </Text>
+        <Text dimColor={status === 'complete'} bold={status === 'running'}>
+          {displayName}({displayInput})
         </Text>
-        <Text dimColor={status === 'complete'}>(</Text>
-        <Text dimColor={status === 'complete'}>{displayInput}</Text>
-        <Text dimColor={status === 'complete'}>)</Text>
-
-        {/* Output summary */}
-        {summary && (
-          <>
-            <Text dimColor> → </Text>
-            <Text color={status === 'error' ? theme.colors.error : undefined} dimColor={status !== 'error'}>
-              {summary}
-            </Text>
-          </>
-        )}
       </Box>
 
-      {/* Preview lines when expanded */}
+      {/* Summary on next line with └ prefix */}
+      {summary && (
+        <Box marginLeft={2}>
+          <Text dimColor>{theme.chars.lineEnd} </Text>
+          <Text color={status === 'error' ? theme.colors.error : undefined} dimColor={status !== 'error'}>
+            {summary}
+          </Text>
+        </Box>
+      )}
+
+      {/* Preview lines with line numbers when expanded */}
       {showPreview && (
-        <Box flexDirection="column" marginLeft={2}>
-          {linesToShow.map((line, index) => {
-            const isLast = index === linesToShow.length - 1 && remainingCount === 0;
-            const prefix = isLast ? theme.chars.lineEnd : theme.chars.linePrefix;
-            return (
-              <Box key={index} flexDirection="row">
-                <Text dimColor>{prefix} </Text>
-                <Text dimColor>{line}</Text>
-              </Box>
-            );
-          })}
-          {remainingCount > 0 && (
-            <Box flexDirection="row">
-              <Text dimColor>{theme.chars.lineEnd} </Text>
-              <Text dimColor>+{remainingCount} more</Text>
+        <Box flexDirection="column" marginLeft={4}>
+          {linesToShow.map((line, index) => (
+            <Box key={index} flexDirection="row">
+              <Text dimColor>{String(index + 1).padStart(4)} </Text>
+              <Text dimColor>{line}</Text>
             </Box>
+          ))}
+          {remainingCount > 0 && (
+            <Text dimColor>... +{remainingCount} lines (ctrl+o to expand)</Text>
           )}
         </Box>
       )}

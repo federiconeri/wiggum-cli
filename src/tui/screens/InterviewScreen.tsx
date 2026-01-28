@@ -306,17 +306,35 @@ export function InterviewScreen({
       {/* Working indicator when AI is processing */}
       {state.isWorking && (
         <Box marginY={1}>
-          <WorkingIndicator state={workingState} />
+          <WorkingIndicator
+            state={workingState}
+            variant={state.phase === 'generation' ? 'thinking' : 'active'}
+          />
         </Box>
       )}
 
-      {/* Completion message with summary */}
+      {/* Completion message with spec preview */}
       {state.phase === 'complete' && (
         <Box marginY={1} flexDirection="column">
           <Text color={theme.colors.success}>✓ Specification generated successfully!</Text>
           <Box marginTop={1}>
             <Text dimColor>Saved to: {specsPath}/{featureName}.md</Text>
           </Box>
+
+          {/* Spec preview with line numbers */}
+          {state.generatedSpec && (
+            <Box marginTop={1} flexDirection="column">
+              {state.generatedSpec.split('\n').slice(0, 5).map((line, i) => (
+                <Box key={i} flexDirection="row">
+                  <Text dimColor>{String(i + 1).padStart(4)} </Text>
+                  <Text dimColor>{line}</Text>
+                </Box>
+              ))}
+              {state.generatedSpec.split('\n').length > 5 && (
+                <Text dimColor>... +{state.generatedSpec.split('\n').length - 5} lines (ctrl+o to expand)</Text>
+              )}
+            </Box>
+          )}
         </Box>
       )}
 
