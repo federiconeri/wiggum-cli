@@ -9,7 +9,7 @@
 
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { colors } from '../theme.js';
+import { colors, theme } from '../theme.js';
 
 /**
  * Action execution status
@@ -58,9 +58,9 @@ function getStatusDot(status: ActionStatus): string {
     case 'running':
       return '◐'; // Half-filled circle for running
     case 'success':
-      return '●'; // Filled circle for success
+      return theme.chars.bullet; // Small bullet for success
     case 'error':
-      return '●'; // Filled circle for error (color indicates)
+      return theme.chars.bullet; // Small bullet for error (color indicates)
   }
 }
 
@@ -144,10 +144,8 @@ export function ActionOutput({
       {/* Header line: status dot + action name + description */}
       <Box flexDirection="row">
         <Text color={statusColor}>{statusDot} </Text>
-        <Text color={statusColor} bold>{actionName}</Text>
-        <Text color={statusColor}>(</Text>
-        <Text>{description}</Text>
-        <Text color={statusColor}>)</Text>
+        <Text bold>{actionName}</Text>
+        <Text dimColor>({description})</Text>
       </Box>
 
       {/* Output preview (indented) */}

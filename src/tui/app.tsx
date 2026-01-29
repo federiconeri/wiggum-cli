@@ -221,8 +221,8 @@ export function App({
                 ))}
                 {/* Message content */}
                 {msg.content && (
-                  <Box flexDirection="row" gap={1}>
-                    <Text dimColor>●</Text>
+                  <Box flexDirection="row">
+                    <Text dimColor>{theme.chars.bullet} </Text>
                     <Text dimColor italic>{msg.content}</Text>
                   </Box>
                 )}
@@ -234,60 +234,72 @@ export function App({
       </Box>
     ));
 
-    // Add completion summary to thread
-    const specLines = spec.split('\n');
-    const totalLines = specLines.length;
-    const previewLines = specLines.slice(0, 5);
-    const remainingLines = Math.max(0, totalLines - 5);
+    // Add completion summary to thread with defensive checks
+    try {
+      // DEFENSIVE: Guard against undefined/non-string spec
+      if (!spec || typeof spec !== 'string') {
+        console.error('[handleInterviewComplete] Invalid spec:', typeof spec);
+      } else {
+        const specLines = spec.split('\n');
+        const totalLines = specLines.length;
+        const previewLines = specLines.slice(0, 5);
+        const remainingLines = Math.max(0, totalLines - 5);
 
-    addToThread('spec-complete', (
-      <Box flexDirection="column" marginY={1}>
-        {/* Tool-call style preview */}
-        <Box flexDirection="row">
-          <Text color={colors.green}>●</Text>
-          <Text> </Text>
-          <Text bold>Write</Text>
-          <Text dimColor>({specPath || `${featureName}.md`})</Text>
-        </Box>
-        <Box marginLeft={2}>
-          <Text dimColor>└ Wrote {totalLines} lines</Text>
-        </Box>
-
-        {/* Preview with line numbers */}
-        <Box marginLeft={4} flexDirection="column">
-          {previewLines.map((line, i) => (
-            <Box key={i} flexDirection="row">
-              <Text dimColor>{String(i + 1).padStart(4)} </Text>
-              <Text dimColor>{line}</Text>
+        addToThread('spec-complete', (
+          <Box flexDirection="column" marginY={1}>
+            {/* Tool-call style preview */}
+            <Box flexDirection="row">
+              <Text color={colors.green}>{theme.chars.bullet} </Text>
+              <Text bold>Write</Text>
+              <Text dimColor>({specPath || `${featureName}.md`})</Text>
             </Box>
-          ))}
-          {remainingLines > 0 && (
-            <Text dimColor>… +{remainingLines} lines</Text>
-          )}
-        </Box>
+            <Box marginLeft={2}>
+              <Text dimColor>└ Wrote {totalLines} lines</Text>
+            </Box>
 
-        {/* Done message */}
-        <Box marginTop={1} flexDirection="row" gap={1}>
-          <Text color={colors.green}>●</Text>
-          <Text>Done. Specification generated successfully.</Text>
-        </Box>
+            {/* Preview with line numbers */}
+            <Box marginLeft={4} flexDirection="column">
+              {previewLines.map((line, i) => (
+                <Box key={i} flexDirection="row">
+                  <Text dimColor>{String(i + 1).padStart(4)} </Text>
+                  <Text dimColor>{line}</Text>
+                </Box>
+              ))}
+              {remainingLines > 0 && (
+                <Text dimColor>… +{remainingLines} lines</Text>
+              )}
+            </Box>
 
-        {/* What's next */}
-        <Box marginTop={1} flexDirection="column">
-          <Text bold>What's next:</Text>
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>›</Text>
-            <Text dimColor>Review the spec in your editor</Text>
+            {/* Done message */}
+            <Box marginTop={1} flexDirection="row">
+              <Text color={colors.green}>{theme.chars.bullet} </Text>
+              <Text>Done. Specification generated successfully.</Text>
+            </Box>
+
+            {/* What's next */}
+            <Box marginTop={1} flexDirection="column">
+              <Text bold>What's next:</Text>
+              <Box flexDirection="row" gap={1}>
+                <Text color={colors.green}>›</Text>
+                <Text dimColor>Review the spec in your editor</Text>
+              </Box>
+              <Box flexDirection="row" gap={1}>
+                <Text color={colors.green}>›</Text>
+                <Text color={colors.blue}>/help</Text>
+                <Text dimColor>See all commands</Text>
+              </Box>
+            </Box>
           </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>›</Text>
-            <Text color={colors.blue}>/help</Text>
-            <Text dimColor>See all commands</Text>
-          </Box>
-        </Box>
-      </Box>
-    ));
+        ));
 
+        // CRITICAL: Force render before navigation with microtask delay
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    } catch (error) {
+      console.error('[handleInterviewComplete] Error adding spec-complete to thread:', error);
+    }
+
+    // Navigation (always happens, even if spec-complete failed)
     // If started on interview (--tui mode), call onExit to resolve promise
     // Otherwise, return to shell
     if (initialScreen === 'interview') {
@@ -335,8 +347,7 @@ export function App({
         {generatedFiles && generatedFiles.slice(0, 5).map((file) => (
           <Box key={file} flexDirection="column">
             <Box flexDirection="row">
-              <Text color={colors.green}>●</Text>
-              <Text> </Text>
+              <Text color={colors.green}>{theme.chars.bullet} </Text>
               <Text bold>Write</Text>
               <Text dimColor>({file})</Text>
             </Box>
@@ -350,8 +361,8 @@ export function App({
         )}
 
         {/* Done message */}
-        <Box marginTop={1} flexDirection="row" gap={1}>
-          <Text color={colors.green}>●</Text>
+        <Box marginTop={1} flexDirection="row">
+          <Text color={colors.green}>{theme.chars.bullet} </Text>
           <Text>Done. Created Ralph configuration files.</Text>
         </Box>
 

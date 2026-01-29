@@ -327,8 +327,8 @@ export function InterviewScreen({
 
       {/* Completion message - full summary added to thread by App */}
       {state.phase === 'complete' && (
-        <Box flexDirection="row" gap={1}>
-          <Text color={theme.colors.success}>●</Text>
+        <Box flexDirection="row">
+          <Text color={theme.colors.success}>{theme.chars.bullet} </Text>
           <Text>Specification complete.</Text>
         </Box>
       )}

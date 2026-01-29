@@ -126,8 +126,8 @@ function AssistantMessage({
             } else {
               // Context/thinking - solid grey LED, italic dimmed text
               return (
-                <Box key={index} flexDirection="row" gap={1}>
-                  <Text dimColor>●</Text>
+                <Box key={index} flexDirection="row">
+                  <Text dimColor>{theme.chars.bullet} </Text>
                   <Text dimColor italic>{para}</Text>
                 </Box>
               );

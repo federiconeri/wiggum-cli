@@ -60,9 +60,9 @@ function getStatusDisplay(status: ToolCallStatus): { dot: string; color: string 
     case 'running':
       return { dot: '◐', color: theme.colors.tool.running };
     case 'complete':
-      return { dot: '●', color: theme.colors.tool.success };
+      return { dot: theme.chars.bullet, color: theme.colors.tool.success };
     case 'error':
-      return { dot: '●', color: theme.colors.tool.error };
+      return { dot: theme.chars.bullet, color: theme.colors.tool.error };
   }
 }
 

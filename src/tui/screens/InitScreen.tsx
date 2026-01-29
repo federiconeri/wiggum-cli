@@ -515,8 +515,8 @@ export function InitScreen({
       case 'complete':
         // Brief completion message - full summary added to thread by App
         return (
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>●</Text>
+          <Box flexDirection="row">
+            <Text color={colors.green}>{theme.chars.bullet} </Text>
             <Text>Initialization complete.</Text>
           </Box>
         );

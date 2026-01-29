@@ -77,7 +77,8 @@ export const theme = {
   /** Characters */
   chars: {
     prompt: '›',
-    bullet: '●',
+    bullet: '•',
+    bulletLarge: '●',
     linePrefix: '│',
     lineEnd: '└',
   },
