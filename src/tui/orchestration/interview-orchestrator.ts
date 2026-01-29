@@ -457,7 +457,6 @@ Ask only ONE question. Be concise.`;
       this.onWorkingChange(true, 'Thinking...');
 
       const response = await this.conversation.chat(answer);
-      this.onMessage('assistant', response);
 
       this.questionCount++;
 
@@ -471,10 +470,16 @@ Ask only ONE question. Be concise.`;
           lowerResponse.includes("i'll now generate") ||
           lowerResponse.includes("i will now generate")
         ) {
+          // Don't show the AI's response - go straight to generation
+          // Show a brief acknowledgment instead
+          this.onMessage('assistant', 'I have enough information to generate the spec.');
           await this.generateSpec();
           return;
         }
       }
+
+      // Show the AI's response (only if not generating)
+      this.onMessage('assistant', response);
 
       // Check if max questions reached
       if (this.questionCount >= MAX_INTERVIEW_QUESTIONS) {
