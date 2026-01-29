@@ -424,6 +424,12 @@ export function App({
 
   // Render current screen content
   const renderCurrentScreen = () => {
+    // Hide interview screen once completion summary is queued to avoid
+    // appending the live interview UI after the static thread summary.
+    if (pendingCompletion && currentScreen === 'interview') {
+      return null;
+    }
+
     switch (currentScreen) {
       case 'welcome':
         // Banner is already in thread history, fall through to shell
