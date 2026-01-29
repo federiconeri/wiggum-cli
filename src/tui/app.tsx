@@ -21,7 +21,6 @@ import { WelcomeScreen } from './screens/WelcomeScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
 import { MainShell, type NavigationTarget, type NavigationProps } from './screens/MainShell.js';
 import { WiggumBanner } from './components/WiggumBanner.js';
-import { ToolCallCard } from './components/ToolCallCard.js';
 import type { Message } from './components/MessageList.js';
 import { colors, theme } from './theme.js';
 
@@ -37,6 +36,13 @@ interface ThreadItem {
 interface PendingCompletion {
   action: 'exit' | 'shell';
   threadId: string;
+}
+
+interface CompletionQueue {
+  messageContent?: React.ReactNode | null;
+  summaryContent: React.ReactNode;
+  summaryType: ThreadItem['type'];
+  action: PendingCompletion['action'];
 }
 
 /**
@@ -150,6 +156,8 @@ export function App({
     return [];
   });
   const [pendingCompletion, setPendingCompletion] = useState<PendingCompletion | null>(null);
+  const [completionQueue, setCompletionQueue] = useState<CompletionQueue | null>(null);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   /**
    * Add an item to the thread history
@@ -201,47 +209,6 @@ export function App({
       onComplete?.(spec);
     }
 
-    // Add interview conversation to thread first (preserves all messages)
-    addToThread('message', (
-      <Box flexDirection="column" marginY={1}>
-        {messages.map((msg) => {
-          if (msg.role === 'user') {
-            return (
-              <Box key={msg.id} flexDirection="row" marginY={1}>
-                <Text color={theme.colors.prompt} bold>{theme.chars.prompt} </Text>
-                <Text color={theme.colors.userText}>{msg.content}</Text>
-              </Box>
-            );
-          } else if (msg.role === 'assistant') {
-            return (
-              <Box key={msg.id} flexDirection="column" marginY={1}>
-                {/* Tool calls */}
-                {msg.toolCalls && msg.toolCalls.map((toolCall, idx) => (
-                  <ToolCallCard
-                    key={`${msg.id}-tool-${idx}`}
-                    toolName={toolCall.toolName}
-                    input={toolCall.input}
-                    output={toolCall.output}
-                    status={toolCall.status}
-                    error={toolCall.error}
-                    expanded={false}
-                  />
-                ))}
-                {/* Message content */}
-                {msg.content && (
-                  <Box flexDirection="row">
-                    <Text dimColor>{theme.chars.bullet} </Text>
-                    <Text dimColor italic>{msg.content}</Text>
-                  </Box>
-                )}
-              </Box>
-            );
-          }
-          return null;
-        })}
-      </Box>
-    ));
-
     // Prefer previewing the spec from disk if available (ensures consistent output)
     let specForPreview = typeof spec === 'string' ? spec : '';
     if (specPath && existsSync(specPath)) {
@@ -252,79 +219,138 @@ export function App({
       }
     }
 
-    // Add completion summary to thread with defensive checks
-    try {
-      // Only bail out if spec preview is not a string
-      if (typeof specForPreview !== 'string') {
-        console.error('[handleInterviewComplete] Invalid spec preview:', typeof specForPreview);
-      }
+    const specLines = specForPreview ? specForPreview.split('\n') : [];
+    const totalLines = specLines.length;
+    const previewLines = specLines.slice(0, 5);
+    const remainingLines = Math.max(0, totalLines - 5);
 
-      const specLines = specForPreview ? specForPreview.split('\n') : [];
-      const totalLines = specLines.length;
-      const previewLines = specLines.slice(0, 5);
-      const remainingLines = Math.max(0, totalLines - 5);
+    const userMessages = messages
+      .filter((msg) => msg.role === 'user')
+      .map((msg) => msg.content.trim())
+      .filter((content) => content.length > 0);
 
-      const completionThreadId = addToThread('spec-complete', (
-        <Box flexDirection="column" marginY={1}>
-          {/* Tool-call style preview */}
-          <Box flexDirection="row">
-            <Text color={colors.green}>{theme.chars.bullet} </Text>
-            <Text bold>Write</Text>
-            <Text dimColor>({specPath || `${featureName}.md`})</Text>
-          </Box>
-          <Box marginLeft={2}>
-            <Text dimColor>└ Wrote {totalLines} lines</Text>
-          </Box>
+    const nonUrlUserMessages = userMessages.filter((content) => !/^https?:\/\//i.test(content) && !/^www\./i.test(content));
 
-          {/* Preview with line numbers */}
-          <Box marginLeft={4} flexDirection="column">
-            {previewLines.map((line, i) => (
-              <Box key={i} flexDirection="row">
-                <Text dimColor>{String(i + 1).padStart(4)} </Text>
-                <Text dimColor>{line}</Text>
+    const goalCandidate = nonUrlUserMessages.find((content) => content.length > 20) || nonUrlUserMessages[0] || `Define "${featureName}"`;
+
+    const summarizeText = (text: string, max = 160): string => {
+      if (text.length <= max) return text;
+      return `${text.slice(0, max - 1)}…`;
+    };
+
+    const decisions: string[] = [];
+    const seen = new Set<string>();
+    for (let i = nonUrlUserMessages.length - 1; i >= 0; i -= 1) {
+      const entry = nonUrlUserMessages[i];
+      const normalized = entry.toLowerCase();
+      if (entry === goalCandidate) continue;
+      if (entry.length > 160) continue;
+      if (seen.has(normalized)) continue;
+      decisions.unshift(entry);
+      seen.add(normalized);
+      if (decisions.length >= 4) break;
+    }
+
+    const summaryContent = (
+      <Box flexDirection="column" marginY={1}>
+        <Text bold>Summary</Text>
+        <Box flexDirection="row" gap={1}>
+          <Text color={colors.green}>›</Text>
+          <Text dimColor>Goal:</Text>
+          <Text color={theme.colors.userText}>{summarizeText(goalCandidate)}</Text>
+        </Box>
+        <Box flexDirection="row" gap={1}>
+          <Text color={colors.green}>›</Text>
+          <Text dimColor>Outcome:</Text>
+          <Text dimColor>
+            Spec written to {specPath || `${featureName}.md`} ({totalLines} lines)
+          </Text>
+        </Box>
+
+        {decisions.length > 0 && (
+          <Box marginTop={1} flexDirection="column">
+            <Text bold>Key decisions</Text>
+            {decisions.map((decision, idx) => (
+              <Box key={`${decision}-${idx}`} flexDirection="row" gap={1}>
+                <Text color={colors.green}>{idx + 1}.</Text>
+                <Text dimColor>{summarizeText(decision, 120)}</Text>
               </Box>
             ))}
-            {remainingLines > 0 && (
-              <Text dimColor>… +{remainingLines} lines</Text>
-            )}
           </Box>
+        )}
 
-          {/* Done message */}
-          <Box marginTop={1} flexDirection="row">
-            <Text color={colors.green}>{theme.chars.bullet} </Text>
-            <Text>Done. Specification generated successfully.</Text>
+        {/* Tool-call style preview */}
+        <Box marginTop={1} flexDirection="row">
+          <Text color={colors.green}>{theme.chars.bullet} </Text>
+          <Text bold>Write</Text>
+          <Text dimColor>({specPath || `${featureName}.md`})</Text>
+        </Box>
+        <Box marginLeft={2}>
+          <Text dimColor>└ Wrote {totalLines} lines</Text>
+        </Box>
+
+        {/* Preview with line numbers */}
+        <Box marginLeft={4} flexDirection="column">
+          {previewLines.map((line, i) => (
+            <Box key={i} flexDirection="row">
+              <Text dimColor>{String(i + 1).padStart(4)} </Text>
+              <Text dimColor>{line}</Text>
+            </Box>
+          ))}
+          {remainingLines > 0 && (
+            <Text dimColor>… +{remainingLines} lines</Text>
+          )}
+        </Box>
+
+        {/* Done message */}
+        <Box marginTop={1} flexDirection="row">
+          <Text color={colors.green}>{theme.chars.bullet} </Text>
+          <Text>Done. Specification generated successfully.</Text>
+        </Box>
+
+        {/* What's next */}
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>What's next:</Text>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>›</Text>
+            <Text dimColor>Review the spec in your editor</Text>
           </Box>
-
-          {/* What's next */}
-          <Box marginTop={1} flexDirection="column">
-            <Text bold>What's next:</Text>
-            <Box flexDirection="row" gap={1}>
-              <Text color={colors.green}>›</Text>
-              <Text dimColor>Review the spec in your editor</Text>
-            </Box>
-            <Box flexDirection="row" gap={1}>
-              <Text color={colors.green}>›</Text>
-              <Text color={colors.blue}>/help</Text>
-              <Text dimColor>See all commands</Text>
-            </Box>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>›</Text>
+            <Text color={colors.blue}>/help</Text>
+            <Text dimColor>See all commands</Text>
           </Box>
         </Box>
-      ));
+      </Box>
+    );
 
-      // Defer navigation until the spec-complete item is visible
-      setPendingCompletion({
-        action: initialScreen === 'interview' ? 'exit' : 'shell',
-        threadId: completionThreadId,
-      });
-    } catch (error) {
-      console.error('[handleInterviewComplete] Error adding spec-complete to thread:', error);
-      if (initialScreen === 'interview') {
-        onExit?.();
-      } else {
-        navigate('shell');
-      }
-    }
+    // Hide the live interview UI before appending to the static thread
+    setIsTransitioning(true);
+    setCompletionQueue({
+      messageContent: null,
+      summaryContent,
+      summaryType: 'spec-complete',
+      action: initialScreen === 'interview' ? 'exit' : 'shell',
+    });
   }, [onComplete, navigate, initialScreen, onExit, screenProps, interviewProps, sessionState.projectRoot, addToThread]);
+
+  // Append completion items after the interview UI is hidden
+  useEffect(() => {
+    if (!isTransitioning || !completionQueue) return;
+
+    if (completionQueue.messageContent) {
+      const messageThreadId = addToThread('message', completionQueue.messageContent);
+      void messageThreadId;
+    }
+    const completionThreadId = addToThread(completionQueue.summaryType, completionQueue.summaryContent);
+
+    setPendingCompletion({
+      action: completionQueue.action,
+      threadId: completionThreadId,
+    });
+
+    setCompletionQueue(null);
+  }, [isTransitioning, completionQueue, addToThread]);
 
   // Ensure completion summary is rendered before navigating away
   useEffect(() => {
@@ -338,6 +364,7 @@ export function App({
       } else {
         navigate('shell');
       }
+      setIsTransitioning(false);
       setPendingCompletion(null);
     }, 0);
 
@@ -424,9 +451,8 @@ export function App({
 
   // Render current screen content
   const renderCurrentScreen = () => {
-    // Hide interview screen once completion summary is queued to avoid
-    // appending the live interview UI after the static thread summary.
-    if (pendingCompletion && currentScreen === 'interview') {
+    // Hide screens while we transition interview output to static thread
+    if (isTransitioning) {
       return null;
     }
 

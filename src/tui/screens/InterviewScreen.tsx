@@ -292,7 +292,8 @@ export function InterviewScreen({
   };
 
   // Build phase string for status line
-  const phaseString = `${phaseConfig.name} (${phaseConfig.number}/${TOTAL_DISPLAY_PHASES})`;
+  const totalPhases = state.phase === 'complete' ? PHASE_CONFIGS.complete.number : TOTAL_DISPLAY_PHASES;
+  const phaseString = `${phaseConfig.name} (${phaseConfig.number}/${totalPhases})`;
 
   return (
     <Box flexDirection="column" padding={1}>
