@@ -8,9 +8,9 @@
  * visible in the terminal as a growing thread, rather than clearing screens.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { render, Static, Box, Text, type Instance } from 'ink';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AIProvider } from '../ai/providers.js';
 import type { ScanResult } from '../scanner/types.js';
@@ -32,6 +32,11 @@ interface ThreadItem {
   id: string;
   type: 'banner' | 'init-complete' | 'spec-complete' | 'message';
   content: React.ReactNode;
+}
+
+interface PendingCompletion {
+  action: 'exit' | 'shell';
+  threadId: string;
 }
 
 /**
@@ -144,12 +149,15 @@ export function App({
     }
     return [];
   });
+  const [pendingCompletion, setPendingCompletion] = useState<PendingCompletion | null>(null);
 
   /**
    * Add an item to the thread history
    */
-  const addToThread = useCallback((type: ThreadItem['type'], content: React.ReactNode) => {
-    setThreadHistory(prev => [...prev, { id: generateThreadId(), type, content }]);
+  const addToThread = useCallback((type: ThreadItem['type'], content: React.ReactNode): string => {
+    const id = generateThreadId();
+    setThreadHistory(prev => [...prev, { id, type, content }]);
+    return id;
   }, []);
 
   /**
@@ -234,80 +242,107 @@ export function App({
       </Box>
     ));
 
+    // Prefer previewing the spec from disk if available (ensures consistent output)
+    let specForPreview = typeof spec === 'string' ? spec : '';
+    if (specPath && existsSync(specPath)) {
+      try {
+        specForPreview = readFileSync(specPath, 'utf-8');
+      } catch {
+        // Ignore read errors and fall back to in-memory spec
+      }
+    }
+
     // Add completion summary to thread with defensive checks
     try {
-      // DEFENSIVE: Guard against undefined/non-string spec
-      if (!spec || typeof spec !== 'string') {
-        console.error('[handleInterviewComplete] Invalid spec:', typeof spec);
-      } else {
-        const specLines = spec.split('\n');
-        const totalLines = specLines.length;
-        const previewLines = specLines.slice(0, 5);
-        const remainingLines = Math.max(0, totalLines - 5);
+      // Only bail out if spec preview is not a string
+      if (typeof specForPreview !== 'string') {
+        console.error('[handleInterviewComplete] Invalid spec preview:', typeof specForPreview);
+      }
 
-        addToThread('spec-complete', (
-          <Box flexDirection="column" marginY={1}>
-            {/* Tool-call style preview */}
-            <Box flexDirection="row">
-              <Text color={colors.green}>{theme.chars.bullet} </Text>
-              <Text bold>Write</Text>
-              <Text dimColor>({specPath || `${featureName}.md`})</Text>
-            </Box>
-            <Box marginLeft={2}>
-              <Text dimColor>└ Wrote {totalLines} lines</Text>
-            </Box>
+      const specLines = specForPreview ? specForPreview.split('\n') : [];
+      const totalLines = specLines.length;
+      const previewLines = specLines.slice(0, 5);
+      const remainingLines = Math.max(0, totalLines - 5);
 
-            {/* Preview with line numbers */}
-            <Box marginLeft={4} flexDirection="column">
-              {previewLines.map((line, i) => (
-                <Box key={i} flexDirection="row">
-                  <Text dimColor>{String(i + 1).padStart(4)} </Text>
-                  <Text dimColor>{line}</Text>
-                </Box>
-              ))}
-              {remainingLines > 0 && (
-                <Text dimColor>… +{remainingLines} lines</Text>
-              )}
-            </Box>
+      const completionThreadId = addToThread('spec-complete', (
+        <Box flexDirection="column" marginY={1}>
+          {/* Tool-call style preview */}
+          <Box flexDirection="row">
+            <Text color={colors.green}>{theme.chars.bullet} </Text>
+            <Text bold>Write</Text>
+            <Text dimColor>({specPath || `${featureName}.md`})</Text>
+          </Box>
+          <Box marginLeft={2}>
+            <Text dimColor>└ Wrote {totalLines} lines</Text>
+          </Box>
 
-            {/* Done message */}
-            <Box marginTop={1} flexDirection="row">
-              <Text color={colors.green}>{theme.chars.bullet} </Text>
-              <Text>Done. Specification generated successfully.</Text>
-            </Box>
-
-            {/* What's next */}
-            <Box marginTop={1} flexDirection="column">
-              <Text bold>What's next:</Text>
-              <Box flexDirection="row" gap={1}>
-                <Text color={colors.green}>›</Text>
-                <Text dimColor>Review the spec in your editor</Text>
+          {/* Preview with line numbers */}
+          <Box marginLeft={4} flexDirection="column">
+            {previewLines.map((line, i) => (
+              <Box key={i} flexDirection="row">
+                <Text dimColor>{String(i + 1).padStart(4)} </Text>
+                <Text dimColor>{line}</Text>
               </Box>
-              <Box flexDirection="row" gap={1}>
-                <Text color={colors.green}>›</Text>
-                <Text color={colors.blue}>/help</Text>
-                <Text dimColor>See all commands</Text>
-              </Box>
+            ))}
+            {remainingLines > 0 && (
+              <Text dimColor>… +{remainingLines} lines</Text>
+            )}
+          </Box>
+
+          {/* Done message */}
+          <Box marginTop={1} flexDirection="row">
+            <Text color={colors.green}>{theme.chars.bullet} </Text>
+            <Text>Done. Specification generated successfully.</Text>
+          </Box>
+
+          {/* What's next */}
+          <Box marginTop={1} flexDirection="column">
+            <Text bold>What's next:</Text>
+            <Box flexDirection="row" gap={1}>
+              <Text color={colors.green}>›</Text>
+              <Text dimColor>Review the spec in your editor</Text>
+            </Box>
+            <Box flexDirection="row" gap={1}>
+              <Text color={colors.green}>›</Text>
+              <Text color={colors.blue}>/help</Text>
+              <Text dimColor>See all commands</Text>
             </Box>
           </Box>
-        ));
+        </Box>
+      ));
 
-        // CRITICAL: Force render before navigation with microtask delay
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
+      // Defer navigation until the spec-complete item is visible
+      setPendingCompletion({
+        action: initialScreen === 'interview' ? 'exit' : 'shell',
+        threadId: completionThreadId,
+      });
     } catch (error) {
       console.error('[handleInterviewComplete] Error adding spec-complete to thread:', error);
-    }
-
-    // Navigation (always happens, even if spec-complete failed)
-    // If started on interview (--tui mode), call onExit to resolve promise
-    // Otherwise, return to shell
-    if (initialScreen === 'interview') {
-      onExit?.();
-    } else {
-      navigate('shell');
+      if (initialScreen === 'interview') {
+        onExit?.();
+      } else {
+        navigate('shell');
+      }
     }
   }, [onComplete, navigate, initialScreen, onExit, screenProps, interviewProps, sessionState.projectRoot, addToThread]);
+
+  // Ensure completion summary is rendered before navigating away
+  useEffect(() => {
+    if (!pendingCompletion) return;
+    const hasThreadItem = threadHistory.some(item => item.id === pendingCompletion.threadId);
+    if (!hasThreadItem) return;
+
+    const timer = setTimeout(() => {
+      if (pendingCompletion.action === 'exit') {
+        onExit?.();
+      } else {
+        navigate('shell');
+      }
+      setPendingCompletion(null);
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [pendingCompletion, threadHistory, navigate, onExit]);
 
   /**
    * Handle interview cancel
