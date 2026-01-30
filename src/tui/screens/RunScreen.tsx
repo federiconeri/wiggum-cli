@@ -130,6 +130,7 @@ export function RunScreen({
 
   const childRef = useRef<ChildProcess | null>(null);
   const stopRequestedRef = useRef(false);
+  const isMountedRef = useRef(true);
   const startTimeRef = useRef<number>(Date.now());
   const specsDirRef = useRef<string>('.ralph/specs');
   const configRootRef = useRef<string>('.ralph');
@@ -149,12 +150,15 @@ export function RunScreen({
   });
 
   const refreshStatus = useCallback(async () => {
+    if (!isMountedRef.current) return;
     const nextStatus = readLoopStatus(featureName);
     setStatus(nextStatus);
 
     const nextTasks = await parseImplementationPlan(projectRoot, featureName, specsDirRef.current);
+    if (!isMountedRef.current) return;
     setTasks(nextTasks);
 
+    if (!isMountedRef.current) return;
     setBranch(getGitBranch(projectRoot));
   }, [featureName, projectRoot]);
 
@@ -162,10 +166,8 @@ export function RunScreen({
     stopRequestedRef.current = true;
     if (childRef.current) {
       childRef.current.kill('SIGINT');
-    } else {
-      onCancel();
     }
-  }, [onCancel]);
+  }, []);
 
   const handleConfirm = useCallback((value: boolean) => {
     setShowConfirm(false);
@@ -228,6 +230,10 @@ export function RunScreen({
         startTimeRef.current = Date.now();
         setIsStarting(false);
 
+        if (stopRequestedRef.current) {
+          child.kill('SIGINT');
+        }
+
         pollTimer = setInterval(() => {
           refreshStatus();
         }, POLL_INTERVAL_MS);
@@ -271,6 +277,7 @@ export function RunScreen({
 
     return () => {
       cancelled = true;
+      isMountedRef.current = false;
       if (pollTimer) clearInterval(pollTimer);
     };
   }, [featureName, projectRoot, refreshStatus, onComplete, sessionState.config]);

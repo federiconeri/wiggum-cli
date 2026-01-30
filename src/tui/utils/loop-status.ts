@@ -117,14 +117,15 @@ export async function parseImplementationPlan(
       const lines = content.split('\n');
 
       for (const line of lines) {
-        if (line.match(/^- \[x\]/)) {
-          if (line.includes('E2E:')) {
+        const trimmed = line.trimStart();
+        if (trimmed.match(/^- \[x\]/)) {
+          if (trimmed.includes('E2E:')) {
             e2eDone++;
           } else {
             tasksDone++;
           }
-        } else if (line.match(/^- \[ \]/)) {
-          if (line.includes('E2E:')) {
+        } else if (trimmed.match(/^- \[ \]/)) {
+          if (trimmed.includes('E2E:')) {
             e2ePending++;
           } else {
             tasksPending++;
