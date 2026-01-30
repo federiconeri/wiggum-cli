@@ -88,8 +88,8 @@ async function startInkTui(initialScreen: AppScreen = 'welcome', interviewFeatur
     version,
     interviewProps,
     onComplete: (specPath) => {
-      // Spec was saved to disk by app.tsx
-      logger.success(`Created spec: ${specPath}`);
+      // Spec was saved to disk by app.tsx (avoid stdout noise during TUI)
+      logger.debug(`Created spec: ${specPath}`);
     },
     onExit: () => {
       instance.unmount();

@@ -217,22 +217,49 @@ function generateId(): string {
 /**
  * Format tool input for display
  */
-function formatToolInput(toolName: string, args: Record<string, unknown>): string {
+function formatToolInput(toolName: string, args: unknown): string {
+  let resolvedArgs: Record<string, unknown> = {};
+
+  if (args && typeof args === 'object') {
+    resolvedArgs = args as Record<string, unknown>;
+  } else if (typeof args === 'string') {
+    try {
+      const parsed = JSON.parse(args);
+      if (parsed && typeof parsed === 'object') {
+        resolvedArgs = parsed as Record<string, unknown>;
+      } else {
+        resolvedArgs = { value: args };
+      }
+    } catch {
+      resolvedArgs = { value: args };
+    }
+  }
+
   switch (toolName) {
-    case 'read_file':
-      return String(args.path || '');
+    case 'read_file': {
+      const path = String(resolvedArgs.path || resolvedArgs.filePath || resolvedArgs.value || '');
+      const offset = resolvedArgs.offset ?? resolvedArgs.start;
+      if (typeof offset === 'number' && Number.isFinite(offset)) {
+        return `${path} @${offset}`;
+      }
+      return path;
+    }
     case 'search_codebase':
-      return `"${args.pattern || ''}"${args.directory ? ` in ${args.directory}/` : ''}`;
+      return `"${resolvedArgs.pattern || ''}"${resolvedArgs.directory ? ` in ${resolvedArgs.directory}/` : ''}`;
     case 'list_directory':
-      return String(args.path || '.');
+      return String(resolvedArgs.path || '.');
     case 'tavily_search':
-      return `"${args.query || ''}"`;
+      return `"${resolvedArgs.query || ''}"`;
     case 'resolveLibraryId':
-      return String(args.libraryName || '');
+      return String(resolvedArgs.libraryName || '');
     case 'queryDocs':
-      return `${args.libraryId} - "${String(args.query || '').slice(0, 40)}..."`;
+      return `${resolvedArgs.libraryId} - "${String(resolvedArgs.query || '').slice(0, 40)}..."`;
     default:
-      return JSON.stringify(args).slice(0, 50);
+      try {
+        return JSON.stringify(resolvedArgs).slice(0, 50);
+      } catch {
+        return String(resolvedArgs);
+      }
   }
 }
 

@@ -240,10 +240,19 @@ export function App({
 
     const decisions: string[] = [];
     const seen = new Set<string>();
+    const isUsefulDecision = (entry: string): boolean => {
+      const normalized = entry.trim().toLowerCase();
+      if (normalized.length < 8) return false;
+      const wordCount = normalized.split(/\s+/).length;
+      if (wordCount < 3) return false;
+      if (['yes', 'no', 'both', 'ok', 'okay'].includes(normalized)) return false;
+      return true;
+    };
     for (let i = nonUrlUserMessages.length - 1; i >= 0; i -= 1) {
       const entry = nonUrlUserMessages[i];
       const normalized = entry.toLowerCase();
       if (entry === goalCandidate) continue;
+      if (!isUsefulDecision(entry)) continue;
       if (entry.length > 160) continue;
       if (seen.has(normalized)) continue;
       decisions.unshift(entry);
@@ -254,27 +263,14 @@ export function App({
     const summaryContent = (
       <Box flexDirection="column" marginY={1}>
         <Text bold>Summary</Text>
-        <Box flexDirection="row" gap={1}>
-          <Text color={colors.green}>›</Text>
-          <Text dimColor>Goal:</Text>
-          <Text color={theme.colors.userText}>{summarizeText(goalCandidate)}</Text>
-        </Box>
-        <Box flexDirection="row" gap={1}>
-          <Text color={colors.green}>›</Text>
-          <Text dimColor>Outcome:</Text>
-          <Text dimColor>
-            Spec written to {specPath || `${featureName}.md`} ({totalLines} lines)
-          </Text>
-        </Box>
+        <Text>• Goal: {summarizeText(goalCandidate)}</Text>
+        <Text>• Outcome: Spec written to {specPath || `${featureName}.md`} ({totalLines} lines)</Text>
 
         {decisions.length > 0 && (
           <Box marginTop={1} flexDirection="column">
             <Text bold>Key decisions</Text>
             {decisions.map((decision, idx) => (
-              <Box key={`${decision}-${idx}`} flexDirection="row" gap={1}>
-                <Text color={colors.green}>{idx + 1}.</Text>
-                <Text dimColor>{summarizeText(decision, 120)}</Text>
-              </Box>
+              <Text key={`${decision}-${idx}`}>{idx + 1}. {summarizeText(decision, 120)}</Text>
             ))}
           </Box>
         )}

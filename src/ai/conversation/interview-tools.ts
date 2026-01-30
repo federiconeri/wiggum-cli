@@ -56,36 +56,75 @@ Use this to understand code structure, check implementations, or find patterns.
 Returns file content (truncated if too long).`,
       inputSchema: zodSchema(z.object({
         path: z.string().describe('Relative path from project root (e.g., "src/index.ts")'),
+        offset: z.number().int().min(0).optional()
+          .describe('Optional character offset to start reading from'),
+        start: z.number().int().min(0).optional()
+          .describe('Alias for offset (optional)'),
+        maxChars: z.number().int().min(1).max(MAX_CONTENT_LENGTH).optional()
+          .describe('Maximum number of characters to return'),
       })),
-      execute: async ({ path: filePath }: { path: string }) => {
-        const fullPath = validatePath(projectRoot, filePath);
+      execute: async ({
+        path: filePath,
+        offset,
+        start,
+        maxChars,
+      }: {
+        path: string;
+        offset?: number;
+        start?: number;
+        maxChars?: number;
+      }) => {
+        const rawPath = String(filePath || '').trim();
+        let effectivePath = rawPath;
+
+        // If the path looks like a JSON blob, try to extract the actual path
+        const jsonMatch = rawPath.match(/\"path\"\s*:\s*\"([^\"]+)\"/);
+        if (jsonMatch?.[1]) {
+          effectivePath = jsonMatch[1];
+        } else {
+          const trimmed = rawPath.split(/[,`\n]/)[0]?.trim();
+          if (trimmed) {
+            effectivePath = trimmed;
+          }
+        }
+
+        const fullPath = validatePath(projectRoot, effectivePath);
 
         if (!fullPath) {
           return { error: 'Invalid path: must be within project directory' };
         }
 
         if (!existsSync(fullPath)) {
-          return { error: `File not found: ${filePath}` };
+          return { error: `File not found: ${effectivePath}` };
         }
 
         try {
           const stat = statSync(fullPath);
           if (stat.isDirectory()) {
-            return { error: `Path is a directory, not a file: ${filePath}` };
+            return { error: `Path is a directory, not a file: ${effectivePath}` };
           }
 
           const content = readFileSync(fullPath, 'utf-8');
 
-          if (content.length > MAX_CONTENT_LENGTH) {
+          const startOffset = typeof offset === 'number'
+            ? offset
+            : (typeof start === 'number' ? start : 0);
+          const maxLength = typeof maxChars === 'number' ? maxChars : MAX_CONTENT_LENGTH;
+          const sliceEnd = Math.min(content.length, startOffset + maxLength);
+          const sliced = content.slice(startOffset, sliceEnd);
+          const truncated = sliceEnd < content.length;
+
+          if (truncated) {
             return {
-              content: content.slice(0, MAX_CONTENT_LENGTH),
+              content: sliced,
               truncated: true,
               totalLength: content.length,
-              message: `File truncated to ${MAX_CONTENT_LENGTH} characters (total: ${content.length})`,
+              offset: startOffset,
+              message: `File truncated to ${maxLength} characters from offset ${startOffset} (total: ${content.length})`,
             };
           }
 
-          return { content, truncated: false };
+          return { content: sliced, truncated: false, offset: startOffset };
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
           return { error: `Failed to read file: ${msg}` };
