@@ -1,11 +1,11 @@
 {
   "name": "wiggum-cli",
-  "version": "0.10.24",
+  "version": "0.10.25",
   "description": "AI-powered feature development loop CLI",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "wiggum": "./bin/ralph.js"
+    "wiggum": "bin/ralph.js"
   },
   "scripts": {
     "build": "tsc && npm run copy-templates",

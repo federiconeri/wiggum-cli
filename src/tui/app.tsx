@@ -21,6 +21,8 @@ import { WelcomeScreen } from './screens/WelcomeScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
 import { MainShell, type NavigationTarget, type NavigationProps } from './screens/MainShell.js';
 import { WiggumBanner } from './components/WiggumBanner.js';
+import { StatusLine } from './components/StatusLine.js';
+import { PHASE_CONFIGS } from './hooks/useSpecGenerator.js';
 import type { Message } from './components/MessageList.js';
 import { colors, theme } from './theme.js';
 
@@ -33,16 +35,11 @@ interface ThreadItem {
   content: React.ReactNode;
 }
 
-interface PendingCompletion {
-  action: 'exit' | 'shell';
-  threadId: string;
-}
-
 interface CompletionQueue {
   messageContent?: React.ReactNode | null;
   summaryContent: React.ReactNode;
   summaryType: ThreadItem['type'];
-  action: PendingCompletion['action'];
+  action: 'exit' | 'shell';
 }
 
 /**
@@ -155,9 +152,9 @@ export function App({
     }
     return [];
   });
-  const [pendingCompletion, setPendingCompletion] = useState<PendingCompletion | null>(null);
   const [completionQueue, setCompletionQueue] = useState<CompletionQueue | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [finalThread, setFinalThread] = useState<ThreadItem[] | null>(null);
 
   /**
    * Add an item to the thread history
@@ -231,7 +228,28 @@ export function App({
 
     const nonUrlUserMessages = userMessages.filter((content) => !/^https?:\/\//i.test(content) && !/^www\./i.test(content));
 
-    const goalCandidate = nonUrlUserMessages.find((content) => content.length > 20) || nonUrlUserMessages[0] || `Define "${featureName}"`;
+    const assistantParagraphs = messages
+      .filter((msg) => msg.role === 'assistant' && msg.content)
+      .flatMap((msg) => msg.content.split('\n\n'))
+      .map((para) => para.replace(/\s+/g, ' ').trim())
+      .filter((para) => para.length > 0);
+
+    const recapCandidates = assistantParagraphs
+      .filter((para) => /^(you want|understood|got it)/i.test(para))
+      .map((para) => para.split(/next question:/i)[0].trim())
+      .filter((para) => para.length > 0);
+
+    const normalizeRecap = (text: string): string => {
+      let result = text.trim();
+      result = result.replace(/^you want\s*/i, '');
+      result = result.replace(/^understood[:,]?\s*/i, '');
+      result = result.replace(/^got it[-—:]*\s*/i, '');
+      return result.charAt(0).toUpperCase() + result.slice(1);
+    };
+
+    const goalCandidate = recapCandidates.length > 0
+      ? normalizeRecap(recapCandidates[0]!)
+      : (nonUrlUserMessages.find((content) => content.length > 20) || nonUrlUserMessages[0] || `Define "${featureName}"`);
 
     const summarizeText = (text: string, max = 160): string => {
       if (text.length <= max) return text;
@@ -260,11 +278,32 @@ export function App({
       if (decisions.length >= 4) break;
     }
 
+    if (recapCandidates.length > 1) {
+      decisions.length = 0;
+      seen.clear();
+      for (let i = 1; i < recapCandidates.length; i += 1) {
+        const entry = normalizeRecap(recapCandidates[i]!);
+        const normalized = entry.toLowerCase();
+        if (!isUsefulDecision(entry)) continue;
+        if (seen.has(normalized)) continue;
+        decisions.push(entry);
+        seen.add(normalized);
+        if (decisions.length >= 4) break;
+      }
+    }
+
     const summaryContent = (
       <Box flexDirection="column" marginY={1}>
-        <Text bold>Summary</Text>
-        <Text>• Goal: {summarizeText(goalCandidate)}</Text>
-        <Text>• Outcome: Spec written to {specPath || `${featureName}.md`} ({totalLines} lines)</Text>
+        <StatusLine
+          action="New Spec"
+          phase={`Complete (${PHASE_CONFIGS.complete.number}/${PHASE_CONFIGS.complete.number})`}
+          path={featureName}
+        />
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>Summary</Text>
+          <Text>- Goal: {summarizeText(goalCandidate)}</Text>
+          <Text>- Outcome: Spec written to {specPath || `${featureName}.md`} ({totalLines} lines)</Text>
+        </Box>
 
         {decisions.length > 0 && (
           <Box marginTop={1} flexDirection="column">
@@ -334,38 +373,28 @@ export function App({
   useEffect(() => {
     if (!isTransitioning || !completionQueue) return;
 
-    if (completionQueue.messageContent) {
-      const messageThreadId = addToThread('message', completionQueue.messageContent);
-      void messageThreadId;
-    }
-    const completionThreadId = addToThread(completionQueue.summaryType, completionQueue.summaryContent);
+    const completionItem: ThreadItem = {
+      id: generateThreadId(),
+      type: completionQueue.summaryType,
+      content: completionQueue.summaryContent,
+    };
+    const nextThread = [...threadHistory, completionItem];
 
-    setPendingCompletion({
-      action: completionQueue.action,
-      threadId: completionThreadId,
-    });
+    process.stdout.write('\x1b[2J\x1b[0;0H');
+    setFinalThread(nextThread);
 
+    const action = completionQueue.action;
     setCompletionQueue(null);
-  }, [isTransitioning, completionQueue, addToThread]);
+    setIsTransitioning(false);
 
-  // Ensure completion summary is rendered before navigating away
-  useEffect(() => {
-    if (!pendingCompletion) return;
-    const hasThreadItem = threadHistory.some(item => item.id === pendingCompletion.threadId);
-    if (!hasThreadItem) return;
-
-    const timer = setTimeout(() => {
-      if (pendingCompletion.action === 'exit') {
+    setTimeout(() => {
+      if (action === 'exit') {
         onExit?.();
       } else {
         navigate('shell');
       }
-      setIsTransitioning(false);
-      setPendingCompletion(null);
     }, 0);
-
-    return () => clearTimeout(timer);
-  }, [pendingCompletion, threadHistory, navigate, onExit]);
+  }, [isTransitioning, completionQueue, threadHistory, navigate, onExit]);
 
   /**
    * Handle interview cancel
@@ -513,14 +542,23 @@ export function App({
   // Render with thread history (Static) + current screen
   return (
     <Box flexDirection="column">
-      {/* Static thread history - preserved output that doesn't re-render */}
-      <Static items={threadHistory}>
-        {(item) => (
-          <Box key={item.id}>
-            {item.content}
-          </Box>
-        )}
-      </Static>
+      {finalThread ? (
+        <Box flexDirection="column">
+          {finalThread.map((item) => (
+            <Box key={item.id}>
+              {item.content}
+            </Box>
+          ))}
+        </Box>
+      ) : (
+        <Static items={threadHistory}>
+          {(item) => (
+            <Box key={item.id}>
+              {item.content}
+            </Box>
+          )}
+        </Static>
+      )}
 
       {/* Current active screen */}
       {renderCurrentScreen()}
