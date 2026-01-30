@@ -36,7 +36,6 @@ interface ThreadItem {
 }
 
 interface CompletionQueue {
-  messageContent?: React.ReactNode | null;
   summaryContent: React.ReactNode;
   summaryType: ThreadItem['type'];
   action: 'exit' | 'shell';
@@ -154,7 +153,7 @@ export function App({
   });
   const [completionQueue, setCompletionQueue] = useState<CompletionQueue | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [finalThread, setFinalThread] = useState<ThreadItem[] | null>(null);
+  const [threadResetKey, setThreadResetKey] = useState(0);
 
   /**
    * Add an item to the thread history
@@ -221,35 +220,54 @@ export function App({
     const previewLines = specLines.slice(0, 5);
     const remainingLines = Math.max(0, totalLines - 5);
 
+    const MAX_RECAP_SOURCE_LENGTH = 1200;
     const userMessages = messages
       .filter((msg) => msg.role === 'user')
       .map((msg) => msg.content.trim())
-      .filter((content) => content.length > 0);
+      .filter((content) => content.length > 0 && content.length <= MAX_RECAP_SOURCE_LENGTH);
 
     const nonUrlUserMessages = userMessages.filter((content) => !/^https?:\/\//i.test(content) && !/^www\./i.test(content));
 
     const assistantParagraphs = messages
-      .filter((msg) => msg.role === 'assistant' && msg.content)
+      .filter((msg) => msg.role === 'assistant' && msg.content && msg.content.length <= MAX_RECAP_SOURCE_LENGTH)
       .flatMap((msg) => msg.content.split('\n\n'))
       .map((para) => para.replace(/\s+/g, ' ').trim())
-      .filter((para) => para.length > 0);
+      .filter((para) => para.length > 0 && para.length <= 320);
 
     const recapCandidates = assistantParagraphs
+      .map((para) => para.replace(/^[^a-z0-9]+/i, '').trim())
       .filter((para) => /^(you want|understood|got it)/i.test(para))
       .map((para) => para.split(/next question:/i)[0].trim())
       .filter((para) => para.length > 0);
 
     const normalizeRecap = (text: string): string => {
       let result = text.trim();
+      result = result.replace(/^[^a-z0-9]+/i, '');
       result = result.replace(/^you want\s*/i, '');
       result = result.replace(/^understood[:,]?\s*/i, '');
       result = result.replace(/^got it[-—:]*\s*/i, '');
       return result.charAt(0).toUpperCase() + result.slice(1);
     };
 
+    const normalizeUserDecision = (text: string): string => {
+      let result = text.trim();
+      result = result.replace(/^[^a-z0-9]+/i, '');
+      result = result.replace(/^i (?:would like|want|need|prefer|expect) to\s*/i, '');
+      result = result.replace(/^i (?:would like|want|need|prefer|expect)\s*/i, '');
+      result = result.replace(/^please\s*/i, '');
+      result = result.replace(/^up to you[:,]?\s*/i, '');
+      result = result.replace(/^both\s*/i, 'Both ');
+      if (result && !/[.!?]$/.test(result)) {
+        result += '.';
+      }
+      return result.charAt(0).toUpperCase() + result.slice(1);
+    };
+
     const goalCandidate = recapCandidates.length > 0
       ? normalizeRecap(recapCandidates[0]!)
-      : (nonUrlUserMessages.find((content) => content.length > 20) || nonUrlUserMessages[0] || `Define "${featureName}"`);
+      : (nonUrlUserMessages.find((content) => content.length > 20)
+        ? normalizeUserDecision(nonUrlUserMessages.find((content) => content.length > 20)!)
+        : (nonUrlUserMessages[0] ? normalizeUserDecision(nonUrlUserMessages[0]) : `Define "${featureName}"`));
 
     const summarizeText = (text: string, max = 160): string => {
       if (text.length <= max) return text;
@@ -273,7 +291,7 @@ export function App({
       if (!isUsefulDecision(entry)) continue;
       if (entry.length > 160) continue;
       if (seen.has(normalized)) continue;
-      decisions.unshift(entry);
+      decisions.unshift(normalizeUserDecision(entry));
       seen.add(normalized);
       if (decisions.length >= 4) break;
     }
@@ -362,7 +380,6 @@ export function App({
     // Hide the live interview UI before appending to the static thread
     setIsTransitioning(true);
     setCompletionQueue({
-      messageContent: null,
       summaryContent,
       summaryType: 'spec-complete',
       action: initialScreen === 'interview' ? 'exit' : 'shell',
@@ -378,23 +395,28 @@ export function App({
       type: completionQueue.summaryType,
       content: completionQueue.summaryContent,
     };
-    const nextThread = [...threadHistory, completionItem];
 
     process.stdout.write('\x1b[2J\x1b[0;0H');
-    setFinalThread(nextThread);
+    setThreadHistory((prev) => [...prev, completionItem]);
+    setThreadResetKey((prev) => prev + 1);
 
     const action = completionQueue.action;
     setCompletionQueue(null);
-    setIsTransitioning(false);
 
     setTimeout(() => {
       if (action === 'exit') {
-        onExit?.();
-      } else {
+        if (onExit) {
+          onExit();
+          return;
+        }
         navigate('shell');
+        setIsTransitioning(false);
+        return;
       }
+      navigate('shell');
+      setIsTransitioning(false);
     }, 0);
-  }, [isTransitioning, completionQueue, threadHistory, navigate, onExit]);
+  }, [isTransitioning, completionQueue, navigate, onExit]);
 
   /**
    * Handle interview cancel
@@ -542,26 +564,16 @@ export function App({
   // Render with thread history (Static) + current screen
   return (
     <Box flexDirection="column">
-      {finalThread ? (
-        <Box flexDirection="column">
-          {finalThread.map((item) => (
-            <Box key={item.id}>
-              {item.content}
-            </Box>
-          ))}
-        </Box>
-      ) : (
-        <Static items={threadHistory}>
-          {(item) => (
-            <Box key={item.id}>
-              {item.content}
-            </Box>
-          )}
-        </Static>
-      )}
+      <Static key={threadResetKey} items={threadHistory}>
+        {(item) => (
+          <Box key={item.id}>
+            {item.content}
+          </Box>
+        )}
+      </Static>
 
       {/* Current active screen */}
-      {renderCurrentScreen()}
+      {!isTransitioning && renderCurrentScreen()}
     </Box>
   );
 }
