@@ -7,7 +7,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { StatusLine } from '../components/StatusLine.js';
 import { Confirm } from '../components/Confirm.js';
@@ -33,6 +33,8 @@ export interface RunSummary {
   tokensOutput: number;
   exitCode: number;
   branch?: string;
+  logPath?: string;
+  errorTail?: string;
 }
 
 export interface RunScreenProps {
@@ -44,6 +46,7 @@ export interface RunScreenProps {
 }
 
 const POLL_INTERVAL_MS = 2500;
+const ERROR_TAIL_LINES = 12;
 
 /**
  * Find the feature-loop.sh script.
@@ -107,6 +110,18 @@ function formatDuration(start: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+function readLogTail(logPath: string, maxLines: number): string | null {
+  if (!existsSync(logPath)) return null;
+  try {
+    const content = readFileSync(logPath, 'utf-8');
+    const lines = content.trimEnd().split('\n');
+    if (lines.length === 0) return null;
+    return lines.slice(-maxLines).join('\n');
+  } catch {
+    return null;
+  }
 }
 
 export function RunScreen({
@@ -209,6 +224,9 @@ export function RunScreen({
           return;
         }
 
+        const logPath = `/tmp/ralph-loop-${featureName}.log`;
+        const logFd = openSync(logPath, 'a');
+
         const args = [
           featureName,
           String(config.loop.maxIterations),
@@ -217,7 +235,7 @@ export function RunScreen({
 
         const child = spawn('bash', [scriptPath, ...args], {
           cwd: dirname(scriptPath),
-          stdio: 'ignore',
+          stdio: ['ignore', logFd, logFd],
           env: {
             ...process.env,
             RALPH_CONFIG_ROOT: config.paths.root,
@@ -248,11 +266,14 @@ export function RunScreen({
         child.on('close', async (code) => {
           if (cancelled) return;
           if (pollTimer) clearInterval(pollTimer);
+          closeSync(logFd);
           const latestStatus = readLoopStatus(featureName);
           const latestTasks = await parseImplementationPlan(projectRoot, featureName, specsDirRef.current);
 
           const tasksDone = latestTasks.tasksDone + latestTasks.e2eDone;
           const tasksTotal = tasksDone + latestTasks.tasksPending + latestTasks.e2ePending;
+          const exitCode = typeof code === 'number' ? code : 1;
+          const errorTail = exitCode === 0 ? undefined : readLogTail(logPath, ERROR_TAIL_LINES) || undefined;
 
           onComplete({
             feature: featureName,
@@ -262,8 +283,10 @@ export function RunScreen({
             tasksTotal,
             tokensInput: latestStatus.tokensInput,
             tokensOutput: latestStatus.tokensOutput,
-            exitCode: typeof code === 'number' ? code : 1,
+            exitCode,
             branch: getGitBranch(projectRoot),
+            logPath,
+            errorTail,
           });
         });
       } catch (err) {

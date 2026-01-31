@@ -534,6 +534,24 @@ export function App({
           <Text>{exitState.message}</Text>
         </Box>
 
+        {(summary.errorTail || summary.logPath) && (
+          <Box marginTop={1} flexDirection="column">
+            {summary.logPath && (
+              <Text dimColor>Log: {summary.logPath}</Text>
+            )}
+            {summary.errorTail && (
+              <Box marginTop={1} flexDirection="column">
+                <Text dimColor>Last output:</Text>
+                {summary.errorTail.split('\n').map((line, idx) => (
+                  <Text key={`${line}-${idx}`} dimColor>
+                    {line}
+                  </Text>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+
         <Box marginTop={1} flexDirection="column">
           <Text bold>What's next:</Text>
           <Box flexDirection="row" gap={1}>
