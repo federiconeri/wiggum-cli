@@ -19,19 +19,21 @@ import { loadConfigWithDefaults } from '../utils/config.js';
 import { InterviewScreen } from './screens/InterviewScreen.js';
 import { WelcomeScreen } from './screens/WelcomeScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
+import { RunScreen, type RunSummary } from './screens/RunScreen.js';
 import { MainShell, type NavigationTarget, type NavigationProps } from './screens/MainShell.js';
 import { WiggumBanner } from './components/WiggumBanner.js';
 import { StatusLine } from './components/StatusLine.js';
 import { PHASE_CONFIGS } from './hooks/useSpecGenerator.js';
 import type { Message } from './components/MessageList.js';
 import { colors, theme } from './theme.js';
+import { formatNumber } from './utils/loop-status.js';
 
 /**
  * Thread item representing a completed action in the history
  */
 interface ThreadItem {
   id: string;
-  type: 'banner' | 'init-complete' | 'spec-complete' | 'message';
+  type: 'banner' | 'init-complete' | 'spec-complete' | 'run-complete' | 'message';
   content: React.ReactNode;
 }
 
@@ -44,7 +46,7 @@ interface CompletionQueue {
 /**
  * Available screen types for the App component
  */
-export type AppScreen = 'welcome' | 'shell' | 'interview' | 'init';
+export type AppScreen = 'welcome' | 'shell' | 'interview' | 'init' | 'run';
 
 /**
  * Props for the interview screen
@@ -496,6 +498,65 @@ export function App({
     navigate('shell');
   }, [addToThread, navigate]);
 
+  /**
+   * Handle run completion - add summary to thread
+   */
+  const handleRunComplete = useCallback((summary: RunSummary) => {
+    const totalTokens = summary.tokensInput + summary.tokensOutput;
+    const stoppedCodes = new Set([130, 143]);
+    const exitState = summary.exitCode === 0
+      ? { label: 'Complete', color: colors.green, message: 'Done. Feature loop completed successfully.' }
+      : stoppedCodes.has(summary.exitCode)
+        ? { label: 'Stopped', color: colors.orange, message: 'Stopped. Feature loop interrupted.' }
+        : { label: 'Failed', color: colors.pink, message: `Done. Feature loop exited with code ${summary.exitCode}.` };
+
+    addToThread('run-complete', (
+      <Box flexDirection="column" marginY={1}>
+        <StatusLine
+          action="Run Loop"
+          phase={exitState.label}
+          path={summary.feature}
+        />
+
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>Summary</Text>
+          <Text>- Feature: {summary.feature}</Text>
+          <Text>- Iterations: {summary.iterations}/{summary.maxIterations}</Text>
+          <Text>- Tasks: {summary.tasksDone}/{summary.tasksTotal}</Text>
+          <Text>- Tokens: {formatNumber(totalTokens)} (in:{formatNumber(summary.tokensInput)} out:{formatNumber(summary.tokensOutput)})</Text>
+          {summary.branch && summary.branch !== '-' && (
+            <Text>- Branch: {summary.branch}</Text>
+          )}
+        </Box>
+
+        <Box marginTop={1} flexDirection="row">
+          <Text color={exitState.color}>{theme.chars.bullet} </Text>
+          <Text>{exitState.message}</Text>
+        </Box>
+
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>What's next:</Text>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>›</Text>
+            <Text dimColor>Review changes and open a PR if needed</Text>
+          </Box>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>›</Text>
+            <Text color={colors.blue}>/new {'<feature>'}</Text>
+            <Text dimColor>Create another feature specification</Text>
+          </Box>
+          <Box flexDirection="row" gap={1}>
+            <Text color={colors.green}>›</Text>
+            <Text color={colors.blue}>/help</Text>
+            <Text dimColor>See all commands</Text>
+          </Box>
+        </Box>
+      </Box>
+    ));
+
+    navigate('shell');
+  }, [addToThread, navigate]);
+
   // Render current screen content
   const renderCurrentScreen = () => {
     // Hide screens while we transition interview output to static thread
@@ -551,6 +612,25 @@ export function App({
             projectRoot={sessionState.projectRoot}
             sessionState={sessionState}
             onComplete={handleInitComplete}
+            onCancel={() => navigate('shell')}
+          />
+        );
+      }
+
+      case 'run': {
+        const featureName = screenProps?.featureName;
+
+        if (!featureName || typeof featureName !== 'string') {
+          navigate('shell');
+          return null;
+        }
+
+        return (
+          <RunScreen
+            featureName={featureName}
+            projectRoot={sessionState.projectRoot}
+            sessionState={sessionState}
+            onComplete={handleRunComplete}
             onCancel={() => navigate('shell')}
           />
         );

@@ -21,7 +21,7 @@ import type { SessionState } from '../../repl/session-state.js';
 /**
  * Navigation targets for the shell
  */
-export type NavigationTarget = 'welcome' | 'shell' | 'interview' | 'init';
+export type NavigationTarget = 'welcome' | 'shell' | 'interview' | 'init' | 'run';
 
 /**
  * Navigation props passed to target screens
@@ -130,9 +130,9 @@ export function MainShell({
       return;
     }
 
-    // TODO: Implement run screen navigation
-    addSystemMessage(`Run command for "${args[0]}" - not yet implemented in TUI mode.`);
-  }, [sessionState.initialized, addSystemMessage]);
+    const featureName = args[0];
+    onNavigate('run', { featureName });
+  }, [sessionState.initialized, addSystemMessage, onNavigate]);
 
   /**
    * Handle /monitor command
