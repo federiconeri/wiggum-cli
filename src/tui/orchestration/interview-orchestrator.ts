@@ -11,6 +11,9 @@ import { fetchContent } from '../../ai/conversation/url-fetcher.js';
 import { createInterviewTools } from '../../ai/conversation/interview-tools.js';
 import { createTavilySearchTool, canUseTavily } from '../../ai/tools/tavily.js';
 import { createContext7Tools, canUseContext7 } from '../../ai/tools/context7.js';
+import { existsSync } from 'node:fs';
+import { resolve, isAbsolute } from 'node:path';
+import { isUrl } from '../../ai/conversation/url-fetcher.js';
 import type { AIProvider } from '../../ai/providers.js';
 import type { ScanResult } from '../../scanner/types.js';
 import type { GeneratorPhase } from '../hooks/useSpecGenerator.js';
@@ -378,7 +381,30 @@ export class InterviewOrchestrator {
     try {
       this.onWorkingChange(true, 'Fetching reference...');
 
-      const result = await fetchContent(refUrl, this.projectRoot);
+      const trimmed = refUrl.trim();
+      if (!trimmed) {
+        this.onReady();
+        return;
+      }
+
+      const isInlineCandidate = trimmed.length >= 40 || /\s/.test(trimmed);
+      const isUrlInput = isUrl(trimmed);
+      const absolutePath = isAbsolute(trimmed) ? trimmed : resolve(this.projectRoot, trimmed);
+      const fileExists = !isUrlInput && existsSync(absolutePath);
+
+      if (!isUrlInput && !fileExists && isInlineCandidate) {
+        const MAX_INLINE_LENGTH = 10000;
+        const truncated = trimmed.length > MAX_INLINE_LENGTH;
+        const inlineContent = truncated ? trimmed.slice(0, MAX_INLINE_LENGTH) : trimmed;
+        this.conversation.addReference(inlineContent, 'Inline context');
+        const preview = inlineContent.slice(0, 100).replace(/\n/g, ' ').trim();
+        const suffix = truncated ? ' (truncated)' : '';
+        this.onMessage('system', `Added inline context${suffix}: "${preview}..."`);
+        this.onReady();
+        return;
+      }
+
+      const result = await fetchContent(trimmed, this.projectRoot);
 
       if (result.error) {
         this.onMessage('system', `Error: ${result.error}`);

@@ -277,7 +277,7 @@ export function InterviewScreen({
   const getPlaceholder = () => {
     switch (state.phase) {
       case 'context':
-        return 'Enter URL or file path, or press Enter to continue...';
+        return 'Enter URL, file path, or paste text (press Enter to continue)...';
       case 'goals':
         return 'Describe what you want to build...';
       case 'interview':
