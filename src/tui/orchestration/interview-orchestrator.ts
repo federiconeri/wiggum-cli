@@ -387,15 +387,25 @@ export class InterviewOrchestrator {
         return;
       }
 
-      const isInlineCandidate = trimmed.length >= 40 || /\s/.test(trimmed);
-      const isUrlInput = isUrl(trimmed);
+      const forceInline = /^text:\s*/i.test(trimmed);
+      const inlinePayload = forceInline
+        ? trimmed.replace(/^text:\s*/i, '').trim()
+        : trimmed;
+      const isInlineCandidate = inlinePayload.length >= 40 || /\s/.test(inlinePayload);
+      const isUrlInput = !forceInline && isUrl(trimmed);
       const absolutePath = isAbsolute(trimmed) ? trimmed : resolve(this.projectRoot, trimmed);
-      const fileExists = !isUrlInput && existsSync(absolutePath);
+      const fileExists = !forceInline && !isUrlInput && existsSync(absolutePath);
 
-      if (!isUrlInput && !fileExists && isInlineCandidate) {
+      if (forceInline && !inlinePayload) {
+        this.onMessage('system', 'Error: Inline context is empty after "text:"');
+        this.onReady();
+        return;
+      }
+
+      if ((forceInline || (!isUrlInput && !fileExists && isInlineCandidate)) && inlinePayload) {
         const MAX_INLINE_LENGTH = 10000;
-        const truncated = trimmed.length > MAX_INLINE_LENGTH;
-        const inlineContent = truncated ? trimmed.slice(0, MAX_INLINE_LENGTH) : trimmed;
+        const truncated = inlinePayload.length > MAX_INLINE_LENGTH;
+        const inlineContent = truncated ? inlinePayload.slice(0, MAX_INLINE_LENGTH) : inlinePayload;
         this.conversation.addReference(inlineContent, 'Inline context');
         const preview = inlineContent.slice(0, 100).replace(/\n/g, ' ').trim();
         const suffix = truncated ? ' (truncated)' : '';
