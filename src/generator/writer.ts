@@ -175,6 +175,47 @@ export async function writeFiles(
 
   for (const [relativePath, content] of files) {
     const fullPath = join(baseDir, relativePath);
+    if (relativePath === '.gitignore') {
+      const existing = existsSync(fullPath)
+        ? await readFile(fullPath, 'utf-8')
+        : '';
+      const existingLines = existing.split(/\r?\n/);
+      const existingSet = new Set(existingLines.map((line) => line.trim()));
+      const additions = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      const missing = additions.filter((line) => !existingSet.has(line.trim()));
+
+      if (missing.length === 0 && existing) {
+        summary.skipped += 1;
+        summary.results.push({
+          path: fullPath,
+          success: true,
+          action: 'skipped',
+        });
+        continue;
+      }
+
+      const mergedLines = existingLines.slice();
+      if (mergedLines.length > 0 && mergedLines[mergedLines.length - 1].trim() !== '') {
+        mergedLines.push('');
+      }
+      mergedLines.push(...missing);
+
+      await ensureDir(dirname(fullPath));
+      await writeFile(fullPath, mergedLines.join('\n'), 'utf-8');
+
+      summary.results.push({
+        path: fullPath,
+        success: true,
+        action: existing ? 'overwritten' : 'created',
+      });
+      if (existing) {
+        summary.overwritten += 1;
+      } else {
+        summary.created += 1;
+      }
+      continue;
+    }
+
     const result = await writeFileWithOptions(fullPath, content, options);
     summary.results.push(result);
 
