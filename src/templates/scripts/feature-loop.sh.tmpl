@@ -79,6 +79,8 @@ CLAUDE_CMD_IMPL="claude -p --dangerously-skip-permissions --model ${MODEL:-$DEFA
 # Token tracking
 TOKENS_FILE="/tmp/ralph-loop-${1}.tokens"
 CLAUDE_OUTPUT="/tmp/ralph-loop-${1}.output"
+STATUS_FILE="/tmp/ralph-loop-${1}.status"
+FINAL_STATUS_FILE="/tmp/ralph-loop-${1}.final"
 
 # Initialize token tracking
 init_tokens() {
@@ -187,7 +189,7 @@ while true; do
     fi
 
     ITERATION=$((ITERATION + 1))
-    echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)" > "/tmp/ralph-loop-${FEATURE}.status"
+    echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)" > "$STATUS_FILE"
     echo "------------------------ Iteration $ITERATION ------------------------"
 
     # Check if implementation tasks are done
@@ -249,8 +251,11 @@ export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 cat "$PROMPTS_DIR/PROMPT_review.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
 parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
 
+# Persist final status for TUI summaries
+echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE" 2>/dev/null || true
+
 # Cleanup temp files
-rm -f "/tmp/ralph-loop-${FEATURE}.status" 2>/dev/null || true
+rm -f "$STATUS_FILE" 2>/dev/null || true
 rm -f "/tmp/ralph-loop-${FEATURE}.output" 2>/dev/null || true
 
 # Print final token usage

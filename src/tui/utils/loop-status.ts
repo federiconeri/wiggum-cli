@@ -53,14 +53,16 @@ export function detectPhase(feature: string): string {
  */
 export function readLoopStatus(feature: string): LoopStatus {
   const statusFile = `/tmp/ralph-loop-${feature}.status`;
+  const finalStatusFile = `/tmp/ralph-loop-${feature}.final`;
   const tokensFile = `/tmp/ralph-loop-${feature}.tokens`;
 
   let iteration = 0;
   let maxIterations = 0;
 
-  if (existsSync(statusFile)) {
+  if (existsSync(statusFile) || existsSync(finalStatusFile)) {
+    const fileToRead = existsSync(statusFile) ? statusFile : finalStatusFile;
     try {
-      const content = readFileSync(statusFile, 'utf-8').trim();
+      const content = readFileSync(fileToRead, 'utf-8').trim();
       const parts = content.split('|');
       iteration = parseInt(parts[0] || '0', 10) || 0;
       maxIterations = parseInt(parts[1] || '0', 10) || 0;
