@@ -226,6 +226,13 @@ Use timeRange: "year" to get recent results.`);
       }
     }
 
+    if (sessionContext.keyPatterns && sessionContext.keyPatterns.length > 0) {
+      contextParts.push(`\nKey Patterns:`);
+      for (const pattern of sessionContext.keyPatterns) {
+        contextParts.push(`- ${pattern}`);
+      }
+    }
+
     if (contextParts.length > 1) {
       parts.push(contextParts.join('\n'));
     }
