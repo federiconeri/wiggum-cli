@@ -18,8 +18,8 @@ describe('normalizePastedText', () => {
       expect(normalizePastedText('hello world')).toBe('hello world');
     });
 
-    it('preserves spaces in single-line text', () => {
-      expect(normalizePastedText('foo  bar  baz')).toBe('foo  bar  baz');
+    it('collapses multiple spaces to single space', () => {
+      expect(normalizePastedText('foo  bar  baz')).toBe('foo bar baz');
     });
 
     it('handles empty string', () => {
@@ -82,8 +82,8 @@ describe('normalizePastedText', () => {
       expect(normalizePastedText('a\tb\tc')).toBe('a b c');
     });
 
-    it('handles tabs with newlines', () => {
-      expect(normalizePastedText('line1\t\nline2')).toBe('line1  line2');
+    it('handles tabs with newlines (collapses to single space)', () => {
+      expect(normalizePastedText('line1\t\nline2')).toBe('line1 line2');
     });
   });
 
@@ -100,13 +100,39 @@ describe('normalizePastedText', () => {
   describe('complex scenarios', () => {
     it('handles paste with all special characters', () => {
       const input = '\u001b[200~line1\r\nline2\n\tline3\u001b[201~';
-      expect(normalizePastedText(input)).toBe('line1 line2  line3');
+      expect(normalizePastedText(input)).toBe('line1 line2 line3');
     });
 
     it('handles large multi-line paste', () => {
       const lines = Array(100).fill('test line').join('\n');
       const result = normalizePastedText(lines);
       expect(result).toBe(Array(100).fill('test line').join(' '));
+    });
+  });
+
+  describe('whitespace collapsing', () => {
+    it('collapses multiple consecutive spaces', () => {
+      expect(normalizePastedText('hello    world')).toBe('hello world');
+    });
+
+    it('collapses mixed whitespace (spaces, tabs, newlines)', () => {
+      expect(normalizePastedText('foo \t\n bar')).toBe('foo bar');
+    });
+
+    it('collapses leading whitespace', () => {
+      expect(normalizePastedText('   hello')).toBe(' hello');
+    });
+
+    it('collapses trailing whitespace', () => {
+      expect(normalizePastedText('world   ')).toBe('world ');
+    });
+
+    it('preserves single spaces between words', () => {
+      expect(normalizePastedText('one two three')).toBe('one two three');
+    });
+
+    it('handles text with only whitespace', () => {
+      expect(normalizePastedText('  \t\n  ')).toBe(' ');
     });
   });
 });

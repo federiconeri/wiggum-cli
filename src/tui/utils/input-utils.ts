@@ -22,6 +22,7 @@ export interface CursorManipulationResult {
  * - Strips bracket paste mode markers (`\u001b[200~`, `\u001b[201~`)
  * - Converts all newline variants (`\n`, `\r`, `\r\n`) to spaces
  * - Converts tabs to spaces
+ * - Collapses consecutive whitespace to single spaces
  * - Strips escape sequences
  *
  * @param input - Raw pasted text (potentially multi-line)
@@ -32,6 +33,7 @@ export interface CursorManipulationResult {
  * normalizePastedText("line1\nline2") // => "line1 line2"
  * normalizePastedText("a\r\nb\nc") // => "a b c"
  * normalizePastedText("hello\tworld") // => "hello world"
+ * normalizePastedText("foo  bar") // => "foo bar"
  * ```
  */
 export function normalizePastedText(input: string): string {
@@ -46,6 +48,9 @@ export function normalizePastedText(input: string): string {
 
   // Strip remaining escape sequences
   cleaned = cleaned.replace(/\u001b/g, '');
+
+  // Collapse consecutive whitespace to single spaces
+  cleaned = cleaned.replace(/\s+/g, ' ');
 
   return cleaned;
 }
