@@ -234,13 +234,22 @@ export function ChatInput({
     }
 
     if (input.includes('\u001b')) {
-      if (handleEscapeSequence(input)) {
-        return;
+      // Check for bracketed paste markers - these must reach normalizePastedText
+      // even though they start with ESC. Single-chunk pastes from some terminals
+      // arrive as: \u001b[200~content\u001b[201~
+      const hasBracketedPaste =
+        input.includes('\u001b[200~') || input.includes('\u001b[201~');
+
+      if (!hasBracketedPaste) {
+        if (handleEscapeSequence(input)) {
+          return;
+        }
+        // Ignore unknown escape sequences to avoid garbage insertion
+        if (input.startsWith('\u001b')) {
+          return;
+        }
       }
-      // Ignore unknown escape sequences to avoid garbage insertion
-      if (input.startsWith('\u001b')) {
-        return;
-      }
+      // Bracketed paste falls through to normalizePastedText below
     }
 
     const textToInsert = input.length > 1 ? normalizePastedText(input) : input;
