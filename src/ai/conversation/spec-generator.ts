@@ -38,6 +38,7 @@ export interface SessionContext {
   commands?: { build?: string; dev?: string; test?: string };
   namingConventions?: string;
   implementationGuidelines?: string[];
+  keyPatterns?: string[];
 }
 
 /**
@@ -225,6 +226,13 @@ Use timeRange: "year" to get recent results.`);
       }
     }
 
+    if (sessionContext.keyPatterns && sessionContext.keyPatterns.length > 0) {
+      contextParts.push(`\nKey Patterns:`);
+      for (const pattern of sessionContext.keyPatterns) {
+        contextParts.push(`- ${pattern}`);
+      }
+    }
+
     if (contextParts.length > 1) {
       parts.push(contextParts.join('\n'));
     }
@@ -286,6 +294,7 @@ function extractSessionContext(scanResult: ScanResult): SessionContext | undefin
     commands: ai.commands,
     namingConventions: ai.projectContext?.namingConventions,
     implementationGuidelines: ai.implementationGuidelines,
+    keyPatterns: ai.technologyPractices?.practices,
   };
 }
 
