@@ -1,9 +1,16 @@
 /**
- * ChatInput - Multi-line input with slash command support and history
+ * ChatInput - Robust single-line input with slash command support and history
  *
  * Displays a `›` prompt character followed by a text input.
  * Shows command dropdown when typing `/`.
  * Supports ↑/↓ arrow keys for command history navigation.
+ *
+ * Features:
+ * - Robust paste handling: Multi-line text is flattened to single line
+ * - Large paste support: Handles 2-4KB pastes without lag
+ * - Full editing: Backspace, delete, left/right arrow navigation
+ * - Word navigation: Option+left/right (macOS) for word-by-word cursor movement
+ * - History preservation: Draft text preserved when navigating history
  */
 
 import React, { useState, useCallback, useRef } from 'react';
@@ -41,9 +48,22 @@ export interface ChatInputProps {
 /**
  * ChatInput component
  *
- * Provides a text input with `›` prompt for chat-style interactions.
+ * Provides a robust single-line text input with `›` prompt for chat-style interactions.
  * Shows command dropdown when input starts with `/`.
- * Use ↑/↓ arrows to navigate command history.
+ *
+ * **Keyboard shortcuts:**
+ * - Enter: Submit input
+ * - Backspace: Delete character before cursor
+ * - Delete: Delete character after cursor
+ * - ←/→: Move cursor left/right
+ * - ↑/↓: Navigate command history
+ * - Option+←/→ (macOS): Move cursor by word
+ * - Cmd+←/→ (macOS): Move cursor to start/end
+ *
+ * **Paste behavior:**
+ * - Multi-line text is automatically flattened to a single line
+ * - Large pastes (up to 4KB) are handled efficiently
+ * - Consecutive whitespace is collapsed to single spaces
  *
  * @example
  * ```tsx
