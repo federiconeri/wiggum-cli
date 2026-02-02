@@ -11,6 +11,14 @@ import { Box, Text, useInput } from 'ink';
 import { theme } from '../theme.js';
 import { CommandDropdown, DEFAULT_COMMANDS, type Command } from './CommandDropdown.js';
 import { useCommandHistory } from '../hooks/useCommandHistory.js';
+import {
+  normalizePastedText,
+  insertTextAtCursor,
+  deleteCharBefore,
+  deleteCharAfter,
+  moveCursorByWordLeft,
+  moveCursorByWordRight,
+} from '../utils/input-utils.js';
 
 /**
  * Props for the ChatInput component
@@ -97,27 +105,6 @@ export function ChatInput({
     [clampCursor, resetNavigation]
   );
 
-  const moveCursorByWordLeft = useCallback((currentValue: string, currentCursor: number): number => {
-    let idx = currentCursor;
-    while (idx > 0 && /\s/.test(currentValue[idx - 1]!)) {
-      idx -= 1;
-    }
-    while (idx > 0 && /[A-Za-z0-9_]/.test(currentValue[idx - 1]!)) {
-      idx -= 1;
-    }
-    return idx;
-  }, []);
-
-  const moveCursorByWordRight = useCallback((currentValue: string, currentCursor: number): number => {
-    let idx = currentCursor;
-    while (idx < currentValue.length && /\s/.test(currentValue[idx]!)) {
-      idx += 1;
-    }
-    while (idx < currentValue.length && /[A-Za-z0-9_]/.test(currentValue[idx]!)) {
-      idx += 1;
-    }
-    return idx;
-  }, []);
 
   const handleEscapeSequence = useCallback(
     (input: string): boolean => {
@@ -140,16 +127,9 @@ export function ChatInput({
       }
       return false;
     },
-    [cursorOffset, moveCursorByWordLeft, moveCursorByWordRight, updateValue, value]
+    [cursorOffset, updateValue, value]
   );
 
-  const normalizePaste = useCallback((input: string): string => {
-    let cleaned = input.replace(/\u001b\[200~|\u001b\[201~/g, '');
-    cleaned = cleaned.replace(/[\r\n]+/g, ' ');
-    cleaned = cleaned.replace(/\t/g, ' ');
-    cleaned = cleaned.replace(/\u001b/g, '');
-    return cleaned;
-  }, []);
 
   // Handle keyboard input for history navigation + editing
   useInput((input, key) => {
@@ -165,21 +145,17 @@ export function ChatInput({
       return;
     }
 
-    // Backspace
-    if (key.backspace) {
-      if (cursorOffset > 0) {
-        const nextValue = value.slice(0, cursorOffset - 1) + value.slice(cursorOffset);
-        updateValue(nextValue, cursorOffset - 1);
-      }
+    const isBackspace = key.backspace || input === '\x7f' || input === '\b';
+    if (isBackspace) {
+      const { newValue, newCursorIndex } = deleteCharBefore(value, cursorOffset);
+      updateValue(newValue, newCursorIndex);
       return;
     }
 
-    // Delete
-    if (key.delete) {
-      if (cursorOffset < value.length) {
-        const nextValue = value.slice(0, cursorOffset) + value.slice(cursorOffset + 1);
-        updateValue(nextValue, cursorOffset);
-      }
+    const isDelete = key.delete || input === '\u001b[3~';
+    if (isDelete) {
+      const { newValue, newCursorIndex } = deleteCharAfter(value, cursorOffset);
+      updateValue(newValue, newCursorIndex);
       return;
     }
 
@@ -247,10 +223,10 @@ export function ChatInput({
       }
     }
 
-    const textToInsert = input.length > 1 ? normalizePaste(input) : input;
+    const textToInsert = input.length > 1 ? normalizePastedText(input) : input;
     if (!textToInsert) return;
-    const nextValue = value.slice(0, cursorOffset) + textToInsert + value.slice(cursorOffset);
-    updateValue(nextValue, cursorOffset + textToInsert.length);
+    const { newValue, newCursorIndex } = insertTextAtCursor(value, cursorOffset, textToInsert);
+    updateValue(newValue, newCursorIndex);
   });
 
   /**
