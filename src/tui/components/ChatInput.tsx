@@ -8,8 +8,7 @@
 
 import React, { useState, useCallback, useRef } from 'react';
 import { Box, Text, useInput } from 'ink';
-import TextInput from 'ink-text-input';
-import { colors, theme } from '../theme.js';
+import { theme } from '../theme.js';
 import { CommandDropdown, DEFAULT_COMMANDS, type Command } from './CommandDropdown.js';
 import { useCommandHistory } from '../hooks/useCommandHistory.js';
 
@@ -57,6 +56,7 @@ export function ChatInput({
   onCommand,
 }: ChatInputProps): React.ReactElement {
   const [value, setValue] = useState('');
+  const [cursorOffset, setCursorOffset] = useState(0);
   const [showDropdown, setShowDropdown] = useState(false);
   const { addToHistory, navigateUp, navigateDown, getCurrentItem, resetNavigation } = useCommandHistory();
 
@@ -72,9 +72,136 @@ export function ChatInput({
   // Store draft input when starting history navigation
   const draftRef = useRef<string>('');
 
-  // Handle keyboard input for history navigation
+  const clampCursor = useCallback((nextValue: string, nextCursor: number): number => {
+    if (nextCursor < 0) return 0;
+    if (nextCursor > nextValue.length) return nextValue.length;
+    return nextCursor;
+  }, []);
+
+  const updateValue = useCallback(
+    (nextValue: string, nextCursor: number, fromHistory: boolean = false): void => {
+      const clampedCursor = clampCursor(nextValue, nextCursor);
+      setValue(nextValue);
+      setCursorOffset(clampedCursor);
+
+      if (!fromHistory) {
+        resetNavigation();
+      }
+
+      if (nextValue.startsWith('/') && !nextValue.includes(' ')) {
+        setShowDropdown(true);
+      } else {
+        setShowDropdown(false);
+      }
+    },
+    [clampCursor, resetNavigation]
+  );
+
+  const moveCursorByWordLeft = useCallback((currentValue: string, currentCursor: number): number => {
+    let idx = currentCursor;
+    while (idx > 0 && /\s/.test(currentValue[idx - 1]!)) {
+      idx -= 1;
+    }
+    while (idx > 0 && /[A-Za-z0-9_]/.test(currentValue[idx - 1]!)) {
+      idx -= 1;
+    }
+    return idx;
+  }, []);
+
+  const moveCursorByWordRight = useCallback((currentValue: string, currentCursor: number): number => {
+    let idx = currentCursor;
+    while (idx < currentValue.length && /\s/.test(currentValue[idx]!)) {
+      idx += 1;
+    }
+    while (idx < currentValue.length && /[A-Za-z0-9_]/.test(currentValue[idx]!)) {
+      idx += 1;
+    }
+    return idx;
+  }, []);
+
+  const handleEscapeSequence = useCallback(
+    (input: string): boolean => {
+      const seq = input;
+      if (seq === '\u001bb' || seq === '\u001b[1;3D') {
+        updateValue(value, moveCursorByWordLeft(value, cursorOffset), true);
+        return true;
+      }
+      if (seq === '\u001bf' || seq === '\u001b[1;3C') {
+        updateValue(value, moveCursorByWordRight(value, cursorOffset), true);
+        return true;
+      }
+      if (seq === '\u001b[H' || seq === '\u001bOH') {
+        updateValue(value, 0, true);
+        return true;
+      }
+      if (seq === '\u001b[F' || seq === '\u001bOF') {
+        updateValue(value, value.length, true);
+        return true;
+      }
+      return false;
+    },
+    [cursorOffset, moveCursorByWordLeft, moveCursorByWordRight, updateValue, value]
+  );
+
+  const normalizePaste = useCallback((input: string): string => {
+    let cleaned = input.replace(/\u001b\[200~|\u001b\[201~/g, '');
+    cleaned = cleaned.replace(/[\r\n]+/g, ' ');
+    cleaned = cleaned.replace(/\t/g, ' ');
+    cleaned = cleaned.replace(/\u001b/g, '');
+    return cleaned;
+  }, []);
+
+  // Handle keyboard input for history navigation + editing
   useInput((input, key) => {
     if (disabled) return;
+
+    if (key.ctrl) {
+      return;
+    }
+
+    // Submit on Enter
+    if (key.return) {
+      handleSubmit(value);
+      return;
+    }
+
+    // Backspace
+    if (key.backspace) {
+      if (cursorOffset > 0) {
+        const nextValue = value.slice(0, cursorOffset - 1) + value.slice(cursorOffset);
+        updateValue(nextValue, cursorOffset - 1);
+      }
+      return;
+    }
+
+    // Delete
+    if (key.delete) {
+      if (cursorOffset < value.length) {
+        const nextValue = value.slice(0, cursorOffset) + value.slice(cursorOffset + 1);
+        updateValue(nextValue, cursorOffset);
+      }
+      return;
+    }
+
+    // Left/right arrows
+    if (key.leftArrow) {
+      updateValue(value, cursorOffset - 1, true);
+      return;
+    }
+    if (key.rightArrow) {
+      updateValue(value, cursorOffset + 1, true);
+      return;
+    }
+
+    // Home/End
+    if (key.home) {
+      updateValue(value, 0, true);
+      return;
+    }
+    if (key.end) {
+      updateValue(value, value.length, true);
+      return;
+    }
 
     // Up arrow - navigate to previous command
     if (key.upArrow && !showDropdown) {
@@ -85,7 +212,7 @@ export function ChatInput({
       const prev = navigateUp();
       if (prev !== null) {
         isNavigatingRef.current = true;
-        setValue(prev);
+        updateValue(prev, prev.length, true);
         isNavigatingRef.current = false;
       }
       return;
@@ -99,11 +226,41 @@ export function ChatInput({
         const next = navigateDown();
         isNavigatingRef.current = true;
         // Restore draft when exiting history, otherwise show next command
-        setValue(next !== null ? next : draftRef.current);
+        const nextValue = next !== null ? next : draftRef.current;
+        updateValue(nextValue, nextValue.length, true);
         isNavigatingRef.current = false;
       }
       return;
     }
+
+    if (!input) return;
+
+    if (key.meta && input.length === 1) {
+      if (input === 'b') {
+        updateValue(value, moveCursorByWordLeft(value, cursorOffset), true);
+        return;
+      }
+      if (input === 'f') {
+        updateValue(value, moveCursorByWordRight(value, cursorOffset), true);
+        return;
+      }
+      return;
+    }
+
+    if (input.includes('\u001b')) {
+      if (handleEscapeSequence(input)) {
+        return;
+      }
+      // Ignore unknown escape sequences to avoid garbage insertion
+      if (input.startsWith('\u001b')) {
+        return;
+      }
+    }
+
+    const textToInsert = input.length > 1 ? normalizePaste(input) : input;
+    if (!textToInsert) return;
+    const nextValue = value.slice(0, cursorOffset) + textToInsert + value.slice(cursorOffset);
+    updateValue(nextValue, cursorOffset + textToInsert.length);
   });
 
   /**
@@ -123,33 +280,10 @@ export function ChatInput({
 
       // Always pass the full value to onSubmit (including slash commands with args)
       onSubmit(submittedValue);
-      setValue('');
+      updateValue('', 0, true);
       setShowDropdown(false);
     },
-    [disabled, allowEmpty, onSubmit, addToHistory]
-  );
-
-  /**
-   * Handle value changes
-   */
-  const handleChange = useCallback(
-    (newValue: string): void => {
-      if (disabled) return;
-      setValue(newValue);
-
-      // Reset history navigation when user types (unless we triggered this change)
-      if (!isNavigatingRef.current) {
-        resetNavigation();
-      }
-
-      // Show dropdown when typing / but hide once a space is typed (entering arguments)
-      if (newValue.startsWith('/') && !newValue.includes(' ')) {
-        setShowDropdown(true);
-      } else {
-        setShowDropdown(false);
-      }
-    },
-    [disabled, resetNavigation]
+    [disabled, allowEmpty, onSubmit, addToHistory, updateValue]
   );
 
   /**
@@ -166,10 +300,10 @@ export function ChatInput({
         // If no onCommand handler, just submit the command
         onSubmit(`/${cmdName}`);
       }
-      setValue('');
+      updateValue('', 0, true);
       setShowDropdown(false);
     },
-    [onCommand, onSubmit, addToHistory]
+    [onCommand, onSubmit, addToHistory, updateValue]
   );
 
   /**
@@ -190,6 +324,11 @@ export function ChatInput({
     );
   }
 
+  const leftText = value.slice(0, cursorOffset);
+  const rightText = value.slice(cursorOffset);
+  const cursorChar = rightText ? rightText[0] : ' ';
+  const remainder = rightText ? rightText.slice(1) : '';
+
   return (
     <Box flexDirection="column">
       {/* Input line first */}
@@ -197,12 +336,18 @@ export function ChatInput({
         <Text color={theme.colors.prompt} bold>
           {theme.chars.prompt}{' '}
         </Text>
-        <TextInput
-          value={value}
-          onChange={handleChange}
-          onSubmit={handleSubmit}
-          placeholder={placeholder}
-        />
+        {value.length === 0 ? (
+          <Box flexDirection="row">
+            <Text inverse>{' '}</Text>
+            <Text dimColor>{placeholder}</Text>
+          </Box>
+        ) : (
+          <Box flexDirection="row">
+            <Text>{leftText}</Text>
+            <Text inverse>{cursorChar}</Text>
+            <Text>{remainder}</Text>
+          </Box>
+        )}
       </Box>
 
       {/* Command dropdown below input - only show while typing command name, not arguments */}
