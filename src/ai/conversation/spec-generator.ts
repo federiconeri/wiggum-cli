@@ -38,6 +38,7 @@ export interface SessionContext {
   commands?: { build?: string; dev?: string; test?: string };
   namingConventions?: string;
   implementationGuidelines?: string[];
+  keyPatterns?: string[];
 }
 
 /**
@@ -286,6 +287,7 @@ function extractSessionContext(scanResult: ScanResult): SessionContext | undefin
     commands: ai.commands,
     namingConventions: ai.projectContext?.namingConventions,
     implementationGuidelines: ai.implementationGuidelines,
+    keyPatterns: ai.technologyPractices?.practices,
   };
 }
 

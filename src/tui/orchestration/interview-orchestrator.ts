@@ -33,6 +33,7 @@ export interface SessionContext {
   commands?: { build?: string; dev?: string; test?: string };
   namingConventions?: string;
   implementationGuidelines?: string[];
+  keyPatterns?: string[];
 }
 
 /**
@@ -81,8 +82,9 @@ export interface InterviewOrchestratorOptions {
 
 /**
  * Build enhanced system prompt with project context and tool awareness
+ * @internal Exported for testing
  */
-function buildSystemPrompt(
+export function buildSystemPrompt(
   sessionContext?: SessionContext,
   hasTools?: { codebase: boolean; tavily: boolean; context7: boolean }
 ): string {
@@ -170,6 +172,24 @@ WHEN YOU MUST USE WEB SEARCH:
       }
     }
 
+    if (sessionContext.namingConventions) {
+      contextParts.push(`\nNaming Conventions:\n${sessionContext.namingConventions}`);
+    }
+
+    if (sessionContext.implementationGuidelines && sessionContext.implementationGuidelines.length > 0) {
+      contextParts.push(`\nImplementation Guidelines:`);
+      for (const guideline of sessionContext.implementationGuidelines) {
+        contextParts.push(`- ${guideline}`);
+      }
+    }
+
+    if (sessionContext.keyPatterns && sessionContext.keyPatterns.length > 0) {
+      contextParts.push(`\nKey Patterns:`);
+      for (const pattern of sessionContext.keyPatterns) {
+        contextParts.push(`- ${pattern}`);
+      }
+    }
+
     if (contextParts.length > 1) {
       parts.push(contextParts.join('\n'));
     }
@@ -216,10 +236,22 @@ When generating the spec, use this format:
 
 /**
  * Extract session context from EnhancedScanResult
+ * @internal Exported for testing
  */
-function extractSessionContext(scanResult: ScanResult): SessionContext | undefined {
+export function extractSessionContext(scanResult: ScanResult): SessionContext | undefined {
   // Check if this is an EnhancedScanResult with aiAnalysis
-  const enhanced = scanResult as ScanResult & { aiAnalysis?: { projectContext?: SessionContext; commands?: SessionContext['commands']; implementationGuidelines?: string[] } };
+  const enhanced = scanResult as ScanResult & {
+    aiAnalysis?: {
+      projectContext?: {
+        entryPoints?: string[];
+        keyDirectories?: Record<string, string>;
+        namingConventions?: string;
+      };
+      commands?: SessionContext['commands'];
+      implementationGuidelines?: string[];
+      technologyPractices?: { practices?: string[] };
+    };
+  };
   if (!enhanced.aiAnalysis) {
     return undefined;
   }
@@ -231,6 +263,7 @@ function extractSessionContext(scanResult: ScanResult): SessionContext | undefin
     commands: ai.commands,
     namingConventions: ai.projectContext?.namingConventions,
     implementationGuidelines: ai.implementationGuidelines,
+    keyPatterns: ai.technologyPractices?.practices,
   };
 }
 
