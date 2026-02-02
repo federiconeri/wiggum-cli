@@ -193,16 +193,6 @@ export function ChatInput({
       return;
     }
 
-    // Home/End
-    if (key.home) {
-      updateValue(value, 0, true);
-      return;
-    }
-    if (key.end) {
-      updateValue(value, value.length, true);
-      return;
-    }
-
     // Up arrow - navigate to previous command
     if (key.upArrow && !showDropdown) {
       // Save draft when starting navigation
