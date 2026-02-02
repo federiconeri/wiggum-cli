@@ -155,17 +155,17 @@ export function ChatInput({
   useInput((input, key) => {
     if (disabled) return;
 
-    if (key.ctrl) {
-      return;
-    }
-
     // Submit on Enter
     if (key.return) {
       handleSubmit(value);
       return;
     }
 
-    const isBackspace = key.backspace || input === '\x7f' || input === '\b';
+    const isBackspace =
+      key.backspace ||
+      input === '\x7f' ||
+      input === '\b' ||
+      (key.ctrl && input === 'h');
     if (isBackspace) {
       const { newValue, newCursorIndex } = deleteCharBefore(value, cursorOffset);
       updateValue(newValue, newCursorIndex);
@@ -176,6 +176,10 @@ export function ChatInput({
     if (isDelete) {
       const { newValue, newCursorIndex } = deleteCharAfter(value, cursorOffset);
       updateValue(newValue, newCursorIndex);
+      return;
+    }
+
+    if (key.ctrl) {
       return;
     }
 
