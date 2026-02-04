@@ -4,6 +4,7 @@
  */
 
 import { readFile, readdir, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ScanResult, DetectedStack } from '../scanner/types.js';
@@ -80,7 +81,7 @@ const DEFAULT_VARIABLES: Partial<TemplateVariables> = {
   styling: 'css',
   stylingVersion: '',
   stylingVariant: '',
-  appDir: 'app',
+  appDir: '.',
 };
 
 /**
@@ -247,17 +248,17 @@ export function extractVariables(scanResult: ScanResult, customVars: Record<stri
   // Extract AI analysis data
   const aiData = formatAiAnalysisForTemplates(scanResult);
 
-  // Determine app directory - use AI entry points if available
-  let appDir = 'src';
-  if (frameworkVariant === 'app-router' || framework.toLowerCase().includes('next')) {
+  // Determine app directory
+  let appDir = '.'; // Default to project root
+
+  if (frameworkVariant === 'app-router') {
     appDir = 'app';
-  } else if (aiData.aiEntryPoints) {
-    // Try to extract common directory from entry points
-    const entryPoints = (scanResult as { aiAnalysis?: { projectContext?: { entryPoints?: string[] } } })
-      .aiAnalysis?.projectContext?.entryPoints || [];
-    if (entryPoints.length > 0 && entryPoints[0].startsWith('src/')) {
-      appDir = 'src';
-    }
+  } else if (
+    existsSync(join(projectRoot, 'src', 'index.ts')) ||
+    existsSync(join(projectRoot, 'src', 'index.tsx')) ||
+    existsSync(join(projectRoot, 'src', 'main.ts'))
+  ) {
+    appDir = 'src';
   }
 
   return {
