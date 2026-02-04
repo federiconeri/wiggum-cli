@@ -3,6 +3,10 @@
  * Loads known AI provider API keys from .ralph/.env.local into process.env
  */
 
+import fs from 'fs';
+import path from 'path';
+import { KNOWN_API_KEYS } from '../ai/providers.js';
+
 /**
  * Parse dotenv-style content into a key-value map.
  * - Ignores empty lines and comments (lines starting with #).
@@ -28,4 +32,31 @@ export function parseEnvContent(content: string): Record<string, string> {
   }
 
   return result;
+}
+
+/**
+ * Load known AI provider API keys from .ralph/.env.local into process.env.
+ *
+ * - Only keys in KNOWN_API_KEYS are loaded; all others are ignored.
+ * - File values override existing process.env values (file takes precedence).
+ * - If the file does not exist or cannot be read, this is a silent no-op.
+ * - Malformed lines are skipped without aborting.
+ */
+export function loadApiKeysFromEnvLocal(): void {
+  try {
+    const envPath = path.join(process.cwd(), '.ralph', '.env.local');
+    if (!fs.existsSync(envPath)) return;
+
+    const content = fs.readFileSync(envPath, 'utf8');
+    const parsed = parseEnvContent(content);
+
+    for (const key of KNOWN_API_KEYS) {
+      if (parsed[key] !== undefined) {
+        process.env[key] = parsed[key];
+      }
+    }
+  } catch {
+    // Silent failure — do not surface errors to the user.
+    // The loader is best-effort; provider detection falls back to shell env.
+  }
 }
