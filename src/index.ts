@@ -5,6 +5,7 @@ import type { AIProvider } from './ai/providers.js';
 import { notifyIfUpdateAvailable } from './utils/update-check.js';
 import { renderApp, type AppScreen } from './tui/app.js';
 import { logger } from './utils/logger.js';
+import { loadApiKeysFromEnvLocal } from './utils/env.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -105,6 +106,9 @@ async function startInkTui(initialScreen: AppScreen = 'welcome', interviewFeatur
  * TUI-first: routes args to appropriate TUI screens
  */
 export async function main(): Promise<void> {
+  // Load API keys from .ralph/.env.local before any provider detection
+  loadApiKeysFromEnvLocal();
+
   const args = process.argv.slice(2);
 
   // Check for updates (non-blocking, fails silently)

@@ -36,9 +36,20 @@ const API_KEY_ENV_VARS: Record<AIProvider, string> = {
 export const OPTIONAL_SERVICE_ENV_VARS = {
   tavily: 'TAVILY_API_KEY',
   context7: 'CONTEXT7_API_KEY',
+  braintrust: 'BRAINTRUST_API_KEY',
 } as const;
 
 export type OptionalService = keyof typeof OPTIONAL_SERVICE_ENV_VARS;
+
+/**
+ * All known API keys that can be loaded from .ralph/.env.local
+ * Combines provider keys and optional service keys.
+ * This is the single source of truth — used by the env loader.
+ */
+export const KNOWN_API_KEYS: readonly string[] = [
+  ...Object.values(API_KEY_ENV_VARS),
+  ...Object.values(OPTIONAL_SERVICE_ENV_VARS),
+];
 
 /**
  * Model option with label and value
@@ -257,5 +268,6 @@ export function getOptionalServicesStatus(): Record<OptionalService, boolean> {
   return {
     tavily: hasTavilyKey(),
     context7: hasContext7Key(),
+    braintrust: !!process.env[OPTIONAL_SERVICE_ENV_VARS.braintrust],
   };
 }

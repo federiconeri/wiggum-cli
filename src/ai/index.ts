@@ -13,6 +13,7 @@ export {
   getAvailableProvider,
   getApiKeyEnvVar,
   OPTIONAL_SERVICE_ENV_VARS,
+  KNOWN_API_KEYS,
   hasTavilyKey,
   getTavilyKey,
   hasContext7Key,
