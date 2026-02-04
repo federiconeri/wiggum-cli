@@ -68,7 +68,7 @@ export const INIT_PHASE_CONFIGS: Record<InitPhase, InitPhaseConfig> = {
   'key-save': {
     number: 2,
     name: 'Save Key',
-    description: 'Save API key to .env.local',
+    description: 'Save API key to .ralph/.env.local',
   },
   'model-select': {
     number: 3,

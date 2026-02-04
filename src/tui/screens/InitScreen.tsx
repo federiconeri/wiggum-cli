@@ -36,6 +36,7 @@ import {
 import { Generator } from '../../generator/index.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { initTracing, flushTracing, traced } from '../../utils/tracing.js';
+import { writeKeysToEnvFile } from '../../utils/env.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SessionState } from '../../repl/session-state.js';
@@ -75,30 +76,6 @@ function getModelOptions(provider: AIProvider): SelectOption<string>[] {
   }));
 }
 
-/**
- * Save API keys to .env.local file
- */
-function saveKeysToEnvLocal(projectRoot: string, keys: Record<string, string>): void {
-  const envLocalPath = path.join(projectRoot, '.env.local');
-  let envContent = '';
-
-  if (fs.existsSync(envLocalPath)) {
-    envContent = fs.readFileSync(envLocalPath, 'utf-8');
-  }
-
-  for (const [envVar, value] of Object.entries(keys)) {
-    if (!value) continue;
-
-    const keyRegex = new RegExp(`^${envVar}=.*$`, 'm');
-    if (keyRegex.test(envContent)) {
-      envContent = envContent.replace(keyRegex, `${envVar}=${value}`);
-    } else {
-      envContent = envContent.trimEnd() + (envContent ? '\n' : '') + `${envVar}=${value}\n`;
-    }
-  }
-
-  fs.writeFileSync(envLocalPath, envContent);
-}
 
 /**
  * InitScreen component
@@ -273,10 +250,11 @@ export function InitScreen({
           )
           .map((f: { path: string }) => path.relative(projectRoot, f.path));
 
-        // Save API key to .env.local if requested
+        // Save API key to .ralph/.env.local if requested
         if (state.apiKeyEnteredThisSession && state.saveKeyToEnv && state.provider && apiKeyRef.current) {
           const envVar = getApiKeyEnvVar(state.provider);
-          saveKeysToEnvLocal(projectRoot, { [envVar]: apiKeyRef.current });
+          const envLocalPath = path.join(projectRoot, '.ralph', '.env.local');
+          writeKeysToEnvFile(envLocalPath, { [envVar]: apiKeyRef.current });
         }
 
         setGenerationComplete(generatedFiles);
@@ -415,7 +393,7 @@ export function InitScreen({
       case 'key-save':
         return (
           <Confirm
-            message="Save API key to .env.local?"
+            message="Save API key to .ralph/.env.local?"
             onConfirm={handleSaveKeyConfirm}
             onCancel={onCancel}
             initialValue={true}
