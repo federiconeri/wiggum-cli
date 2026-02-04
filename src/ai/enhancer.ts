@@ -108,6 +108,12 @@ export interface AIAnalysisResult {
   technologyTools?: TechnologyTools;
   /** Technology-specific best practices based on detected stack */
   technologyPractices?: TechnologyPractices;
+  /** Technology notes captured during codebase analysis (optional) */
+  technologyNotes?: {
+    testingApproach?: string;
+    buildSystem?: string;
+    keyPatterns?: string[];
+  };
 }
 
 /**
@@ -502,6 +508,12 @@ function convertMultiAgentToAIAnalysis(multiAgent: MultiAgentAnalysis): AIAnalys
     };
   }
 
+  const keyPatternHints = codebaseAnalysis.technologyNotes?.keyPatterns || [];
+  const mergedPractices = Array.from(new Set([
+    ...stackResearch.bestPractices,
+    ...keyPatternHints,
+  ])).filter(Boolean);
+
   return {
     projectContext: {
       entryPoints: codebaseAnalysis.projectContext.entryPoints,
@@ -523,10 +535,11 @@ function convertMultiAgentToAIAnalysis(multiAgent: MultiAgentAnalysis): AIAnalys
     },
     technologyPractices: {
       projectType: codebaseAnalysis.projectContext.projectType,
-      practices: stackResearch.bestPractices,
+      practices: mergedPractices,
       antiPatterns: stackResearch.antiPatterns,
       documentationHints: stackResearch.documentationHints,
     },
+    technologyNotes: codebaseAnalysis.technologyNotes,
   };
 }
 

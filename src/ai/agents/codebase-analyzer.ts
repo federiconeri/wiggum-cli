@@ -392,6 +392,7 @@ function buildMultiAgentAnalysis(
       ? output.implementationGuidelines
       : getDefaultGuidelines(output, derivedCommands),
     possibleMissedTechnologies: [],
+    technologyNotes: output.technologyNotes,
   };
 
   // Add architecture flow to guidelines if present

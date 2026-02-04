@@ -143,6 +143,12 @@ export interface CodebaseAnalysis {
   implementationGuidelines: string[];
   /** Additional technologies that may have been missed */
   possibleMissedTechnologies?: string[];
+  /** Technology-specific notes derived from codebase analysis */
+  technologyNotes?: {
+    testingApproach?: string;
+    buildSystem?: string;
+    keyPatterns?: string[];
+  };
 }
 
 /**
