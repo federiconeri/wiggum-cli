@@ -47,6 +47,31 @@ describe('parseEnvContent', () => {
     const content = 'FOO=bar\r\nBAZ=qux\r\n';
     expect(parseEnvContent(content)).toEqual({ FOO: 'bar', BAZ: 'qux' });
   });
+
+  it('strips matching double quotes from values', () => {
+    const content = 'KEY="quoted-value"';
+    expect(parseEnvContent(content)).toEqual({ KEY: 'quoted-value' });
+  });
+
+  it('strips matching single quotes from values', () => {
+    const content = "KEY='quoted-value'";
+    expect(parseEnvContent(content)).toEqual({ KEY: 'quoted-value' });
+  });
+
+  it('does not strip mismatched quotes', () => {
+    const content = 'KEY="mismatched\'';
+    expect(parseEnvContent(content)).toEqual({ KEY: '"mismatched\'' });
+  });
+
+  it('does not strip quotes from single-char values', () => {
+    const content = 'KEY="';
+    expect(parseEnvContent(content)).toEqual({ KEY: '"' });
+  });
+
+  it('returns empty string for KEY= with no value', () => {
+    const content = 'KEY=';
+    expect(parseEnvContent(content)).toEqual({ KEY: '' });
+  });
 });
 
 describe('loadApiKeysFromEnvLocal', () => {
@@ -59,6 +84,7 @@ describe('loadApiKeysFromEnvLocal', () => {
     delete process.env.OPENROUTER_API_KEY;
     delete process.env.TAVILY_API_KEY;
     delete process.env.CONTEXT7_API_KEY;
+    delete process.env.BRAINTRUST_API_KEY;
     vi.restoreAllMocks();
   });
 
@@ -140,5 +166,37 @@ describe('loadApiKeysFromEnvLocal', () => {
 
     const expectedPath = path.join(process.cwd(), '.ralph', '.env.local');
     expect(existsSpy).toHaveBeenCalledWith(expectedPath);
+  });
+
+  it('loads BRAINTRUST_API_KEY as a known key', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(
+      'BRAINTRUST_API_KEY=bt-xxx\n'
+    );
+
+    loadApiKeysFromEnvLocal();
+
+    expect(process.env.BRAINTRUST_API_KEY).toBe('bt-xxx');
+  });
+
+  it('does not override existing env with empty value from file', () => {
+    process.env.OPENAI_API_KEY = 'from-shell';
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue('OPENAI_API_KEY=\n');
+
+    loadApiKeysFromEnvLocal();
+
+    expect(process.env.OPENAI_API_KEY).toBe('from-shell');
+  });
+
+  it('strips quotes from values before setting env', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(
+      'OPENAI_API_KEY="sk-quoted-123"\n'
+    );
+
+    loadApiKeysFromEnvLocal();
+
+    expect(process.env.OPENAI_API_KEY).toBe('sk-quoted-123');
   });
 });
