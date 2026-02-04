@@ -10,6 +10,7 @@ import { logger } from '../utils/logger.js';
 import { simpson } from '../utils/colors.js';
 import type { SessionState } from '../repl/session-state.js';
 import { getAvailableProvider, AVAILABLE_MODELS } from '../ai/providers.js';
+import { writeKeysToEnvFile } from '../utils/env.js';
 
 /**
  * Supported services for API key configuration
@@ -40,27 +41,17 @@ function isServiceConfigured(service: ConfigurableService): boolean {
 }
 
 /**
- * Save an API key to .env.local file
+ * Save an API key to .ralph/.env.local file
  */
 function saveKeyToEnvLocal(projectRoot: string, envVar: string, value: string): void {
-  const envLocalPath = path.join(projectRoot, '.env.local');
-  let envContent = '';
-
-  // Read existing content if file exists
-  if (fs.existsSync(envLocalPath)) {
-    envContent = fs.readFileSync(envLocalPath, 'utf-8');
+  // Check that .ralph/ exists (project is initialized)
+  const ralphDir = path.join(projectRoot, '.ralph');
+  if (!fs.existsSync(ralphDir) || !fs.statSync(ralphDir).isDirectory()) {
+    throw new Error('This project is not initialized. Run \'ralph init\' to set up .ralph/ before using \'ralph config set\'.');
   }
 
-  const keyRegex = new RegExp(`^${envVar}=.*$`, 'm');
-  if (keyRegex.test(envContent)) {
-    // Replace existing key
-    envContent = envContent.replace(keyRegex, `${envVar}=${value}`);
-  } else {
-    // Append new key
-    envContent = envContent.trimEnd() + (envContent ? '\n' : '') + `${envVar}=${value}\n`;
-  }
-
-  fs.writeFileSync(envLocalPath, envContent);
+  const envLocalPath = path.join(ralphDir, '.env.local');
+  writeKeysToEnvFile(envLocalPath, { [envVar]: value });
 }
 
 /**
@@ -160,7 +151,7 @@ export async function handleConfigCommand(
     // Also set in current process environment
     process.env[envVar] = apiKey;
 
-    logger.success(`${envVar} saved to .env.local`);
+    logger.success(`${envVar} saved to .ralph/.env.local`);
     console.log(pc.dim('Restart Wiggum to apply changes to tool availability.'));
     console.log('');
   } catch (error) {
