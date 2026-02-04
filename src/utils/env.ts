@@ -90,15 +90,27 @@ export function writeKeysToEnvFile(filePath: string, keys: Record<string, string
 /**
  * Load known AI provider API keys from .ralph/.env.local into process.env.
  *
+ * - Prefers .ralph/.env.local as the canonical source (if it exists).
+ * - Falls back to root .env.local if .ralph/.env.local does not exist (backward compatibility).
  * - Only keys in KNOWN_API_KEYS are loaded; all others are ignored.
  * - File values override existing process.env values (file takes precedence).
- * - If the file does not exist or cannot be read, this is a silent no-op.
+ * - If neither file exists or cannot be read, this is a silent no-op.
  * - Malformed lines are skipped without aborting.
  */
 export function loadApiKeysFromEnvLocal(): void {
   try {
-    const envPath = path.join(process.cwd(), '.ralph', '.env.local');
-    if (!fs.existsSync(envPath)) return;
+    const ralphEnvPath = path.join(process.cwd(), '.ralph', '.env.local');
+    const rootEnvPath = path.join(process.cwd(), '.env.local');
+
+    // Prefer .ralph/.env.local, fall back to root .env.local
+    let envPath: string | null = null;
+    if (fs.existsSync(ralphEnvPath)) {
+      envPath = ralphEnvPath;
+    } else if (fs.existsSync(rootEnvPath)) {
+      envPath = rootEnvPath;
+    }
+
+    if (!envPath) return;
 
     const content = fs.readFileSync(envPath, 'utf8');
     const parsed = parseEnvContent(content);
@@ -109,6 +121,6 @@ export function loadApiKeysFromEnvLocal(): void {
       }
     }
   } catch (err) {
-    logger.debug(`Failed to load .ralph/.env.local: ${err instanceof Error ? err.message : String(err)}`);
+    logger.debug(`Failed to load env file: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

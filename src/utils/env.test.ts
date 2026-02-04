@@ -94,7 +94,8 @@ describe('loadApiKeysFromEnvLocal', () => {
   });
 
   it('sets known provider keys from file into process.env', () => {
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphPath);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       'OPENAI_API_KEY=sk-test-123\nANTHROPIC_API_KEY=sk-ant-456\n'
     );
@@ -106,8 +107,9 @@ describe('loadApiKeysFromEnvLocal', () => {
   });
 
   it('overrides existing process.env values (file takes precedence)', () => {
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
     process.env.OPENAI_API_KEY = 'from-shell';
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphPath);
     vi.spyOn(fs, 'readFileSync').mockReturnValue('OPENAI_API_KEY=from-file\n');
 
     loadApiKeysFromEnvLocal();
@@ -116,7 +118,8 @@ describe('loadApiKeysFromEnvLocal', () => {
   });
 
   it('ignores unknown keys not in KNOWN_API_KEYS', () => {
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphPath);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       'OPENAI_API_KEY=sk-test\nSOME_OTHER_KEY=should-not-load\n'
     );
@@ -127,18 +130,10 @@ describe('loadApiKeysFromEnvLocal', () => {
     expect(process.env.SOME_OTHER_KEY).toBeUndefined();
   });
 
-  it('is a no-op when file does not exist', () => {
-    vi.spyOn(fs, 'existsSync').mockReturnValue(false);
-    const readSpy = vi.spyOn(fs, 'readFileSync');
-
-    loadApiKeysFromEnvLocal();
-
-    expect(readSpy).not.toHaveBeenCalled();
-    expect(process.env.OPENAI_API_KEY).toBeUndefined();
-  });
 
   it('does not throw when file read fails', () => {
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphPath);
     vi.spyOn(fs, 'readFileSync').mockImplementation(() => {
       throw new Error('EACCES: permission denied');
     });
@@ -147,7 +142,8 @@ describe('loadApiKeysFromEnvLocal', () => {
   });
 
   it('loads optional service keys (TAVILY, CONTEXT7)', () => {
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphPath);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       'TAVILY_API_KEY=tvly-xxx\nCONTEXT7_API_KEY=c7-yyy\n'
     );
@@ -158,18 +154,78 @@ describe('loadApiKeysFromEnvLocal', () => {
     expect(process.env.CONTEXT7_API_KEY).toBe('c7-yyy');
   });
 
+  it('prefers .ralph/.env.local over root .env.local when both exist', () => {
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
+    const rootPath = path.join(process.cwd(), '.env.local');
+
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => {
+      // Both files exist
+      return p === ralphPath || p === rootPath;
+    });
+
+    vi.spyOn(fs, 'readFileSync').mockImplementation((p) => {
+      if (p === ralphPath) {
+        return 'OPENAI_API_KEY=from-ralph\n';
+      }
+      if (p === rootPath) {
+        return 'OPENAI_API_KEY=from-root\n';
+      }
+      return '';
+    });
+
+    loadApiKeysFromEnvLocal();
+
+    // Should load from .ralph/.env.local, not root
+    expect(process.env.OPENAI_API_KEY).toBe('from-ralph');
+  });
+
+  it('falls back to root .env.local when .ralph/.env.local does not exist', () => {
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
+    const rootPath = path.join(process.cwd(), '.env.local');
+
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => {
+      // Only root exists
+      return p === rootPath;
+    });
+
+    vi.spyOn(fs, 'readFileSync').mockImplementation((p) => {
+      if (p === rootPath) {
+        return 'OPENAI_API_KEY=from-root\n';
+      }
+      return '';
+    });
+
+    loadApiKeysFromEnvLocal();
+
+    // Should load from root .env.local as fallback
+    expect(process.env.OPENAI_API_KEY).toBe('from-root');
+  });
+
+  it('is a no-op when neither .ralph/.env.local nor root .env.local exist', () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    const readSpy = vi.spyOn(fs, 'readFileSync');
+
+    loadApiKeysFromEnvLocal();
+
+    expect(readSpy).not.toHaveBeenCalled();
+    expect(process.env.OPENAI_API_KEY).toBeUndefined();
+  });
+
   it('resolves path relative to process.cwd()', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
     const existsSpy = vi.spyOn(fs, 'existsSync');
 
     loadApiKeysFromEnvLocal();
 
-    const expectedPath = path.join(process.cwd(), '.ralph', '.env.local');
-    expect(existsSpy).toHaveBeenCalledWith(expectedPath);
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
+    const rootPath = path.join(process.cwd(), '.env.local');
+    expect(existsSpy).toHaveBeenCalledWith(ralphPath);
+    expect(existsSpy).toHaveBeenCalledWith(rootPath);
   });
 
   it('loads BRAINTRUST_API_KEY as a known key', () => {
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphPath);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       'BRAINTRUST_API_KEY=bt-xxx\n'
     );
@@ -180,8 +236,9 @@ describe('loadApiKeysFromEnvLocal', () => {
   });
 
   it('does not override existing env with empty value from file', () => {
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
     process.env.OPENAI_API_KEY = 'from-shell';
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphPath);
     vi.spyOn(fs, 'readFileSync').mockReturnValue('OPENAI_API_KEY=\n');
 
     loadApiKeysFromEnvLocal();
@@ -190,7 +247,8 @@ describe('loadApiKeysFromEnvLocal', () => {
   });
 
   it('strips quotes from values before setting env', () => {
-    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const ralphPath = path.join(process.cwd(), '.ralph', '.env.local');
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphPath);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(
       'OPENAI_API_KEY="sk-quoted-123"\n'
     );
