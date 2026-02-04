@@ -80,7 +80,7 @@ const DEFAULT_VARIABLES: Partial<TemplateVariables> = {
   styling: 'css',
   stylingVersion: '',
   stylingVariant: '',
-  appDir: 'app',
+  appDir: '.',
 };
 
 /**
