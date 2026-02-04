@@ -71,10 +71,12 @@ export function writeKeysToEnvFile(filePath: string, keys: Record<string, string
   }
 
   // Merge keys into content
+  const escapeRegex = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
   for (const [envVar, value] of Object.entries(keys)) {
     if (!value) continue; // Skip empty values
 
-    const keyRegex = new RegExp(`^${envVar}=.*$`, 'm');
+    const keyRegex = new RegExp(`^${escapeRegex(envVar)}=.*$`, 'm');
     if (keyRegex.test(envContent)) {
       // Replace existing key
       envContent = envContent.replace(keyRegex, `${envVar}=${value}`);
