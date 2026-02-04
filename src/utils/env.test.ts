@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { parseEnvContent, loadApiKeysFromEnvLocal } from './env.js';
+import { parseEnvContent, loadApiKeysFromEnvLocal, writeKeysToEnvFile } from './env.js';
 
 describe('parseEnvContent', () => {
   it('returns empty object for empty input', () => {
@@ -198,5 +198,147 @@ describe('loadApiKeysFromEnvLocal', () => {
     loadApiKeysFromEnvLocal();
 
     expect(process.env.OPENAI_API_KEY).toBe('sk-quoted-123');
+  });
+});
+
+describe('writeKeysToEnvFile', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('creates file when it does not exist', () => {
+    const filePath = '/fake/path/.env.local';
+    const keys = { OPENAI_API_KEY: 'sk-test-123' };
+
+    vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    writeKeysToEnvFile(filePath, keys);
+
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      filePath,
+      'OPENAI_API_KEY=sk-test-123\n'
+    );
+  });
+
+  it('merges keys into existing file content (preserves other keys)', () => {
+    const filePath = '/fake/path/.env.local';
+    const keys = { ANTHROPIC_API_KEY: 'sk-ant-456' };
+    const existingContent = 'OPENAI_API_KEY=sk-test-123\nOTHER_KEY=value\n';
+
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(existingContent);
+    vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    writeKeysToEnvFile(filePath, keys);
+
+    const writtenContent = (fs.writeFileSync as any).mock.calls[0][1];
+    expect(writtenContent).toContain('OPENAI_API_KEY=sk-test-123');
+    expect(writtenContent).toContain('OTHER_KEY=value');
+    expect(writtenContent).toContain('ANTHROPIC_API_KEY=sk-ant-456');
+  });
+
+  it('replaces existing key value', () => {
+    const filePath = '/fake/path/.env.local';
+    const keys = { OPENAI_API_KEY: 'sk-new-value' };
+    const existingContent = 'OPENAI_API_KEY=sk-old-value\nOTHER_KEY=value\n';
+
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(existingContent);
+    vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    writeKeysToEnvFile(filePath, keys);
+
+    const writtenContent = (fs.writeFileSync as any).mock.calls[0][1];
+    expect(writtenContent).toContain('OPENAI_API_KEY=sk-new-value');
+    expect(writtenContent).not.toContain('sk-old-value');
+    expect(writtenContent).toContain('OTHER_KEY=value');
+  });
+
+  it('handles empty keys object (no-op)', () => {
+    const filePath = '/fake/path/.env.local';
+    const keys = {};
+    const existingContent = 'OPENAI_API_KEY=sk-test-123\n';
+
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(existingContent);
+    vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    writeKeysToEnvFile(filePath, keys);
+
+    expect(fs.writeFileSync).toHaveBeenCalledWith(
+      filePath,
+      existingContent
+    );
+  });
+
+  it('skips keys with empty string values', () => {
+    const filePath = '/fake/path/.env.local';
+    const keys = { OPENAI_API_KEY: '', ANTHROPIC_API_KEY: 'sk-ant-456' };
+
+    vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    writeKeysToEnvFile(filePath, keys);
+
+    const writtenContent = (fs.writeFileSync as any).mock.calls[0][1];
+    expect(writtenContent).not.toContain('OPENAI_API_KEY');
+    expect(writtenContent).toContain('ANTHROPIC_API_KEY=sk-ant-456');
+  });
+
+  it('creates parent directory if it does not exist', () => {
+    const filePath = '/fake/path/to/.env.local';
+    const keys = { OPENAI_API_KEY: 'sk-test-123' };
+
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => {
+      if (p === '/fake/path/to') return false;
+      return false;
+    });
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    writeKeysToEnvFile(filePath, keys);
+
+    expect(fs.mkdirSync).toHaveBeenCalledWith('/fake/path/to', { recursive: true });
+  });
+
+  it('handles multiple keys at once', () => {
+    const filePath = '/fake/path/.env.local';
+    const keys = {
+      OPENAI_API_KEY: 'sk-test-123',
+      ANTHROPIC_API_KEY: 'sk-ant-456',
+      TAVILY_API_KEY: 'tvly-789',
+    };
+
+    vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    writeKeysToEnvFile(filePath, keys);
+
+    const writtenContent = (fs.writeFileSync as any).mock.calls[0][1];
+    expect(writtenContent).toContain('OPENAI_API_KEY=sk-test-123');
+    expect(writtenContent).toContain('ANTHROPIC_API_KEY=sk-ant-456');
+    expect(writtenContent).toContain('TAVILY_API_KEY=tvly-789');
+  });
+
+  it('preserves formatting when replacing keys', () => {
+    const filePath = '/fake/path/.env.local';
+    const keys = { OPENAI_API_KEY: 'sk-new-value' };
+    const existingContent = '# Comment\nOPENAI_API_KEY=sk-old-value\n# Another comment\nOTHER_KEY=value\n';
+
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    vi.spyOn(fs, 'readFileSync').mockReturnValue(existingContent);
+    vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    writeKeysToEnvFile(filePath, keys);
+
+    const writtenContent = (fs.writeFileSync as any).mock.calls[0][1];
+    expect(writtenContent).toContain('# Comment');
+    expect(writtenContent).toContain('# Another comment');
+    expect(writtenContent).toContain('OPENAI_API_KEY=sk-new-value');
+    expect(writtenContent).toContain('OTHER_KEY=value');
   });
 });

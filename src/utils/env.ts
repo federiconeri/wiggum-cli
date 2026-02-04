@@ -46,6 +46,48 @@ export function parseEnvContent(content: string): Record<string, string> {
 }
 
 /**
+ * Write API keys to an env file, preserving existing content.
+ *
+ * - Merges keys into existing file content (preserves other keys).
+ * - Replaces existing key values if the key already exists.
+ * - Creates parent directories if they don't exist.
+ * - Creates the file if it doesn't exist.
+ * - Skips empty values (keys with empty strings are ignored).
+ *
+ * @param filePath - Absolute path to the .env.local file
+ * @param keys - Record of environment variable names to values
+ */
+export function writeKeysToEnvFile(filePath: string, keys: Record<string, string>): void {
+  // Ensure parent directory exists
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  // Read existing content if file exists
+  let envContent = '';
+  if (fs.existsSync(filePath)) {
+    envContent = fs.readFileSync(filePath, 'utf-8');
+  }
+
+  // Merge keys into content
+  for (const [envVar, value] of Object.entries(keys)) {
+    if (!value) continue; // Skip empty values
+
+    const keyRegex = new RegExp(`^${envVar}=.*$`, 'm');
+    if (keyRegex.test(envContent)) {
+      // Replace existing key
+      envContent = envContent.replace(keyRegex, `${envVar}=${value}`);
+    } else {
+      // Append new key
+      envContent = envContent.trimEnd() + (envContent ? '\n' : '') + `${envVar}=${value}\n`;
+    }
+  }
+
+  fs.writeFileSync(filePath, envContent);
+}
+
+/**
  * Load known AI provider API keys from .ralph/.env.local into process.env.
  *
  * - Only keys in KNOWN_API_KEYS are loaded; all others are ignored.
