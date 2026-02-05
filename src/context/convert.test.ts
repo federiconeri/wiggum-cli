@@ -1,6 +1,10 @@
 // src/context/convert.test.ts
 import { describe, it, expect } from 'vitest';
-import { toPersistedScanResult, toPersistedAIAnalysis } from './convert.js';
+import {
+  toPersistedScanResult,
+  toPersistedAIAnalysis,
+  toScanResultFromPersisted,
+} from './convert.js';
 import type { ScanResult } from '../scanner/types.js';
 import type { AIAnalysisResult } from '../ai/enhancer.js';
 
@@ -83,6 +87,43 @@ describe('context/convert', () => {
     it('returns empty object for undefined analysis', () => {
       const result = toPersistedAIAnalysis(undefined);
       expect(result).toEqual({});
+    });
+  });
+
+  describe('toScanResultFromPersisted', () => {
+    it('rehydrates minimal ScanResult for codebase summary', () => {
+      const persisted = {
+        framework: 'Next.js',
+        frameworkVersion: '14.0.0',
+        frameworkVariant: 'app-router',
+        packageManager: 'pnpm',
+        testing: { unit: 'Vitest', e2e: 'Playwright' },
+        styling: 'Tailwind CSS',
+        database: 'Supabase',
+        orm: 'Prisma',
+        auth: 'NextAuth',
+      };
+
+      const scan = toScanResultFromPersisted(persisted, '/tmp/project');
+
+      expect(scan.projectRoot).toBe('/tmp/project');
+      expect(scan.stack.framework?.name).toBe('Next.js');
+      expect(scan.stack.framework?.version).toBe('14.0.0');
+      expect(scan.stack.framework?.variant).toBe('app-router');
+      expect(scan.stack.packageManager?.name).toBe('pnpm');
+      expect(scan.stack.testing?.unit?.name).toBe('Vitest');
+      expect(scan.stack.testing?.e2e?.name).toBe('Playwright');
+      expect(scan.stack.styling?.name).toBe('Tailwind CSS');
+      expect(scan.stack.database?.name).toBe('Supabase');
+      expect(scan.stack.orm?.name).toBe('Prisma');
+      expect(scan.stack.auth?.name).toBe('NextAuth');
+    });
+
+    it('handles empty persisted fields without crashing', () => {
+      const scan = toScanResultFromPersisted({}, '/tmp/project');
+      expect(scan.projectRoot).toBe('/tmp/project');
+      expect(scan.stack.framework).toBeUndefined();
+      expect(scan.stack.testing).toBeUndefined();
     });
   });
 });

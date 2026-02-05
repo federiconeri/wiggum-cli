@@ -25,7 +25,11 @@ import {
 } from '../hooks/useSpecGenerator.js';
 import { InterviewOrchestrator, type SessionContext } from '../orchestration/interview-orchestrator.js';
 import { colors, theme } from '../theme.js';
-import { loadContext } from '../../context/index.js';
+import {
+  loadContext,
+  toScanResultFromPersisted,
+  getContextAge,
+} from '../../context/index.js';
 
 /**
  * Props for the InterviewScreen component
@@ -137,6 +141,18 @@ export function InterviewScreen({
               implementationGuidelines: persisted.aiAnalysis.implementationGuidelines,
               keyPatterns: persisted.aiAnalysis.technologyPractices?.practices,
             };
+
+            // Rehydrate a minimal scan result for Project Tech Stack context
+            resolvedScanResult = toScanResultFromPersisted(
+              persisted.scanResult,
+              projectRoot,
+            );
+
+            const { human } = getContextAge(persisted);
+            addMessage(
+              'system',
+              `Using cached project context from .ralph/.context.json (updated ${human} ago). Run /sync to refresh.`,
+            );
           }
         } catch (err) {
           // Show error but continue without context

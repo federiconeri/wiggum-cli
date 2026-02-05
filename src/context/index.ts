@@ -14,5 +14,6 @@ export {
 export {
   toPersistedScanResult,
   toPersistedAIAnalysis,
+  toScanResultFromPersisted,
   getGitMetadata,
 } from './convert.js';
