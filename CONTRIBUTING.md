@@ -1,8 +1,8 @@
 # Contributing to Wiggum CLI
 
-We welcome contributions! This document explains how to help and what to expect.
+Thanks for your interest in contributing! This guide covers everything you need to get started.
 
-## What we accept
+## What We Accept
 
 ### Always welcome
 - **Bug fixes** — Found something broken? PRs welcome
@@ -14,55 +14,149 @@ We welcome contributions! This document explains how to help and what to expect.
 - **New commands** — Open an issue before coding to align on scope
 - **TUI components** — Discuss architecture impacts first
 - **Integrations** — New API integrations need maintainer approval
+- **Large refactors** — These need alignment first
 
-## How to contribute
-
-1. **Check existing issues** — Someone may already be working on it
-2. **Open an issue first** — For anything beyond bug fixes, let's discuss before you code
-3. **Wait for approval** — A maintainer will respond and give the go-ahead
-4. **Keep PRs focused** — Small, single-purpose PRs are easier to review
-5. **Add tests** — For bug fixes, include a test that would have caught it
-
-## Development setup
+## Getting Started
 
 ```bash
-# Clone the repo
 git clone https://github.com/federiconeri/wiggum-cli.git
 cd wiggum-cli
-
-# Install dependencies
-pnpm install
-
-# Run in development mode
-pnpm dev
-
-# Run tests
-pnpm test
+npm install
+npm run build
 ```
 
-## PR guidelines
+### Prerequisites
 
-- Reference the related issue in your PR description
-- Keep commits atomic and well-described
-- Ensure tests pass before submitting
-- Be patient — reviews may take a few days depending on maintainer availability
+- **Node.js** >= 18.0.0
+- **npm**
+- **Git**
 
-## What we don't accept PRs for
+## Development
 
-- **Core AI/spec generation logic** — Maintained internally to ensure consistency
-- **Paid features** — Dashboard, API infrastructure, and cloud features are developed separately
-- **Large refactors without discussion** — These need alignment first
+### Build
+
+```bash
+npm run build        # Compile TypeScript + copy templates
+npm run dev          # Watch mode (recompiles on save)
+```
+
+### Test
+
+```bash
+npm test             # Run all tests (vitest)
+npm run test:watch   # Watch mode
+```
+
+### Run locally
+
+```bash
+npm start            # Runs bin/ralph.js
+# or
+node bin/ralph.js
+```
+
+## Project Structure
+
+```
+src/
+├── ai/            # AI agents, conversation management, enhancers
+├── commands/      # CLI command handlers (init, new, run, etc.)
+├── context/       # Project context storage and conversion
+├── generator/     # Template-based file generation
+├── repl/          # REPL/interactive shell logic
+├── scanner/       # Tech stack detection (80+ technologies)
+├── templates/     # Templates for prompts, scripts, configs
+├── terminal/      # Terminal utilities
+├── tui/           # Ink-based terminal UI (screens, components, hooks)
+├── utils/         # Shared utilities (config, env, tracing)
+└── index.ts       # Entry point
+```
+
+Tests live next to source files as `*.test.ts`.
+
+## Making Changes
+
+### Branch naming
+
+```
+feat/short-description     # New features
+fix/short-description      # Bug fixes
+chore/short-description    # Maintenance, refactoring
+docs/short-description     # Documentation
+```
+
+### Commit messages
+
+We use [Conventional Commits](https://www.conventionalcommits.org/):
+
+```
+feat: add spec autocomplete to /run command
+fix(tui): handle empty input in interview screen
+chore: bump version to 0.11.19
+docs: update CLI reference in README
+```
+
+**Format:** `type(scope): description`
+
+| Type | When to use |
+|------|------------|
+| `feat` | New feature or capability |
+| `fix` | Bug fix |
+| `chore` | Maintenance, deps, version bumps |
+| `docs` | Documentation only |
+| `refactor` | Code change that neither fixes nor adds a feature |
+| `test` | Adding or updating tests |
+
+Common scopes: `tui`, `ai`, `cli`, `scanner`, `loop`.
+
+## Pull Requests
+
+1. Fork the repo and create your branch from `main`
+2. Make your changes and add tests if applicable
+3. Ensure `npm test` and `npm run build` pass
+4. Write a clear PR title using the commit convention format
+5. Reference the related issue in your PR description
+6. Keep PRs small and focused — single-purpose PRs are easier to review
+
+## Code Style
+
+- **TypeScript** with strict mode enabled
+- **ESM** modules (`import`/`export`, `.js` extensions in imports)
+- **React JSX** for TUI components (Ink)
+- Run `npm run build` to catch type errors before submitting
+
+## Reporting Bugs
+
+[Open an issue](https://github.com/federiconeri/wiggum-cli/issues/new) with:
+
+- Steps to reproduce
+- Expected vs actual behavior
+- Node.js version (`node -v`)
+- Wiggum version (`wiggum --version`)
+- OS and terminal
+
+## Feature Requests
+
+[Open an issue](https://github.com/federiconeri/wiggum-cli/issues/new) describing:
+
+- The problem you're trying to solve
+- Your proposed solution
+- Any alternatives you considered
+
+## Out of Scope
+
+We don't accept PRs for these areas without prior discussion:
+
+- **Core AI logic** — Maintained internally to ensure consistency and quality
+- **Paid features** — Dashboard, API infrastructure, cloud environment, and notification systems are developed separately
+- **Large refactors without discussion** — These need alignment with the maintainer first
 
 PRs in these areas without prior discussion will likely be closed.
 
-## Found a security issue?
+## Security Issues
 
 Please don't open a public issue. Email security concerns directly to the maintainers.
 
-## Questions?
+## License
 
-Open a [Discussion](https://github.com/federiconeri/wiggum-cli/discussions) for general questions, ideas, or feedback.
-
----
-
-Thank you for contributing!
+By contributing, you agree that your contributions will be licensed under the project's [MIT + Commons Clause license](LICENSE).
