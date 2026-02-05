@@ -169,7 +169,7 @@ function SystemMessage({ content }: { content: string }): React.ReactElement {
   if (isSyncFailure) {
     return (
       <Box marginY={1}>
-        <Text color={colors.red}>{content}</Text>
+        <Text color={colors.pink}>{content}</Text>
       </Box>
     );
   }
