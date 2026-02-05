@@ -47,6 +47,10 @@ export function useSync(): UseSyncReturn {
         });
         const enhanced = await enhancer.enhance(scanResult);
 
+        if (enhanced.aiError) {
+          throw new Error(`AI analysis failed: ${enhanced.aiError}`);
+        }
+
         // Step 3: Persist
         const git = await getGitMetadata(projectRoot);
         await saveContext(
@@ -54,7 +58,7 @@ export function useSync(): UseSyncReturn {
             lastAnalyzedAt: new Date().toISOString(),
             gitCommitHash: git.gitCommitHash,
             gitBranch: git.gitBranch,
-            scanResult: toPersistedScanResult(scanResult),
+            scanResult: toPersistedScanResult(enhanced),
             aiAnalysis: toPersistedAIAnalysis(enhanced.aiAnalysis),
           },
           projectRoot,

@@ -223,7 +223,7 @@ export function InitScreen({
               lastAnalyzedAt: new Date().toISOString(),
               gitCommitHash: git.gitCommitHash,
               gitBranch: git.gitBranch,
-              scanResult: toPersistedScanResult(state.scanResult!),
+              scanResult: toPersistedScanResult(enhancedResult),
               aiAnalysis: toPersistedAIAnalysis(enhancedResult.aiAnalysis),
             },
             projectRoot,
