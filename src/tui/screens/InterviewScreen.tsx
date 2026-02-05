@@ -13,7 +13,7 @@ import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { AIProvider } from '../../ai/providers.js';
 import type { ScanResult } from '../../scanner/types.js';
-import { StatusLine } from '../components/StatusLine.js';
+import { FooterStatusBar } from '../components/FooterStatusBar.js';
 import { MessageList } from '../components/MessageList.js';
 import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { ChatInput } from '../components/ChatInput.js';
@@ -338,13 +338,6 @@ export function InterviewScreen({
 
   return (
     <Box flexDirection="column" padding={1}>
-      {/* Status line: Action │ Phase (X/Y) │ feature name */}
-      <StatusLine
-        action="New Spec"
-        phase={phaseString}
-        path={featureName}
-      />
-
       {/* Error display */}
       {state.error && (
         <Box marginY={1}>
@@ -386,6 +379,13 @@ export function InterviewScreen({
           />
         </Box>
       )}
+
+      {/* Footer status bar */}
+      <FooterStatusBar
+        action="New Spec"
+        phase={phaseString}
+        path={featureName}
+      />
     </Box>
   );
 }

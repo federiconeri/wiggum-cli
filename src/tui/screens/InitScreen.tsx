@@ -13,7 +13,7 @@ import React, { useEffect, useRef, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { colors, theme } from '../theme.js';
 import { useInit, INIT_PHASE_CONFIGS, INIT_TOTAL_PHASES } from '../hooks/useInit.js';
-import { StatusLine } from '../components/StatusLine.js';
+import { FooterStatusBar } from '../components/FooterStatusBar.js';
 import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { Select, type SelectOption } from '../components/Select.js';
 import { PasswordInput } from '../components/PasswordInput.js';
@@ -577,13 +577,6 @@ export function InitScreen({
 
   return (
     <Box flexDirection="column" padding={1}>
-      {/* Status line: Action │ Phase (X/Y) │ Path */}
-      <StatusLine
-        action="Initialize Project"
-        phase={phaseString}
-        path={projectRoot}
-      />
-
       {/* Scan summary */}
       <Box marginTop={1}>
         {renderScanSummary()}
@@ -591,6 +584,13 @@ export function InitScreen({
 
       {/* Phase-specific content */}
       <Box marginTop={1}>{renderPhaseContent()}</Box>
+
+      {/* Footer status bar */}
+      <FooterStatusBar
+        action="Initialize Project"
+        phase={phaseString}
+        path={projectRoot}
+      />
     </Box>
   );
 }
