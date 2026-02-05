@@ -5,7 +5,7 @@
  * Handles slash commands and provides navigation to other screens.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { MessageList, type Message } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
@@ -13,6 +13,7 @@ import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { ActionOutput } from '../components/ActionOutput.js';
 import { FooterStatusBar } from '../components/FooterStatusBar.js';
 import { colors, theme } from '../theme.js';
+import { loadContext, getContextAge } from '../../context/index.js';
 import {
   parseInput,
   resolveCommandAlias,
@@ -21,6 +22,7 @@ import {
 } from '../../repl/command-parser.js';
 import type { SessionState } from '../../repl/session-state.js';
 import { useSync } from '../hooks/useSync.js';
+import path from 'node:path';
 
 /**
  * Navigation targets for the shell
@@ -74,6 +76,7 @@ export function MainShell({
 }: MainShellProps): React.ReactElement {
   const { exit } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [contextAge, setContextAge] = useState<string | null>(null);
 
   // Sync hook
   const { status: syncStatus, error: syncError, sync } = useSync();
@@ -89,6 +92,44 @@ export function MainShell({
     };
     setMessages((prev) => [...prev, message]);
   }, []);
+
+  // Load persisted context age (initially and after sync)
+  useEffect(() => {
+    let cancelled = false;
+
+    const refresh = async () => {
+      if (!sessionState.initialized) {
+        setContextAge(null);
+        return;
+      }
+
+      try {
+        const persisted = await loadContext(sessionState.projectRoot);
+        if (cancelled) return;
+        if (persisted) {
+          const { human } = getContextAge(persisted);
+          setContextAge(human);
+        } else {
+          setContextAge(null);
+        }
+      } catch {
+        if (!cancelled) {
+          setContextAge(null);
+        }
+      }
+    };
+
+    refresh();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionState.projectRoot, sessionState.initialized, syncStatus]);
+
+  const projectLabel = useMemo(
+    () => path.basename(sessionState.projectRoot),
+    [sessionState.projectRoot],
+  );
 
   /**
    * Handle /help command
@@ -279,17 +320,6 @@ export function MainShell({
 
   return (
     <Box flexDirection="column" padding={1}>
-      {/* Header */}
-      <Box marginBottom={1}>
-        <Text color={colors.yellow} bold>Wiggum Interactive Mode</Text>
-        <Text dimColor> │ </Text>
-        {sessionState.initialized ? (
-          <Text color={colors.green}>Ready</Text>
-        ) : (
-          <Text color={colors.orange}>Not initialized - run /init</Text>
-        )}
-      </Box>
-
       {/* Message history */}
       {messages.length > 0 && (
         <Box marginY={1} flexDirection="column">
@@ -361,9 +391,15 @@ export function MainShell({
 
       {/* Footer status bar */}
       <FooterStatusBar
-        action="Main Shell"
+        action={projectLabel || 'Main Shell'}
         phase={sessionState.provider ? `${sessionState.provider}/${sessionState.model}` : 'No provider'}
-        path={sessionState.initialized ? '/help for commands' : 'Not initialized - /init'}
+        path={
+          sessionState.initialized
+            ? contextAge
+              ? `Context: cached ${contextAge}`
+              : 'Context: none — /sync'
+            : 'Not initialized — /init'
+        }
       />
     </Box>
   );
