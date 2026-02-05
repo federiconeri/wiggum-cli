@@ -23,8 +23,9 @@ import {
   TOTAL_DISPLAY_PHASES,
   type GeneratorPhase,
 } from '../hooks/useSpecGenerator.js';
-import { InterviewOrchestrator } from '../orchestration/interview-orchestrator.js';
+import { InterviewOrchestrator, type SessionContext } from '../orchestration/interview-orchestrator.js';
 import { colors, theme } from '../theme.js';
+import { loadContext } from '../../context/index.js';
 
 /**
  * Props for the InterviewScreen component
@@ -107,10 +108,8 @@ export function InterviewScreen({
 
   // Initialize the orchestrator when the component mounts
   useEffect(() => {
-    // Reset cancelled flag on mount
     isCancelledRef.current = false;
 
-    // Initialize hook state
     initialize({
       featureName,
       projectRoot,
@@ -118,81 +117,107 @@ export function InterviewScreen({
       model,
     });
 
-    // Create orchestrator with callbacks that check for cancellation
-    const orchestrator = new InterviewOrchestrator({
-      featureName,
-      projectRoot,
-      provider,
-      model,
-      scanResult,
-      onMessage: (role, content) => {
-        if (isCancelledRef.current) return;
-        addMessage(role, content);
-      },
-      onStreamChunk: (chunk) => {
-        if (isCancelledRef.current) return;
-        // Don't stream during generation phase - show blocking indicator instead
-        if (isGeneratingRef.current) return;
-        if (!isStreamingRef.current) {
-          // Start a new streaming message
-          isStreamingRef.current = true;
-          streamContentRef.current = chunk;
-          addStreamingMessage(chunk);
-        } else {
-          // Append to existing streaming content
-          streamContentRef.current += chunk;
-          updateStreamingMessage(streamContentRef.current);
+    // Async IIFE to allow loading persisted context
+    (async () => {
+      // Determine session context: use scanResult prop if available,
+      // otherwise try loading persisted context from disk
+      let resolvedScanResult = scanResult;
+      let resolvedSessionContext: SessionContext | undefined;
+
+      if (!scanResult) {
+        try {
+          const persisted = await loadContext(projectRoot);
+          if (persisted) {
+            // Map persisted AI analysis to SessionContext
+            resolvedSessionContext = {
+              entryPoints: persisted.aiAnalysis.projectContext?.entryPoints,
+              keyDirectories: persisted.aiAnalysis.projectContext?.keyDirectories,
+              commands: persisted.aiAnalysis.commands as SessionContext['commands'],
+              namingConventions: persisted.aiAnalysis.projectContext?.namingConventions,
+              implementationGuidelines: persisted.aiAnalysis.implementationGuidelines,
+              keyPatterns: persisted.aiAnalysis.technologyPractices?.practices,
+            };
+          }
+        } catch (err) {
+          // Show error but continue without context
+          if (!isCancelledRef.current) {
+            addMessage(
+              'system',
+              `Unable to load cached project context; continuing without it.`,
+            );
+          }
         }
-      },
-      onStreamComplete: () => {
-        if (isCancelledRef.current) return;
-        if (isStreamingRef.current) {
-          completeStreamingMessage();
-          isStreamingRef.current = false;
-          streamContentRef.current = '';
-        }
-      },
-      onToolStart: (toolName, input) => {
-        if (isCancelledRef.current) return '';
-        return startToolCall(toolName, input);
-      },
-      onToolEnd: (toolId, output, error) => {
-        if (isCancelledRef.current) return;
-        completeToolCall(toolId, output, error);
-      },
-      onPhaseChange: (phase: GeneratorPhase) => {
-        if (isCancelledRef.current) return;
-        // Track generation phase in ref for reliable streaming blocking
-        isGeneratingRef.current = phase === 'generation';
-        setPhase(phase);
-      },
-      onComplete: (spec) => {
-        if (isCancelledRef.current) return;
-        setGeneratedSpec(spec);
-        // Complete immediately - App will add summary to thread
-        // Pass messages so they can be added to thread history
-        onCompleteRef.current(spec, messagesRef.current);
-      },
-      onError: (error) => {
-        if (isCancelledRef.current) return;
-        setError(error);
-      },
-      onWorkingChange: (isWorking, status) => {
-        if (isCancelledRef.current) return;
-        setWorking(isWorking, status);
-      },
-      onReady: () => {
-        if (isCancelledRef.current) return;
-        setReady();
-      },
-    });
+      }
 
-    orchestratorRef.current = orchestrator;
+      if (isCancelledRef.current) return;
 
-    // Start the orchestrator
-    orchestrator.start();
+      const orchestrator = new InterviewOrchestrator({
+        featureName,
+        projectRoot,
+        provider,
+        model,
+        scanResult: resolvedScanResult,
+        sessionContext: resolvedSessionContext,
+        onMessage: (role, content) => {
+          if (isCancelledRef.current) return;
+          addMessage(role, content);
+        },
+        onStreamChunk: (chunk) => {
+          if (isCancelledRef.current) return;
+          if (isGeneratingRef.current) return;
+          if (!isStreamingRef.current) {
+            isStreamingRef.current = true;
+            streamContentRef.current = chunk;
+            addStreamingMessage(chunk);
+          } else {
+            streamContentRef.current += chunk;
+            updateStreamingMessage(streamContentRef.current);
+          }
+        },
+        onStreamComplete: () => {
+          if (isCancelledRef.current) return;
+          if (isStreamingRef.current) {
+            completeStreamingMessage();
+            isStreamingRef.current = false;
+            streamContentRef.current = '';
+          }
+        },
+        onToolStart: (toolName, input) => {
+          if (isCancelledRef.current) return '';
+          return startToolCall(toolName, input);
+        },
+        onToolEnd: (toolId, output, error) => {
+          if (isCancelledRef.current) return;
+          completeToolCall(toolId, output, error);
+        },
+        onPhaseChange: (phase: GeneratorPhase) => {
+          if (isCancelledRef.current) return;
+          isGeneratingRef.current = phase === 'generation';
+          setPhase(phase);
+        },
+        onComplete: (spec) => {
+          if (isCancelledRef.current) return;
+          setGeneratedSpec(spec);
+          onCompleteRef.current(spec, messagesRef.current);
+        },
+        onError: (error) => {
+          if (isCancelledRef.current) return;
+          setError(error);
+        },
+        onWorkingChange: (isWorking, status) => {
+          if (isCancelledRef.current) return;
+          setWorking(isWorking, status);
+        },
+        onReady: () => {
+          if (isCancelledRef.current) return;
+          setReady();
+        },
+      });
 
-    // Cleanup: mark as cancelled to prevent callbacks after unmount
+      orchestratorRef.current = orchestrator;
+      orchestrator.start();
+    })();
+
     return () => {
       isCancelledRef.current = true;
       orchestratorRef.current = null;
