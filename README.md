@@ -27,7 +27,7 @@
 
 Wiggum is an **AI agent** that plugs into any codebase and makes it ready for autonomous feature development — no configuration, no boilerplate.
 
-It works in two phases. First, **Wiggum itself is the agent**: it scans your project, detects your stack, and runs an AI-guided interview to produce detailed specs, prompts, and scripts — all tailored to your codebase. Then it delegates the actual coding to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex, or any coding agent, running an autonomous **implement → test → fix** loop until the feature ships.
+It works in two phases. First, **Wiggum itself is the agent**: it scans your project, detects your stack, and runs an AI-guided interview to produce detailed specs, prompts, and scripts — all tailored to your codebase. Then it delegates the actual coding to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex, or any CLI-based coding agent, running an autonomous **implement → test → fix** loop until the feature ships.
 
 Plug & play. Point it at a repo. It figures out the rest.
 
