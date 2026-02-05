@@ -5,11 +5,13 @@
  * Handles slash commands and provides navigation to other screens.
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { MessageList, type Message } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
-import { colors } from '../theme.js';
+import { WorkingIndicator } from '../components/WorkingIndicator.js';
+import { ActionOutput } from '../components/ActionOutput.js';
+import { colors, theme } from '../theme.js';
 import {
   parseInput,
   resolveCommandAlias,
@@ -86,16 +88,6 @@ export function MainShell({
     };
     setMessages((prev) => [...prev, message]);
   }, []);
-
-  // Watch sync status changes
-  useEffect(() => {
-    if (syncStatus === 'success') {
-      addSystemMessage('Project context sync completed successfully.');
-    } else if (syncStatus === 'error') {
-      const msg = syncError?.message || 'Unknown error';
-      addSystemMessage(`Sync failed: ${msg}`);
-    }
-  }, [syncStatus, syncError, addSystemMessage]);
 
   /**
    * Handle /help command
@@ -200,7 +192,6 @@ export function MainShell({
       addSystemMessage('Sync already in progress.');
       return;
     }
-    addSystemMessage('Starting sync of project context…');
     sync(sessionState.projectRoot, sessionState.provider, sessionState.model);
   }, [sessionState, syncStatus, addSystemMessage, sync]);
 
@@ -310,6 +301,58 @@ export function MainShell({
       {messages.length > 0 && (
         <Box marginY={1} flexDirection="column">
           <MessageList messages={messages} />
+        </Box>
+      )}
+
+      {/* Sync UI */}
+      {syncStatus !== 'idle' && (
+        <Box marginY={1} flexDirection="column" gap={1}>
+          {syncStatus === 'running' && (
+            <WorkingIndicator
+              state={{
+                isWorking: true,
+                status: 'Syncing project context…',
+              }}
+            />
+          )}
+
+          <ActionOutput
+            actionName="Sync"
+            description="Project context"
+            status={
+              syncStatus === 'running'
+                ? 'running'
+                : syncStatus === 'success'
+                  ? 'success'
+                  : 'error'
+            }
+            output={
+              syncStatus === 'running'
+                ? 'Scanning + AI analysis…'
+                : syncStatus === 'success'
+                  ? 'Updated .ralph/.context.json'
+                  : undefined
+            }
+            error={syncStatus === 'error' ? (syncError?.message || 'Unknown error') : undefined}
+            previewLines={2}
+          />
+
+          {syncStatus === 'success' && (
+            <Box marginTop={1} flexDirection="column">
+              <Box flexDirection="row">
+                <Text color={colors.green}>{theme.chars.bullet} </Text>
+                <Text>Done. Project context updated.</Text>
+              </Box>
+              <Box marginTop={1} flexDirection="column">
+                <Text bold>What's next:</Text>
+                <Box flexDirection="row" gap={1}>
+                  <Text color={colors.green}>›</Text>
+                  <Text color={colors.blue}>/new {'<feature>'}</Text>
+                  <Text dimColor>Create a feature specification</Text>
+                </Box>
+              </Box>
+            </Box>
+          )}
         </Box>
       )}
 

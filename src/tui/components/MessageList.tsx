@@ -153,6 +153,8 @@ function AssistantMessage({
 function SystemMessage({ content }: { content: string }): React.ReactElement {
   // Check if this is a phase header (e.g., "Phase 2: Goals - Describe what you want to build")
   const phaseMatch = content.match(/^Phase (\d+): (.+?) - (.+)$/);
+  const isSyncFailure = content.toLowerCase().startsWith('sync failed:');
+  const isSyncMessage = content.toLowerCase().startsWith('sync:');
 
   if (phaseMatch) {
     const [, phaseNum, phaseName, description] = phaseMatch;
@@ -160,6 +162,22 @@ function SystemMessage({ content }: { content: string }): React.ReactElement {
       <Box marginY={1} flexDirection="column">
         <Text color={theme.colors.brand} bold>Phase {phaseNum}: {phaseName}</Text>
         <Text dimColor>{description}</Text>
+      </Box>
+    );
+  }
+
+  if (isSyncFailure) {
+    return (
+      <Box marginY={1}>
+        <Text color={colors.red}>{content}</Text>
+      </Box>
+    );
+  }
+
+  if (isSyncMessage) {
+    return (
+      <Box marginY={1}>
+        <Text color={colors.blue}>{content}</Text>
       </Box>
     );
   }

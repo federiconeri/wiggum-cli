@@ -163,6 +163,7 @@ export function CommandDropdown({
  */
 export const DEFAULT_COMMANDS: Command[] = [
   { name: 'init', description: 'Initialize project with CLAUDE.md' },
+  { name: 'sync', description: 'Refresh project context (scan + AI analysis)' },
   { name: 'new', description: 'Create a new feature specification' },
   { name: 'run', description: 'Run a spec file with AI' },
   { name: 'help', description: 'Show available commands' },
