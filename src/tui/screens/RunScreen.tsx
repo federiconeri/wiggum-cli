@@ -9,7 +9,7 @@ import { Box, Text, useInput } from 'ink';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { StatusLine } from '../components/StatusLine.js';
+import { FooterStatusBar } from '../components/FooterStatusBar.js';
 import { Confirm } from '../components/Confirm.js';
 import { colors, theme } from '../theme.js';
 import {
@@ -318,12 +318,6 @@ export function RunScreen({
 
   return (
     <Box flexDirection="column" padding={1}>
-      <StatusLine
-        action="Run Loop"
-        phase={phaseLine}
-        path={featureName}
-      />
-
       {error && (
         <Box marginTop={1}>
           <Text color={theme.colors.error}>Error: {error}</Text>
@@ -399,6 +393,13 @@ export function RunScreen({
           />
         </Box>
       )}
+
+      {/* Footer status bar */}
+      <FooterStatusBar
+        action="Run Loop"
+        phase={phaseLine}
+        path={featureName}
+      />
     </Box>
   );
 }
