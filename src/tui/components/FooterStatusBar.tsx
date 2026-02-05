@@ -39,7 +39,8 @@ const SEPARATOR_CHAR = '\u2500';
  */
 export function FooterStatusBar(props: FooterStatusBarProps): React.ReactElement {
   const { stdout } = useStdout();
-  const width = Math.max(1, stdout?.columns ?? 80);
+  // Screens use padding={1}, so subtract 2 to avoid wrapping on narrow terminals.
+  const width = Math.max(1, (stdout?.columns ?? 80) - 2);
 
   return (
     <Box flexDirection="column" width="100%">
