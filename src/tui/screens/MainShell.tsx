@@ -5,7 +5,7 @@
  * Handles slash commands and provides navigation to other screens.
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { MessageList, type Message } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
@@ -17,6 +17,7 @@ import {
   type ReplCommandName,
 } from '../../repl/command-parser.js';
 import type { SessionState } from '../../repl/session-state.js';
+import { useSync } from '../hooks/useSync.js';
 
 /**
  * Navigation targets for the shell
@@ -71,6 +72,9 @@ export function MainShell({
   const { exit } = useApp();
   const [messages, setMessages] = useState<Message[]>([]);
 
+  // Sync hook
+  const { status: syncStatus, error: syncError, sync } = useSync();
+
   /**
    * Add a system message to the conversation
    */
@@ -82,6 +86,16 @@ export function MainShell({
     };
     setMessages((prev) => [...prev, message]);
   }, []);
+
+  // Watch sync status changes
+  useEffect(() => {
+    if (syncStatus === 'success') {
+      addSystemMessage('Project context sync completed successfully.');
+    } else if (syncStatus === 'error') {
+      const msg = syncError?.message || 'Unknown error';
+      addSystemMessage(`Sync failed: ${msg}`);
+    }
+  }, [syncStatus, syncError, addSystemMessage]);
 
   /**
    * Handle /help command
@@ -171,6 +185,26 @@ export function MainShell({
   }, [addSystemMessage, exit]);
 
   /**
+   * Handle /sync command
+   */
+  const handleSync = useCallback(() => {
+    if (!sessionState.initialized) {
+      addSystemMessage('Project not initialized. Run /init first.');
+      return;
+    }
+    if (!sessionState.provider) {
+      addSystemMessage('No AI provider configured. Run /init first.');
+      return;
+    }
+    if (syncStatus === 'running') {
+      addSystemMessage('Sync already in progress.');
+      return;
+    }
+    addSystemMessage('Starting sync of project context…');
+    sync(sessionState.projectRoot, sessionState.provider, sessionState.model);
+  }, [sessionState, syncStatus, addSystemMessage, sync]);
+
+  /**
    * Execute a slash command
    */
   const executeCommand = useCallback((commandName: ReplCommandName, args: string[]) => {
@@ -180,6 +214,9 @@ export function MainShell({
         break;
       case 'init':
         handleInit();
+        break;
+      case 'sync':
+        handleSync();
         break;
       case 'new':
         handleNew(args);
@@ -199,7 +236,7 @@ export function MainShell({
       default:
         addSystemMessage(`Unknown command: ${commandName}`);
     }
-  }, [handleHelp, handleInit, handleNew, handleRun, handleMonitor, handleConfig, handleExit, addSystemMessage]);
+  }, [handleHelp, handleInit, handleSync, handleNew, handleRun, handleMonitor, handleConfig, handleExit, addSystemMessage]);
 
   /**
    * Handle natural language input

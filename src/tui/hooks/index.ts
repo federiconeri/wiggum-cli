@@ -23,3 +23,6 @@ export { INIT_PHASE_CONFIGS, INIT_TOTAL_PHASES } from './useInit.js';
 
 export { useCommandHistory } from './useCommandHistory.js';
 export type { UseCommandHistoryReturn } from './useCommandHistory.js';
+
+export { useSync } from './useSync.js';
+export type { SyncStatus, UseSyncReturn } from './useSync.js';

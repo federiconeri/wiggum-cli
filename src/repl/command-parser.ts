@@ -38,6 +38,11 @@ export const REPL_COMMANDS = {
     usage: '/init',
     aliases: ['i'],
   },
+  sync: {
+    description: 'Refresh project context (scan + AI analysis)',
+    usage: '/sync',
+    aliases: ['s'],
+  },
   new: {
     description: 'Create a new feature specification',
     usage: '/new <feature-name>',

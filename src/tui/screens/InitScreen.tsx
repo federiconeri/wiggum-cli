@@ -37,6 +37,8 @@ import { Generator } from '../../generator/index.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { initTracing, flushTracing, traced } from '../../utils/tracing.js';
 import { writeKeysToEnvFile } from '../../utils/env.js';
+import { saveContext, toPersistedScanResult, toPersistedAIAnalysis, getGitMetadata } from '../../context/index.js';
+import { logger } from '../../utils/logger.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { SessionState } from '../../repl/session-state.js';
@@ -211,6 +213,26 @@ export function InitScreen({
           setAiError(enhancedResult.aiError);
         } else {
           setEnhancedResult(enhancedResult);
+        }
+
+        // Persist context for /sync and /new
+        try {
+          const git = await getGitMetadata(projectRoot);
+          await saveContext(
+            {
+              lastAnalyzedAt: new Date().toISOString(),
+              gitCommitHash: git.gitCommitHash,
+              gitBranch: git.gitBranch,
+              scanResult: toPersistedScanResult(enhancedResult),
+              aiAnalysis: toPersistedAIAnalysis(enhancedResult.aiAnalysis),
+            },
+            projectRoot,
+          );
+        } catch (saveErr) {
+          logger.error(
+            `Failed to save project context: ${saveErr instanceof Error ? saveErr.message : String(saveErr)}`,
+          );
+          // Non-blocking: don't fail /init if context save fails
         }
       } catch (error) {
         setAiError(error instanceof Error ? error.message : String(error));
