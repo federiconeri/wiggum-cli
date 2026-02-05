@@ -10,3 +10,9 @@ export {
   getContextAge,
   CONTEXT_VERSION,
 } from './storage.js';
+
+export {
+  toPersistedScanResult,
+  toPersistedAIAnalysis,
+  getGitMetadata,
+} from './convert.js';
