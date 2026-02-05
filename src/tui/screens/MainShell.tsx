@@ -196,9 +196,13 @@ export function MainShell({
       addSystemMessage('No AI provider configured. Run /init first.');
       return;
     }
+    if (syncStatus === 'running') {
+      addSystemMessage('Sync already in progress.');
+      return;
+    }
     addSystemMessage('Starting sync of project context…');
     sync(sessionState.projectRoot, sessionState.provider, sessionState.model);
-  }, [sessionState, addSystemMessage, sync]);
+  }, [sessionState, syncStatus, addSystemMessage, sync]);
 
   /**
    * Execute a slash command

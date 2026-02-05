@@ -106,6 +106,18 @@ describe('context/storage', () => {
 
       await expect(loadContext(tmpDir)).rejects.toThrow(/missing required fields/);
     });
+
+    it('throws when scanResult or aiAnalysis are missing', async () => {
+      const ralphDir = path.join(tmpDir, '.ralph');
+      await fs.mkdir(ralphDir, { recursive: true });
+      await fs.writeFile(
+        path.join(ralphDir, '.context.json'),
+        JSON.stringify({ version: 1, lastAnalyzedAt: '2026-01-01T00:00:00.000Z' }),
+        'utf8',
+      );
+
+      await expect(loadContext(tmpDir)).rejects.toThrow(/missing required fields/);
+    });
   });
 
   describe('getContextAge', () => {
@@ -144,6 +156,18 @@ describe('context/storage', () => {
       };
       const { human } = getContextAge(context);
       expect(human).toBe('5 minutes');
+    });
+
+    it('returns unknown for invalid date strings', () => {
+      const context: PersistedContext = {
+        version: 1,
+        lastAnalyzedAt: 'not-a-date',
+        scanResult: {},
+        aiAnalysis: {},
+      };
+      const { ms, human } = getContextAge(context);
+      expect(ms).toBe(0);
+      expect(human).toBe('unknown');
     });
   });
 });

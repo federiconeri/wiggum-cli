@@ -66,14 +66,19 @@ export async function loadContext(
   }
 
   // Basic validation
+  const obj = parsed as Record<string, unknown>;
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
-    typeof (parsed as PersistedContext).version !== 'number' ||
-    typeof (parsed as PersistedContext).lastAnalyzedAt !== 'string'
+    typeof obj.version !== 'number' ||
+    typeof obj.lastAnalyzedAt !== 'string' ||
+    typeof obj.scanResult !== 'object' ||
+    obj.scanResult === null ||
+    typeof obj.aiAnalysis !== 'object' ||
+    obj.aiAnalysis === null
   ) {
     throw new Error(
-      'Failed to parse .ralph/.context.json: missing required fields (version, lastAnalyzedAt)',
+      'Failed to parse .ralph/.context.json: missing required fields (version, lastAnalyzedAt, scanResult, aiAnalysis)',
     );
   }
 
@@ -87,6 +92,9 @@ export function getContextAge(
   context: PersistedContext,
 ): { ms: number; human: string } {
   const ts = new Date(context.lastAnalyzedAt).getTime();
+  if (Number.isNaN(ts)) {
+    return { ms: 0, human: 'unknown' };
+  }
   const now = Date.now();
   const ms = Math.max(0, now - ts);
   const seconds = Math.floor(ms / 1000);
