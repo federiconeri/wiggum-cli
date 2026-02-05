@@ -361,9 +361,9 @@ export function MainShell({
 
       {/* Footer status bar */}
       <FooterStatusBar
-        action={sessionState.provider ? `${sessionState.provider}/${sessionState.model}` : 'No provider'}
-        phase={sessionState.initialized ? 'Ready' : 'Not initialized'}
-        path="/help for commands"
+        action="Main Shell"
+        phase={sessionState.provider ? `${sessionState.provider}/${sessionState.model}` : 'No provider'}
+        path={sessionState.initialized ? '/help for commands' : 'Not initialized - /init'}
       />
     </Box>
   );

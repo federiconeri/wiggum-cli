@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useStdout } from 'ink';
 import { StatusLine, type StatusLineProps } from './StatusLine.js';
 import { colors } from '../theme.js';
 
@@ -38,12 +38,15 @@ const SEPARATOR_CHAR = '\u2500';
  * ```
  */
 export function FooterStatusBar(props: FooterStatusBarProps): React.ReactElement {
+  const { stdout } = useStdout();
+  const width = Math.max(1, stdout?.columns ?? 80);
+
   return (
     <Box flexDirection="column" width="100%">
       {/* Horizontal separator */}
       <Box width="100%">
         <Text color={colors.separator}>
-          {SEPARATOR_CHAR.repeat(80)}
+          {SEPARATOR_CHAR.repeat(width)}
         </Text>
       </Box>
 
