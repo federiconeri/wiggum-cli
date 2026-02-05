@@ -14,4 +14,6 @@ dist/
 .ralph.config.js.backup-*
 ralph.config.cjs
 ralph.config.js
+.env
+.env.*
 .env.local

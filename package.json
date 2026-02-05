@@ -4,6 +4,14 @@
   "description": "AI-powered feature development loop CLI",
   "type": "module",
   "main": "dist/index.js",
+  "files": [
+    "dist",
+    "bin",
+    "src/templates",
+    "LICENSE",
+    "README.md",
+    "CONTRIBUTING.md"
+  ],
   "bin": {
     "wiggum": "bin/ralph.js"
   },
@@ -26,7 +34,7 @@
     "tech-stack-detection"
   ],
   "author": "Wiggum CLI Contributors",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.15",
     "@ai-sdk/openai": "^3.0.12",
