@@ -11,6 +11,9 @@ export type { PhaseHeaderProps } from './PhaseHeader.js';
 export { StatusLine } from './StatusLine.js';
 export type { StatusLineProps } from './StatusLine.js';
 
+export { FooterStatusBar } from './FooterStatusBar.js';
+export type { FooterStatusBarProps } from './FooterStatusBar.js';
+
 export { StreamingText } from './StreamingText.js';
 export type { StreamingTextProps } from './StreamingText.js';
 
