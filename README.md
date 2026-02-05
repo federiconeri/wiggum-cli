@@ -1,11 +1,9 @@
-<h1 align="center">
-  <br>
-  <img src="https://img.shields.io/badge/%E2%96%88%E2%96%88-wiggum-F8DB27?style=for-the-badge&labelColor=1a1a1a" alt="wiggum" height="40">
-  <br>
-</h1>
+<p align="center">
+  <img src=".github/logo.svg" alt="WIGGUM" width="520">
+</p>
 
 <p align="center">
-  <strong>Scan your codebase. Generate specs. Ship features while you sleep.</strong>
+  <strong>Plug into any codebase. Generate specs. Ship features while you sleep.</strong>
 </p>
 
 <p align="center">
@@ -27,16 +25,23 @@
 
 ## What is Wiggum?
 
-Wiggum is a CLI that plugs into **any project** and sets up everything an AI coding agent needs to ship features autonomously.
+Wiggum is an **AI agent** that plugs into any codebase and makes it ready for autonomous feature development — no configuration, no boilerplate.
 
-You bring the codebase. Wiggum scans it, interviews you about what to build, and produces specs + prompts + scripts tailored to your stack. Then it hands everything to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex, or any coding agent and runs an autonomous **implement → test → fix** loop until the feature is done.
+It works in two phases. First, **Wiggum itself is the agent**: it scans your project, detects your stack, and runs an AI-guided interview to produce detailed specs, prompts, and scripts — all tailored to your codebase. Then it delegates the actual coding to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex, or any coding agent, running an autonomous **implement → test → fix** loop until the feature ships.
+
+Plug & play. Point it at a repo. It figures out the rest.
 
 ```
-  ┌─────────┐      ┌──────────┐      ┌──────────┐
-  │  Scan   │ ───▶ │  Spec    │ ───▶ │  Loop    │
-  │ 80+ tech│      │ AI interview    │ autonomous│
-  │ detected│      │ project-aware   │ impl+test │
-  └─────────┘      └──────────┘      └──────────┘
+         Wiggum (agent)                    Coding Agent
+  ┌────────────────────────────┐    ┌────────────────────┐
+  │                            │    │                    │
+  │  Scan ──▶ Interview ──▶ Spec ──▶  implement          │
+  │  detect      AI-guided   .ralph/   test              │
+  │  80+ tech    questions   specs     fix               │
+  │  plug&play   prompts     guides    repeat            │
+  │                            │    │                    │
+  └────────────────────────────┘    └────────────────────┘
+       runs in your terminal          Claude Code / Codex
 ```
 
 ---
