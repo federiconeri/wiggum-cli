@@ -11,6 +11,7 @@ import { MessageList, type Message } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
 import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { ActionOutput } from '../components/ActionOutput.js';
+import { FooterStatusBar } from '../components/FooterStatusBar.js';
 import { colors, theme } from '../theme.js';
 import {
   parseInput,
@@ -289,14 +290,6 @@ export function MainShell({
         )}
       </Box>
 
-      {/* Status bar */}
-      <Box marginBottom={1}>
-        <Text dimColor>
-          {sessionState.provider ? `${sessionState.provider}/${sessionState.model}` : 'No provider configured'}
-        </Text>
-        <Text dimColor> │ Type /help for commands</Text>
-      </Box>
-
       {/* Message history */}
       {messages.length > 0 && (
         <Box marginY={1} flexDirection="column">
@@ -365,6 +358,13 @@ export function MainShell({
           onCommand={(cmd) => handleSubmit(`/${cmd}`)}
         />
       </Box>
+
+      {/* Footer status bar */}
+      <FooterStatusBar
+        action={sessionState.provider ? `${sessionState.provider}/${sessionState.model}` : 'No provider'}
+        phase={sessionState.initialized ? 'Ready' : 'Not initialized'}
+        path="/help for commands"
+      />
     </Box>
   );
 }
