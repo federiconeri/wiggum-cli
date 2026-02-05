@@ -35,10 +35,10 @@ Plug & play. Point it at a repo. It figures out the rest.
          Wiggum (agent)                    Coding Agent
   ┌────────────────────────────┐    ┌────────────────────┐
   │                            │    │                    │
-  │  Scan ──▶ Interview ──▶ Spec ──▶  implement          │
-  │  detect      AI-guided   .ralph/   test              │
-  │  80+ tech    questions   specs     fix               │
-  │  plug&play   prompts     guides    repeat            │
+  │  Scan ──▶ Interview ──▶ Spec ──▶  Run loops           │
+  │  detect      AI-guided   .ralph/   implement         │
+  │  80+ tech    questions   specs     test + fix        │
+  │  plug&play   prompts     guides    until done        │
   │                            │    │                    │
   └────────────────────────────┘    └────────────────────┘
        runs in your terminal          Claude Code / Codex
