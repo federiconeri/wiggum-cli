@@ -30,6 +30,7 @@ import {
   toScanResultFromPersisted,
   getContextAge,
 } from '../../context/index.js';
+import { initTracing, flushTracing } from '../../utils/tracing.js';
 
 /**
  * Props for the InterviewScreen component
@@ -109,6 +110,16 @@ export function InterviewScreen({
   // Track messages in ref for access in callbacks
   const messagesRef = useRef(state.messages);
   messagesRef.current = state.messages;
+
+  // Initialize Braintrust tracing for this interview session.
+  // flushTracing is fire-and-forget (void) to avoid blocking TUI shutdown.
+  useEffect(() => {
+    initTracing();
+
+    return () => {
+      void flushTracing();
+    };
+  }, []);
 
   // Initialize the orchestrator when the component mounts
   useEffect(() => {
