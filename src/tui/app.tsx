@@ -399,7 +399,12 @@ export function App({
     };
 
     process.stdout.write('\x1b[2J\x1b[0;0H');
-    setThreadHistory((prev) => [...prev, completionItem]);
+    if (completionQueue.summaryType === 'spec-complete') {
+      // Replace the interview thread with the completion summary only.
+      setThreadHistory([completionItem]);
+    } else {
+      setThreadHistory((prev) => [...prev, completionItem]);
+    }
     setThreadResetKey((prev) => prev + 1);
 
     const action = completionQueue.action;
