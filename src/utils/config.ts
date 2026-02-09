@@ -57,6 +57,7 @@ export interface LoopConfig {
   maxE2eAttempts: number;
   defaultModel: string;
   planningModel: string;
+  reviewMode: 'manual' | 'auto';
 }
 
 /**
@@ -109,6 +110,7 @@ export const DEFAULT_CONFIG: RalphConfig = {
     maxE2eAttempts: 5,
     defaultModel: 'sonnet',
     planningModel: 'opus',
+    reviewMode: 'manual',
   },
 };
 
@@ -217,5 +219,6 @@ export async function getLoopSettings(projectRoot: string): Promise<LoopConfig> 
     maxE2eAttempts: config?.loop?.maxE2eAttempts || DEFAULT_CONFIG.loop.maxE2eAttempts,
     defaultModel: config?.loop?.defaultModel || DEFAULT_CONFIG.loop.defaultModel,
     planningModel: config?.loop?.planningModel || DEFAULT_CONFIG.loop.planningModel,
+    reviewMode: config?.loop?.reviewMode || DEFAULT_CONFIG.loop.reviewMode,
   };
 }
