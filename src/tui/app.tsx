@@ -403,7 +403,8 @@ export function App({
       content: completionQueue.summaryContent,
     };
 
-    process.stdout.write('\x1b[2J\x1b[0;0H');
+    const clearScrollback = completionQueue.summaryType === 'spec-complete' ? '\x1b[3J' : '';
+    process.stdout.write(`${clearScrollback}\x1b[2J\x1b[0;0H`);
     if (completionQueue.summaryType === 'spec-complete') {
       // Replace the interview thread with banner + completion summary only.
       const bannerItem: ThreadItem = {
