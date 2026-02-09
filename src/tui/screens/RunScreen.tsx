@@ -227,10 +227,14 @@ export function RunScreen({
         const logPath = `/tmp/ralph-loop-${featureName}.log`;
         const logFd = openSync(logPath, 'a');
 
+        const reviewMode = config.loop.reviewMode ?? 'manual';
+
         const args = [
           featureName,
           String(config.loop.maxIterations),
           String(config.loop.maxE2eAttempts),
+          '--review-mode',
+          reviewMode,
         ];
 
         const child = spawn('bash', [scriptPath, ...args], {
