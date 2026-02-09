@@ -119,6 +119,33 @@ export function App({
   );
   const [sessionState, setSessionState] = useState<SessionState>(initialSessionState);
 
+  const renderBannerContent = useCallback(
+    (state: SessionState) => (
+      <Box flexDirection="column" padding={1}>
+        <WiggumBanner />
+        <Box marginTop={1} flexDirection="row">
+          <Text color={colors.pink}>v{version}</Text>
+          <Text dimColor>{theme.statusLine.separator}</Text>
+          {state.provider ? (
+            <Text color={colors.blue}>{state.provider}/{state.model}</Text>
+          ) : (
+            <Text color={colors.orange}>not configured</Text>
+          )}
+          <Text dimColor>{theme.statusLine.separator}</Text>
+          <Text color={state.initialized ? colors.green : colors.orange}>
+            {state.initialized ? 'Ready' : 'Not initialized'}
+          </Text>
+        </Box>
+        <Box marginTop={1}>
+          <Text dimColor>
+            Tip: {state.initialized ? '/new <feature> to create spec' : '/init to set up'}, /help for commands
+          </Text>
+        </Box>
+      </Box>
+    ),
+    [version]
+  );
+
   // Thread history - preserves all output as a continuous thread
   const [threadHistory, setThreadHistory] = useState<ThreadItem[]>(() => {
     // Start with banner if showing welcome screen
@@ -126,29 +153,7 @@ export function App({
       return [{
         id: generateThreadId(),
         type: 'banner',
-        content: (
-          <Box flexDirection="column" padding={1}>
-            <WiggumBanner />
-            <Box marginTop={1} flexDirection="row">
-              <Text color={colors.pink}>v{version}</Text>
-              <Text dimColor>{theme.statusLine.separator}</Text>
-              {initialSessionState.provider ? (
-                <Text color={colors.blue}>{initialSessionState.provider}/{initialSessionState.model}</Text>
-              ) : (
-                <Text color={colors.orange}>not configured</Text>
-              )}
-              <Text dimColor>{theme.statusLine.separator}</Text>
-              <Text color={initialSessionState.initialized ? colors.green : colors.orange}>
-                {initialSessionState.initialized ? 'Ready' : 'Not initialized'}
-              </Text>
-            </Box>
-            <Box marginTop={1}>
-              <Text dimColor>
-                Tip: {initialSessionState.initialized ? '/new <feature> to create spec' : '/init to set up'}, /help for commands
-              </Text>
-            </Box>
-          </Box>
-        ),
+        content: renderBannerContent(initialSessionState),
       }];
     }
     return [];
@@ -400,8 +405,13 @@ export function App({
 
     process.stdout.write('\x1b[2J\x1b[0;0H');
     if (completionQueue.summaryType === 'spec-complete') {
-      // Replace the interview thread with the completion summary only.
-      setThreadHistory([completionItem]);
+      // Replace the interview thread with banner + completion summary only.
+      const bannerItem: ThreadItem = {
+        id: generateThreadId(),
+        type: 'banner',
+        content: renderBannerContent(sessionState),
+      };
+      setThreadHistory([bannerItem, completionItem]);
     } else {
       setThreadHistory((prev) => [...prev, completionItem]);
     }
