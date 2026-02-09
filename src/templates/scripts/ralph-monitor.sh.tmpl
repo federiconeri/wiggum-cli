@@ -75,7 +75,9 @@ detect_phase() {
         echo "E2E Testing"
     elif pgrep -f "PROMPT_verify.md" > /dev/null 2>&1; then
         echo "Verification"
-    elif pgrep -f "PROMPT_review.md" > /dev/null 2>&1; then
+    elif pgrep -f "PROMPT_review_manual.md" > /dev/null 2>&1; then
+        echo "PR Review"
+    elif pgrep -f "PROMPT_review_auto.md" > /dev/null 2>&1; then
         echo "PR Review"
     elif pgrep -f "PROMPT.md" > /dev/null 2>&1; then
         echo "Implementation"
