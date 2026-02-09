@@ -304,7 +304,6 @@ export function InterviewScreen({
               text: value,
             };
             await orchestrator.submitAnswer(answer);
-            setCurrentQuestion(null);
           }
           break;
 
@@ -338,7 +337,6 @@ export function InterviewScreen({
           selectedOptionIds: selectedValues,
         };
         await orchestrator.submitAnswer(answer);
-        setCurrentQuestion(null);
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
       }

@@ -79,8 +79,8 @@ export interface InterviewOrchestratorOptions {
   onWorkingChange: (isWorking: boolean, status: string) => void;
   /** Called when ready for user input */
   onReady: () => void;
-  /** Called when a structured interview question is received */
-  onQuestion?: (question: InterviewQuestion) => void;
+  /** Called when a structured interview question is received (null = no structured question, use free-text) */
+  onQuestion?: (question: InterviewQuestion | null) => void;
 }
 
 /**
@@ -690,6 +690,7 @@ Ask only ONE question. Be concise.`;
       this.onQuestion(parsedQuestion);
     } else {
       this.currentQuestion = null;
+      this.onQuestion?.(null);
       this.onMessage('assistant', response);
     }
   }
