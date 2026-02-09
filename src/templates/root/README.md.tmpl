@@ -9,11 +9,12 @@ This directory contains configuration and guidance for AI-assisted development o
 |-- AGENTS.md          # Commands, patterns, and coding rules
 |-- LEARNINGS.md       # Accumulated knowledge from iterations
 |-- prompts/           # Task-specific prompts
-|   |-- PROMPT.md          # Main implementation prompt
-|   |-- PROMPT_feature.md  # Feature planning prompt
-|   |-- PROMPT_e2e.md      # E2E testing prompt
-|   |-- PROMPT_verify.md   # Verification prompt
-|   |-- PROMPT_review.md   # PR review prompt
+|   |-- PROMPT.md                # Main implementation prompt
+|   |-- PROMPT_feature.md        # Feature planning prompt
+|   |-- PROMPT_e2e.md            # E2E testing prompt
+|   |-- PROMPT_verify.md         # Verification prompt
+|   |-- PROMPT_review_manual.md  # PR review prompt (manual)
+|   |-- PROMPT_review_auto.md    # PR review prompt (auto merge)
 |-- guides/            # Reference documentation
 |   |-- FRONTEND.md        # UI/UX patterns and checklist
 |   |-- SECURITY.md        # Security review checklist
@@ -39,7 +40,7 @@ Reference these files in your prompts:
 2. **Implement**: Use `PROMPT.md` for iterative task completion
 3. **Test**: Use `PROMPT_e2e.md` for browser-based testing
 4. **Verify**: Use `PROMPT_verify.md` to verify spec requirements
-5. **Review**: Use `PROMPT_review.md` to create PR and get review
+5. **Review**: Use `PROMPT_review_manual.md` (manual) or `PROMPT_review_auto.md` (auto merge) to create PR
 
 ### Specs
 

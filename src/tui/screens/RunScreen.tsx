@@ -224,6 +224,13 @@ export function RunScreen({
           return;
         }
 
+        const reviewMode = config.loop.reviewMode ?? 'manual';
+        if (reviewMode !== 'manual' && reviewMode !== 'auto') {
+          setError(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual' or 'auto'.`);
+          setIsStarting(false);
+          return;
+        }
+
         const logPath = `/tmp/ralph-loop-${featureName}.log`;
         const logFd = openSync(logPath, 'a');
 
@@ -231,6 +238,8 @@ export function RunScreen({
           featureName,
           String(config.loop.maxIterations),
           String(config.loop.maxE2eAttempts),
+          '--review-mode',
+          reviewMode,
         ];
 
         const child = spawn('bash', [scriptPath, ...args], {

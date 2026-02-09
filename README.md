@@ -162,7 +162,8 @@ $ wiggum
 │   ├── PROMPT_feature.md     # Feature planning
 │   ├── PROMPT_e2e.md         # E2E testing
 │   ├── PROMPT_verify.md      # Verification
-│   └── PROMPT_review.md      # PR review
+│   ├── PROMPT_review_manual.md  # PR review (manual - stop at PR)
+│   └── PROMPT_review_auto.md    # PR review (auto - review + merge)
 ├── guides/
 │   ├── AGENTS.md             # Agent instructions (CLAUDE.md)
 │   ├── FRONTEND.md           # Frontend patterns

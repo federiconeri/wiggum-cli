@@ -732,6 +732,9 @@ export interface RenderAppOptions {
  * ```
  */
 export function renderApp(options: RenderAppOptions): Instance {
+  if (options.screen === 'welcome') {
+    process.stdout.write('\x1b[3J\x1b[2J\x1b[0;0H');
+  }
   return render(
     <App
       screen={options.screen}

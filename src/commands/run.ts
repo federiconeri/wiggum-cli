@@ -20,6 +20,7 @@ export interface RunOptions {
   model?: string;
   maxIterations?: number;
   maxE2eAttempts?: number;
+  reviewMode?: 'manual' | 'auto';
 }
 
 /**
@@ -149,6 +150,16 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
     args.push('--model', options.model);
   }
 
+  // Resolve and validate reviewMode
+  const reviewMode: string = options.reviewMode ?? config.loop.reviewMode ?? 'manual';
+
+  if (reviewMode !== 'manual' && reviewMode !== 'auto') {
+    logger.error(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual' or 'auto'.`);
+    process.exit(1);
+  }
+
+  args.push('--review-mode', reviewMode);
+
   // Display configuration
   console.log(pc.cyan('--- Run Configuration ---'));
   console.log(`  Feature: ${pc.bold(feature)}`);
@@ -156,6 +167,7 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
   console.log(`  Max Iterations: ${maxIterations}`);
   console.log(`  Max E2E Attempts: ${maxE2eAttempts}`);
   console.log(`  Model: ${options.model || config.loop.defaultModel}`);
+  console.log(`  Review Mode: ${reviewMode}`);
   console.log(`  Worktree: ${options.worktree ? 'enabled' : 'disabled'}`);
   console.log(`  Resume: ${options.resume ? 'enabled' : 'disabled'}`);
   console.log('');

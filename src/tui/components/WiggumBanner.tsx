@@ -13,8 +13,7 @@ import { colors } from '../theme.js';
  * ASCII art banner for Wiggum CLI
  * Block-style font to match the cfonts 'block' style
  */
-const BANNER = `
-██╗    ██╗██╗ ██████╗  ██████╗ ██╗   ██╗███╗   ███╗
+const BANNER = `██╗    ██╗██╗ ██████╗  ██████╗ ██╗   ██╗███╗   ███╗
 ██║    ██║██║██╔════╝ ██╔════╝ ██║   ██║████╗ ████║
 ██║ █╗ ██║██║██║  ███╗██║  ███╗██║   ██║██╔████╔██║
 ██║███╗██║██║██║   ██║██║   ██║██║   ██║██║╚██╔╝██║
