@@ -6,7 +6,7 @@
  * A single option in a multi-select interview question
  */
 export interface InterviewOption {
-	/** Stable identifier for the option */
+	/** Identifier for the option, as provided by the AI */
 	id: string;
 	/** Display label for the option */
 	label: string;
@@ -21,13 +21,8 @@ export interface InterviewQuestion {
 	/** Question text displayed to the user */
 	text: string;
 	/** List of options for the user to select from */
-	options: InterviewOption[];
+	readonly options: readonly InterviewOption[];
 }
-
-/**
- * The mode of answer input for an interview question
- */
-export type InterviewAnswerMode = 'multiSelect' | 'freeText';
 
 /**
  * Discriminated union representing an answer to an interview question
@@ -36,10 +31,23 @@ export type InterviewAnswer =
 	| {
 			mode: 'multiSelect';
 			questionId: string;
-			selectedOptionIds: string[];
+			readonly selectedOptionIds: readonly string[];
 	  }
 	| {
 			mode: 'freeText';
 			questionId: string;
 			text: string;
 	  };
+
+/**
+ * Map selected option IDs to their labels, falling back to raw IDs for unmatched entries
+ */
+export function resolveOptionLabels(
+	options: readonly InterviewOption[],
+	selectedIds: readonly string[],
+): string[] {
+	return selectedIds.map(id => {
+		const option = options.find(opt => opt.id === id);
+		return option?.label ?? id;
+	});
+}

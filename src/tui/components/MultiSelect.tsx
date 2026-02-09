@@ -58,19 +58,25 @@ export function MultiSelect({
 	onCancel,
 	initialIndex = 0,
 }: MultiSelectProps): React.ReactElement {
-	const [focusedIndex, setFocusedIndex] = useState(initialIndex);
+	const [focusedIndex, setFocusedIndex] = useState(
+		options.length > 0 ? Math.min(initialIndex, options.length - 1) : 0
+	);
 	const [selectedValues, setSelectedValues] = useState<Set<string>>(new Set());
 
 	useInput((input, key) => {
 		// Navigate up
 		if (key.upArrow || input === 'k') {
-			setFocusedIndex((prev) => (prev - 1 + options.length) % options.length);
+			if (options.length > 0) {
+				setFocusedIndex((prev) => (prev - 1 + options.length) % options.length);
+			}
 			return;
 		}
 
 		// Navigate down
 		if (key.downArrow || input === 'j') {
-			setFocusedIndex((prev) => (prev + 1) % options.length);
+			if (options.length > 0) {
+				setFocusedIndex((prev) => (prev + 1) % options.length);
+			}
 			return;
 		}
 
@@ -112,13 +118,11 @@ export function MultiSelect({
 
 	return (
 		<Box flexDirection="column">
-			{/* Question */}
 			<Box marginBottom={1}>
 				<Text color={colors.yellow}>? </Text>
 				<Text>{message}</Text>
 			</Box>
 
-			{/* Options with checkboxes */}
 			<Box flexDirection="column">
 				{options.map((option, index) => {
 					const isFocused = index === focusedIndex;
@@ -128,13 +132,7 @@ export function MultiSelect({
 					return (
 						<Box key={option.value} paddingLeft={2}>
 							<Text color={isFocused ? colors.blue : undefined}>
-								{isFocused ? '❯ ' : '  '}
-							</Text>
-							<Text color={isFocused ? colors.blue : undefined}>
-								{checkbox}{' '}
-							</Text>
-							<Text color={isFocused ? colors.blue : undefined}>
-								{option.label}
+								{isFocused ? '❯ ' : '  '}{checkbox} {option.label}
 							</Text>
 							{option.hint && <Text dimColor> ({option.hint})</Text>}
 						</Box>
@@ -142,7 +140,6 @@ export function MultiSelect({
 				})}
 			</Box>
 
-			{/* Keyboard hints */}
 			<Box marginTop={1} paddingLeft={2}>
 				<Text dimColor>
 					(↑↓ move, Space toggle, Enter submit, c chat mode, Esc cancel)

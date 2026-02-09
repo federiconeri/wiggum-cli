@@ -32,7 +32,7 @@ import {
   getContextAge,
 } from '../../context/index.js';
 import { initTracing, flushTracing } from '../../utils/tracing.js';
-import type { InterviewQuestion, InterviewAnswerMode, InterviewAnswer } from '../types/interview.js';
+import { resolveOptionLabels, type InterviewQuestion, type InterviewAnswer } from '../types/interview.js';
 
 /**
  * Props for the InterviewScreen component
@@ -60,8 +60,8 @@ export interface InterviewScreenProps {
  * InterviewScreen component
  *
  * The main screen for the /new command interview flow. Combines all TUI
- * components (PhaseHeader, MessageList, WorkingIndicator, ChatInput) to
- * create the complete interview experience.
+ * components (MessageList, WorkingIndicator, ChatInput, MultiSelect,
+ * FooterStatusBar) to create the complete interview experience.
  *
  * Uses the useSpecGenerator hook for state and InterviewOrchestrator
  * to bridge to the AI conversation.
@@ -116,9 +116,8 @@ export function InterviewScreen({
   // State for tool call expansion (Ctrl+O toggle)
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
 
-  // State for multi-select interview questions
+  // State for multi-select interview questions (null = free-text mode)
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
-  const [answerMode, setAnswerMode] = useState<InterviewAnswerMode>('freeText');
 
   // Initialize Braintrust tracing for this interview session.
   // flushTracing is fire-and-forget (void) to avoid blocking TUI shutdown.
@@ -251,7 +250,6 @@ export function InterviewScreen({
         onQuestion: (question) => {
           if (isCancelledRef.current) return;
           setCurrentQuestion(question);
-          setAnswerMode('multiSelect');
         },
       });
 
@@ -306,9 +304,7 @@ export function InterviewScreen({
               text: value,
             };
             await orchestrator.submitAnswer(answer);
-            // Reset question state after submission
             setCurrentQuestion(null);
-            setAnswerMode('freeText');
           }
           break;
 
@@ -331,10 +327,7 @@ export function InterviewScreen({
         if (selectedValues.length === 0) {
           addMessage('user', '(No options selected)');
         } else {
-          // Map IDs back to labels for display
-          const labels = selectedValues
-            .map(id => currentQuestion.options.find(opt => opt.id === id)?.label)
-            .filter(Boolean);
+          const labels = resolveOptionLabels(currentQuestion.options, selectedValues);
           addMessage('user', labels.join(', '));
         }
 
@@ -345,10 +338,7 @@ export function InterviewScreen({
           selectedOptionIds: selectedValues,
         };
         await orchestrator.submitAnswer(answer);
-
-        // Reset question state after submission
         setCurrentQuestion(null);
-        setAnswerMode('freeText');
       } catch (error) {
         setError(error instanceof Error ? error.message : String(error));
       }
@@ -358,8 +348,6 @@ export function InterviewScreen({
 
   // Handle "Chat about this" mode switch
   const handleChatMode = useCallback(() => {
-    // Switch to free-text mode, clear current question
-    setAnswerMode('freeText');
     setCurrentQuestion(null);
   }, []);
 
@@ -367,8 +355,7 @@ export function InterviewScreen({
   useInput((input, key) => {
     if (key.escape) {
       // When in multiSelect mode, Escape switches back to free-text instead of cancelling
-      if (answerMode === 'multiSelect' && currentQuestion) {
-        setAnswerMode('freeText');
+      if (currentQuestion) {
         setCurrentQuestion(null);
         return;
       }
@@ -451,7 +438,7 @@ export function InterviewScreen({
       {state.phase !== 'complete' && (
         <Box marginTop={1}>
           {/* Multi-select mode for interview questions with options */}
-          {state.phase === 'interview' && answerMode === 'multiSelect' && currentQuestion ? (
+          {state.phase === 'interview' && currentQuestion ? (
             <MultiSelect
               message={currentQuestion.text}
               options={currentQuestion.options.map(opt => ({

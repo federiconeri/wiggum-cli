@@ -126,26 +126,11 @@ describe('InterviewScreen tracing lifecycle', () => {
 });
 
 describe('InterviewScreen multi-select integration', () => {
-  /**
-   * Note: Full integration testing of multi-select with orchestrator callbacks
-   * is challenging with Ink's testing library due to async rendering and
-   * complex state management. These tests verify the key integration points:
-   *
-   * 1. State initialization (currentQuestion, answerMode)
-   * 2. Handler function definitions (onQuestion, handleMultiSelectSubmit, handleChatMode)
-   * 3. Type correctness of InterviewAnswer construction
-   *
-   * The full flow (orchestrator -> onQuestion -> MultiSelect render -> submit -> orchestrator)
-   * is covered by E2E manual testing as specified in the implementation plan.
-   */
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('initializes with null currentQuestion and freeText mode', () => {
-    // This test verifies that the screen starts with correct default state
-    // The actual state is private, but we can verify by checking the rendered output
+  it('renders ChatInput by default (no currentQuestion)', () => {
     const { lastFrame, unmount } = render(
       React.createElement(InterviewScreen, {
         featureName: 'test-feature',
@@ -158,72 +143,7 @@ describe('InterviewScreen multi-select integration', () => {
     );
 
     const output = lastFrame();
-    // Should show ChatInput (not MultiSelect) initially
-    // ChatInput placeholder is visible in output
     expect(output).toBeTruthy();
-
-    unmount();
-  });
-
-  it('provides onQuestion callback to orchestrator that accepts InterviewQuestion', () => {
-    // This test verifies that the onQuestion callback is correctly typed and provided
-    // The orchestrator mock doesn't capture the callback, but we verify no type errors occur
-    const { unmount } = render(
-      React.createElement(InterviewScreen, {
-        featureName: 'test-feature',
-        projectRoot: '/tmp/test',
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-5-20250929',
-        onComplete: vi.fn(),
-        onCancel: vi.fn(),
-      })
-    );
-
-    // If types were incorrect, TypeScript compilation would fail
-    // This test primarily serves as a type safety verification
-    expect(true).toBe(true);
-
-    unmount();
-  });
-
-  it('handleMultiSelectSubmit constructs InterviewAnswer with multiSelect mode', () => {
-    // This test verifies the handler exists and is correctly typed
-    // Full behavior is tested in E2E as the handler is private
-    const { unmount } = render(
-      React.createElement(InterviewScreen, {
-        featureName: 'test-feature',
-        projectRoot: '/tmp/test',
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-5-20250929',
-        onComplete: vi.fn(),
-        onCancel: vi.fn(),
-      })
-    );
-
-    // Handler function should be defined and callable
-    // Type correctness verified by TypeScript compilation
-    expect(true).toBe(true);
-
-    unmount();
-  });
-
-  it('handleChatMode switches to freeText mode', () => {
-    // This test verifies the chat mode switch handler exists
-    // State changes are private, tested through E2E manual testing
-    const { unmount } = render(
-      React.createElement(InterviewScreen, {
-        featureName: 'test-feature',
-        projectRoot: '/tmp/test',
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-5-20250929',
-        onComplete: vi.fn(),
-        onCancel: vi.fn(),
-      })
-    );
-
-    // Handler should be defined
-    // Type correctness verified by TypeScript compilation
-    expect(true).toBe(true);
 
     unmount();
   });

@@ -17,7 +17,7 @@ import { isUrl } from '../../ai/conversation/url-fetcher.js';
 import type { AIProvider } from '../../ai/providers.js';
 import type { ScanResult } from '../../scanner/types.js';
 import type { GeneratorPhase } from '../hooks/useSpecGenerator.js';
-import type { InterviewQuestion, InterviewOption, InterviewAnswer } from '../types/interview.js';
+import { resolveOptionLabels, type InterviewQuestion, type InterviewOption, type InterviewAnswer } from '../types/interview.js';
 
 /** Maximum number of interview questions before auto-completing */
 const MAX_INTERVIEW_QUESTIONS = 10;
@@ -283,14 +283,16 @@ export function parseInterviewResponse(response: string): InterviewQuestion | nu
     return null;
   }
 
-  // Validate each option has id and label
+  // Validate each option has non-empty id and label
   const options: InterviewOption[] = [];
   for (const option of parsedOptions) {
     if (
       typeof option === 'object' &&
       option !== null &&
       typeof option.id === 'string' &&
-      typeof option.label === 'string'
+      option.id !== '' &&
+      typeof option.label === 'string' &&
+      option.label !== ''
     ) {
       options.push({
         id: option.id,
@@ -302,6 +304,12 @@ export function parseInterviewResponse(response: string): InterviewQuestion | nu
   }
 
   if (options.length === 0) {
+    return null;
+  }
+
+  // Reject duplicate IDs
+  const ids = new Set(options.map(o => o.id));
+  if (ids.size !== options.length) {
     return null;
   }
 
@@ -597,24 +605,7 @@ Respond with a VERY brief (1-2 sentence) summary of what you found relevant to t
 Ask only ONE question. Be concise.`;
 
       const response = await this.conversation.chat(interviewPrompt);
-
-      // Try to parse as structured question
-      const parsedQuestion = parseInterviewResponse(response);
-
-      if (parsedQuestion && this.onQuestion) {
-        // Store the current question for answer mapping
-        this.currentQuestion = parsedQuestion;
-        // Show any context text that came before the options
-        if (parsedQuestion.text) {
-          this.onMessage('assistant', parsedQuestion.text);
-        }
-        // Emit the structured question
-        this.onQuestion(parsedQuestion);
-      } else {
-        // Fallback to free-text mode
-        this.currentQuestion = null;
-        this.onMessage('assistant', response);
-      }
+      this.emitParsedResponse(response);
 
       // Transition to interview phase
       this.phase = 'interview';
@@ -636,30 +627,15 @@ Ask only ONE question. Be concise.`;
       // Format the answer for the AI conversation
       let formattedAnswer: string;
       if (answer.mode === 'multiSelect') {
-        // For multi-select, map IDs to labels and format into a readable string
         if (answer.selectedOptionIds.length === 0) {
           formattedAnswer = 'None of the options fit my needs.';
         } else {
-          // Map IDs to labels using the current question
-          const labels: string[] = [];
-          if (this.currentQuestion) {
-            for (const selectedId of answer.selectedOptionIds) {
-              const option = this.currentQuestion.options.find(opt => opt.id === selectedId);
-              if (option) {
-                labels.push(option.label);
-              }
-            }
-          }
-
-          if (labels.length > 0) {
-            formattedAnswer = labels.join(', ');
-          } else {
-            // Fallback if we can't find labels (shouldn't happen)
-            formattedAnswer = `Selected options: ${answer.selectedOptionIds.join(', ')}`;
-          }
+          const labels = this.currentQuestion
+            ? resolveOptionLabels(this.currentQuestion.options, answer.selectedOptionIds)
+            : [...answer.selectedOptionIds];
+          formattedAnswer = labels.join(', ');
         }
       } else {
-        // Free-text mode: pass through as-is
         formattedAnswer = answer.text;
       }
 
@@ -685,23 +661,7 @@ Ask only ONE question. Be concise.`;
         }
       }
 
-      // Try to parse as structured question (only if not generating)
-      const parsedQuestion = parseInterviewResponse(response);
-
-      if (parsedQuestion && this.onQuestion) {
-        // Store the current question for answer mapping
-        this.currentQuestion = parsedQuestion;
-        // Show any context text that came before the options
-        if (parsedQuestion.text) {
-          this.onMessage('assistant', parsedQuestion.text);
-        }
-        // Emit the structured question
-        this.onQuestion(parsedQuestion);
-      } else {
-        // Fallback to free-text mode
-        this.currentQuestion = null;
-        this.onMessage('assistant', response);
-      }
+      this.emitParsedResponse(response);
 
       // Check if max questions reached
       if (this.questionCount >= MAX_INTERVIEW_QUESTIONS) {
@@ -713,6 +673,24 @@ Ask only ONE question. Be concise.`;
     } catch (error) {
       this.onError(error instanceof Error ? error.message : String(error));
       this.onReady();
+    }
+  }
+
+  /**
+   * Parse an AI response and emit as structured question or plain text
+   */
+  private emitParsedResponse(response: string): void {
+    const parsedQuestion = parseInterviewResponse(response);
+
+    if (parsedQuestion && this.onQuestion) {
+      this.currentQuestion = parsedQuestion;
+      if (parsedQuestion.text) {
+        this.onMessage('assistant', parsedQuestion.text);
+      }
+      this.onQuestion(parsedQuestion);
+    } else {
+      this.currentQuestion = null;
+      this.onMessage('assistant', response);
     }
   }
 
