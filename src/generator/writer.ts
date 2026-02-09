@@ -4,7 +4,7 @@
  */
 
 import { mkdir, writeFile, readFile, copyFile, stat, rename, readdir } from 'node:fs/promises';
-import { join, dirname, basename } from 'node:path';
+import { join, dirname, basename, relative, sep } from 'node:path';
 import { existsSync } from 'node:fs';
 
 /**
@@ -88,10 +88,23 @@ export async function fileExists(filePath: string): Promise<boolean> {
  */
 export async function backupFile(filePath: string): Promise<string> {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dir = dirname(filePath);
   const name = basename(filePath);
-  const backupPath = join(dir, `.${name}.backup-${timestamp}`);
 
+  const pathParts = filePath.split(sep);
+  const ralphIndex = pathParts.indexOf('.ralph');
+  const ralphRoot = ralphIndex >= 0 ? pathParts.slice(0, ralphIndex + 1).join(sep) : null;
+
+  if (ralphRoot) {
+    const relPath = relative(ralphRoot, filePath);
+    const backupDir = join(ralphRoot, '.backups', dirname(relPath));
+    await ensureDir(backupDir);
+    const backupPath = join(backupDir, `${name}.backup-${timestamp}`);
+    await copyFile(filePath, backupPath);
+    return backupPath;
+  }
+
+  const dir = dirname(filePath);
+  const backupPath = join(dir, `.${name}.backup-${timestamp}`);
   await copyFile(filePath, backupPath);
   return backupPath;
 }
@@ -118,6 +131,17 @@ export async function writeFileWithOptions(
     const exists = await fileExists(filePath);
 
     if (exists) {
+      try {
+        const existingContent = await readFile(filePath, 'utf-8');
+        if (existingContent === content) {
+          result.action = 'skipped';
+          result.success = true;
+          return result;
+        }
+      } catch {
+        // If we can't read, fall back to normal backup/overwrite behavior
+      }
+
       switch (options.existingFiles) {
         case 'skip':
           result.action = 'skipped';
@@ -175,6 +199,18 @@ export async function writeFiles(
 
   for (const [relativePath, content] of files) {
     const fullPath = join(baseDir, relativePath);
+    if (basename(fullPath) === 'LEARNINGS.md') {
+      const exists = await fileExists(fullPath);
+      if (exists) {
+        summary.skipped += 1;
+        summary.results.push({
+          path: fullPath,
+          success: true,
+          action: 'skipped',
+        });
+        continue;
+      }
+    }
     if (relativePath === '.gitignore') {
       const existing = existsSync(fullPath)
         ? await readFile(fullPath, 'utf-8')
