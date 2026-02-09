@@ -224,15 +224,15 @@ export function RunScreen({
           return;
         }
 
-        const logPath = `/tmp/ralph-loop-${featureName}.log`;
-        const logFd = openSync(logPath, 'a');
-
         const reviewMode = config.loop.reviewMode ?? 'manual';
         if (reviewMode !== 'manual' && reviewMode !== 'auto') {
           setError(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual' or 'auto'.`);
           setIsStarting(false);
           return;
         }
+
+        const logPath = `/tmp/ralph-loop-${featureName}.log`;
+        const logFd = openSync(logPath, 'a');
 
         const args = [
           featureName,

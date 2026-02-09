@@ -151,10 +151,9 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
   }
 
   // Resolve and validate reviewMode
-  const reviewMode = options.reviewMode ?? config.loop.reviewMode ?? 'manual';
-  const allowedReviewModes = ['manual', 'auto'] as const;
+  const reviewMode: string = options.reviewMode ?? config.loop.reviewMode ?? 'manual';
 
-  if (!allowedReviewModes.includes(reviewMode as any)) {
+  if (reviewMode !== 'manual' && reviewMode !== 'auto') {
     logger.error(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual' or 'auto'.`);
     process.exit(1);
   }
