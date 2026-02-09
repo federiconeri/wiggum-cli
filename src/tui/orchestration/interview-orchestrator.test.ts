@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import {
   extractSessionContext,
   buildSystemPrompt,
+  parseInterviewResponse,
   type SessionContext,
 } from './interview-orchestrator.js';
 import type { ScanResult } from '../../scanner/types.js';
@@ -289,6 +290,243 @@ describe('buildSystemPrompt', () => {
       const prompt = buildSystemPrompt(undefined, hasTools);
 
       expect(prompt).not.toContain('Available Tools');
+    });
+  });
+});
+
+describe('parseInterviewResponse', () => {
+  describe('valid responses', () => {
+    it('parses valid response with question text and options block', () => {
+      const response = `What database would you like to use?
+
+\`\`\`options
+[
+  {"id": "postgres", "label": "PostgreSQL"},
+  {"id": "mysql", "label": "MySQL"},
+  {"id": "mongodb", "label": "MongoDB"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe('What database would you like to use?');
+      expect(result?.options).toHaveLength(3);
+      expect(result?.options[0]).toEqual({ id: 'postgres', label: 'PostgreSQL' });
+      expect(result?.options[1]).toEqual({ id: 'mysql', label: 'MySQL' });
+      expect(result?.options[2]).toEqual({ id: 'mongodb', label: 'MongoDB' });
+      expect(result?.id).toMatch(/^q_\d+_[a-z0-9]+$/);
+    });
+
+    it('handles options with extra whitespace/newlines', () => {
+      const response = `  Which testing framework?
+
+\`\`\`options
+[
+  {"id": "jest", "label": "Jest"},
+
+  {"id": "vitest", "label": "Vitest"},
+  {"id": "mocha", "label": "Mocha"}
+]
+\`\`\`  `;
+
+      const result = parseInterviewResponse(response);
+
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe('Which testing framework?');
+      expect(result?.options).toHaveLength(3);
+    });
+
+    it('preserves option order and labels exactly', () => {
+      const response = `Choose your styling approach:
+
+\`\`\`options
+[
+  {"id": "z", "label": "Z - Third alphabetically"},
+  {"id": "a", "label": "A - First alphabetically"},
+  {"id": "m", "label": "M - Middle alphabetically"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+
+      expect(result).not.toBeNull();
+      expect(result?.options[0].label).toBe('Z - Third alphabetically');
+      expect(result?.options[1].label).toBe('A - First alphabetically');
+      expect(result?.options[2].label).toBe('M - Middle alphabetically');
+    });
+
+    it('handles question text with multiple paragraphs', () => {
+      const response = `Let me ask about authentication.
+
+This is important for security.
+
+\`\`\`options
+[
+  {"id": "jwt", "label": "JWT tokens"},
+  {"id": "session", "label": "Session cookies"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe('Let me ask about authentication.\n\nThis is important for security.');
+    });
+  });
+
+  describe('invalid responses', () => {
+    it('returns null for response without options block', () => {
+      const response = 'What database would you like to use?';
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+
+    it('returns null for malformed JSON in options block', () => {
+      const response = `What database?
+
+\`\`\`options
+[
+  {"id": "postgres", "label": "PostgreSQL",}
+  {"id": "mysql", "label": "MySQL"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+
+    it('returns null when JSON is not an array', () => {
+      const response = `What database?
+
+\`\`\`options
+{"id": "postgres", "label": "PostgreSQL"}
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+
+    it('returns null when options have missing id field', () => {
+      const response = `What database?
+
+\`\`\`options
+[
+  {"label": "PostgreSQL"},
+  {"id": "mysql", "label": "MySQL"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+
+    it('returns null when options have missing label field', () => {
+      const response = `What database?
+
+\`\`\`options
+[
+  {"id": "postgres"},
+  {"id": "mysql", "label": "MySQL"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+
+    it('returns null for empty options array', () => {
+      const response = `What database?
+
+\`\`\`options
+[]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+
+    it('returns null when question text is missing', () => {
+      const response = `\`\`\`options
+[
+  {"id": "postgres", "label": "PostgreSQL"},
+  {"id": "mysql", "label": "MySQL"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+
+    it('returns null when options have non-string id', () => {
+      const response = `What database?
+
+\`\`\`options
+[
+  {"id": 123, "label": "PostgreSQL"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+
+    it('returns null when options have non-string label', () => {
+      const response = `What database?
+
+\`\`\`options
+[
+  {"id": "postgres", "label": 456}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('edge cases', () => {
+    it('handles options block with context text after', () => {
+      const response = `What database?
+
+\`\`\`options
+[
+  {"id": "postgres", "label": "PostgreSQL"},
+  {"id": "mysql", "label": "MySQL"}
+]
+\`\`\`
+
+Choose based on your needs.`;
+
+      const result = parseInterviewResponse(response);
+
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe('What database?');
+      expect(result?.options).toHaveLength(2);
+    });
+
+    it('handles response with only options block marker but empty', () => {
+      const response = `What database?
+
+\`\`\`options
+
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+      expect(result).toBeNull();
+    });
+
+    it('generates unique question IDs for multiple calls', () => {
+      const response = `Test question
+
+\`\`\`options
+[{"id": "opt1", "label": "Option 1"}]
+\`\`\``;
+
+      const result1 = parseInterviewResponse(response);
+      const result2 = parseInterviewResponse(response);
+
+      expect(result1?.id).not.toBe(result2?.id);
     });
   });
 });

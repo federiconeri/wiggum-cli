@@ -124,3 +124,27 @@ describe('InterviewScreen tracing lifecycle', () => {
     expect(flushTracing).toHaveBeenCalled();
   });
 });
+
+describe('InterviewScreen multi-select integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders ChatInput by default (no currentQuestion)', () => {
+    const { lastFrame, unmount } = render(
+      React.createElement(InterviewScreen, {
+        featureName: 'test-feature',
+        projectRoot: '/tmp/test',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5-20250929',
+        onComplete: vi.fn(),
+        onCancel: vi.fn(),
+      })
+    );
+
+    const output = lastFrame();
+    expect(output).toBeTruthy();
+
+    unmount();
+  });
+});

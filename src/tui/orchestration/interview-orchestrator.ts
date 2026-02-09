@@ -17,6 +17,7 @@ import { isUrl } from '../../ai/conversation/url-fetcher.js';
 import type { AIProvider } from '../../ai/providers.js';
 import type { ScanResult } from '../../scanner/types.js';
 import type { GeneratorPhase } from '../hooks/useSpecGenerator.js';
+import { resolveOptionLabels, type InterviewQuestion, type InterviewOption, type InterviewAnswer } from '../types/interview.js';
 
 /** Maximum number of interview questions before auto-completing */
 const MAX_INTERVIEW_QUESTIONS = 10;
@@ -78,6 +79,8 @@ export interface InterviewOrchestratorOptions {
   onWorkingChange: (isWorking: boolean, status: string) => void;
   /** Called when ready for user input */
   onReady: () => void;
+  /** Called when a structured interview question is received */
+  onQuestion?: (question: InterviewQuestion) => void;
 }
 
 /**
@@ -102,7 +105,25 @@ When interviewing:
 - Ask one focused question at a time
 - Acknowledge answers before asking the next question
 - Stop asking when you have enough information (usually 3-5 questions)
-- Say "I have enough information to generate the spec" when ready`);
+- Say "I have enough information to generate the spec" when ready
+
+IMPORTANT: Structured Options for Interview Questions
+For each question, provide 3-6 pre-written answer options in a fenced code block:
+
+\`\`\`options
+[
+  {"id": "opt1", "label": "Option text here"},
+  {"id": "opt2", "label": "Another option"},
+  {"id": "opt3", "label": "Yet another option"}
+]
+\`\`\`
+
+Guidelines for options:
+- Keep labels concise and actionable (under 60 characters)
+- Cover common scenarios but don't try to be exhaustive
+- Use clear, specific language
+- You can include natural language context before or after the options block
+- The user can still provide free-text if the options don't fit`);
 
   // Add tool awareness
   if (hasTools) {
@@ -235,6 +256,81 @@ When generating the spec, use this format:
 }
 
 /**
+ * Parse an AI response to extract a structured interview question with options
+ * @param response The AI response text
+ * @returns InterviewQuestion object if parsing succeeds, null otherwise
+ * @internal Exported for testing
+ */
+export function parseInterviewResponse(response: string): InterviewQuestion | null {
+  // Look for the ```options fenced block
+  const optionsBlockRegex = /```options\s*\n([\s\S]*?)\n```/;
+  const match = response.match(optionsBlockRegex);
+
+  if (!match) {
+    return null;
+  }
+
+  const jsonContent = match[1].trim();
+
+  let parsedOptions: unknown;
+  try {
+    parsedOptions = JSON.parse(jsonContent);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(parsedOptions)) {
+    return null;
+  }
+
+  // Validate each option has non-empty id and label
+  const options: InterviewOption[] = [];
+  for (const option of parsedOptions) {
+    if (
+      typeof option === 'object' &&
+      option !== null &&
+      typeof option.id === 'string' &&
+      option.id !== '' &&
+      typeof option.label === 'string' &&
+      option.label !== ''
+    ) {
+      options.push({
+        id: option.id,
+        label: option.label,
+      });
+    } else {
+      return null;
+    }
+  }
+
+  if (options.length === 0) {
+    return null;
+  }
+
+  // Reject duplicate IDs
+  const ids = new Set(options.map(o => o.id));
+  if (ids.size !== options.length) {
+    return null;
+  }
+
+  // Extract question text (everything before the options block, trimmed)
+  const questionText = response.substring(0, match.index).trim();
+
+  if (!questionText) {
+    return null;
+  }
+
+  // Generate a question ID (using timestamp + random for uniqueness)
+  const questionId = `q_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+  return {
+    id: questionId,
+    text: questionText,
+    options,
+  };
+}
+
+/**
  * Extract session context from EnhancedScanResult
  * @internal Exported for testing
  */
@@ -282,6 +378,7 @@ export class InterviewOrchestrator {
   private questionCount: number = 0;
   private readonly hasTools: { codebase: boolean; tavily: boolean; context7: boolean };
   private readonly sessionContext?: SessionContext;
+  private currentQuestion: InterviewQuestion | null = null;
 
   // Callbacks
   private readonly onMessage: InterviewOrchestratorOptions['onMessage'];
@@ -294,6 +391,7 @@ export class InterviewOrchestrator {
   private readonly onError: InterviewOrchestratorOptions['onError'];
   private readonly onWorkingChange: InterviewOrchestratorOptions['onWorkingChange'];
   private readonly onReady: InterviewOrchestratorOptions['onReady'];
+  private readonly onQuestion?: InterviewOrchestratorOptions['onQuestion'];
 
   // Track active tool calls for result mapping
   // Uses a queue per tool name to handle multiple calls of the same tool
@@ -314,6 +412,7 @@ export class InterviewOrchestrator {
     this.onError = options.onError;
     this.onWorkingChange = options.onWorkingChange;
     this.onReady = options.onReady;
+    this.onQuestion = options.onQuestion;
 
     // Get API keys from options or environment
     const tavilyApiKey = options.tavilyApiKey || process.env.TAVILY_API_KEY;
@@ -506,7 +605,7 @@ Respond with a VERY brief (1-2 sentence) summary of what you found relevant to t
 Ask only ONE question. Be concise.`;
 
       const response = await this.conversation.chat(interviewPrompt);
-      this.onMessage('assistant', response);
+      this.emitParsedResponse(response);
 
       // Transition to interview phase
       this.phase = 'interview';
@@ -521,11 +620,26 @@ Ask only ONE question. Be concise.`;
   /**
    * Submit an answer during the interview phase
    */
-  async submitAnswer(answer: string): Promise<void> {
+  async submitAnswer(answer: InterviewAnswer): Promise<void> {
     try {
       this.onWorkingChange(true, 'Thinking...');
 
-      const response = await this.conversation.chat(answer);
+      // Format the answer for the AI conversation
+      let formattedAnswer: string;
+      if (answer.mode === 'multiSelect') {
+        if (answer.selectedOptionIds.length === 0) {
+          formattedAnswer = 'None of the options fit my needs.';
+        } else {
+          const labels = this.currentQuestion
+            ? resolveOptionLabels(this.currentQuestion.options, answer.selectedOptionIds)
+            : [...answer.selectedOptionIds];
+          formattedAnswer = labels.join(', ');
+        }
+      } else {
+        formattedAnswer = answer.text;
+      }
+
+      const response = await this.conversation.chat(formattedAnswer);
 
       this.questionCount++;
 
@@ -547,8 +661,7 @@ Ask only ONE question. Be concise.`;
         }
       }
 
-      // Show the AI's response (only if not generating)
-      this.onMessage('assistant', response);
+      this.emitParsedResponse(response);
 
       // Check if max questions reached
       if (this.questionCount >= MAX_INTERVIEW_QUESTIONS) {
@@ -560,6 +673,24 @@ Ask only ONE question. Be concise.`;
     } catch (error) {
       this.onError(error instanceof Error ? error.message : String(error));
       this.onReady();
+    }
+  }
+
+  /**
+   * Parse an AI response and emit as structured question or plain text
+   */
+  private emitParsedResponse(response: string): void {
+    const parsedQuestion = parseInterviewResponse(response);
+
+    if (parsedQuestion && this.onQuestion) {
+      this.currentQuestion = parsedQuestion;
+      if (parsedQuestion.text) {
+        this.onMessage('assistant', parsedQuestion.text);
+      }
+      this.onQuestion(parsedQuestion);
+    } else {
+      this.currentQuestion = null;
+      this.onMessage('assistant', response);
     }
   }
 

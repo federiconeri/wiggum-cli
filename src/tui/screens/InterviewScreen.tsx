@@ -17,6 +17,7 @@ import { FooterStatusBar } from '../components/FooterStatusBar.js';
 import { MessageList } from '../components/MessageList.js';
 import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { ChatInput } from '../components/ChatInput.js';
+import { MultiSelect } from '../components/MultiSelect.js';
 import {
   useSpecGenerator,
   PHASE_CONFIGS,
@@ -31,6 +32,7 @@ import {
   getContextAge,
 } from '../../context/index.js';
 import { initTracing, flushTracing } from '../../utils/tracing.js';
+import { resolveOptionLabels, type InterviewQuestion, type InterviewAnswer } from '../types/interview.js';
 
 /**
  * Props for the InterviewScreen component
@@ -58,8 +60,8 @@ export interface InterviewScreenProps {
  * InterviewScreen component
  *
  * The main screen for the /new command interview flow. Combines all TUI
- * components (PhaseHeader, MessageList, WorkingIndicator, ChatInput) to
- * create the complete interview experience.
+ * components (MessageList, WorkingIndicator, ChatInput, MultiSelect,
+ * FooterStatusBar) to create the complete interview experience.
  *
  * Uses the useSpecGenerator hook for state and InterviewOrchestrator
  * to bridge to the AI conversation.
@@ -110,6 +112,12 @@ export function InterviewScreen({
   // Track messages in ref for access in callbacks
   const messagesRef = useRef(state.messages);
   messagesRef.current = state.messages;
+
+  // State for tool call expansion (Ctrl+O toggle)
+  const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
+
+  // State for multi-select interview questions (null = free-text mode)
+  const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
 
   // Initialize Braintrust tracing for this interview session.
   // flushTracing is fire-and-forget (void) to avoid blocking TUI shutdown.
@@ -239,6 +247,10 @@ export function InterviewScreen({
           if (isCancelledRef.current) return;
           setReady();
         },
+        onQuestion: (question) => {
+          if (isCancelledRef.current) return;
+          setCurrentQuestion(question);
+        },
       });
 
       orchestratorRef.current = orchestrator;
@@ -285,8 +297,14 @@ export function InterviewScreen({
             // Skip to generation
             await orchestrator.skipToGeneration();
           } else {
-            // Submit answer
-            await orchestrator.submitAnswer(value);
+            // Submit free-text answer
+            const answer: InterviewAnswer = {
+              mode: 'freeText',
+              questionId: currentQuestion?.id || '',
+              text: value,
+            };
+            await orchestrator.submitAnswer(answer);
+            setCurrentQuestion(null);
           }
           break;
 
@@ -295,15 +313,52 @@ export function InterviewScreen({
           break;
       }
     },
-    [addMessage]
+    [addMessage, currentQuestion]
   );
 
-  // State for tool call expansion (Ctrl+O toggle)
-  const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
+  // Handle multi-select answer submission
+  const handleMultiSelectSubmit = useCallback(
+    async (selectedValues: string[]) => {
+      try {
+        const orchestrator = orchestratorRef.current;
+        if (!orchestrator || !currentQuestion) return;
+
+        // Add user message to display
+        if (selectedValues.length === 0) {
+          addMessage('user', '(No options selected)');
+        } else {
+          const labels = resolveOptionLabels(currentQuestion.options, selectedValues);
+          addMessage('user', labels.join(', '));
+        }
+
+        // Submit multi-select answer
+        const answer: InterviewAnswer = {
+          mode: 'multiSelect',
+          questionId: currentQuestion.id,
+          selectedOptionIds: selectedValues,
+        };
+        await orchestrator.submitAnswer(answer);
+        setCurrentQuestion(null);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
+      }
+    },
+    [addMessage, currentQuestion, setError]
+  );
+
+  // Handle "Chat about this" mode switch
+  const handleChatMode = useCallback(() => {
+    setCurrentQuestion(null);
+  }, []);
 
   // Handle keyboard input for Escape key and Ctrl+O
   useInput((input, key) => {
     if (key.escape) {
+      // When in multiSelect mode, Escape switches back to free-text instead of cancelling
+      if (currentQuestion) {
+        setCurrentQuestion(null);
+        return;
+      }
       onCancel();
     }
     // Ctrl+O to toggle tool call expansion
@@ -382,12 +437,26 @@ export function InterviewScreen({
       {/* User input area */}
       {state.phase !== 'complete' && (
         <Box marginTop={1}>
-          <ChatInput
-            onSubmit={handleSubmit}
-            disabled={inputDisabled}
-            allowEmpty={state.phase === 'context'}
-            placeholder={getPlaceholder()}
-          />
+          {/* Multi-select mode for interview questions with options */}
+          {state.phase === 'interview' && currentQuestion ? (
+            <MultiSelect
+              message={currentQuestion.text}
+              options={currentQuestion.options.map(opt => ({
+                value: opt.id,
+                label: opt.label,
+              }))}
+              onSubmit={handleMultiSelectSubmit}
+              onChatMode={handleChatMode}
+            />
+          ) : (
+            // Free-text mode (default for all phases)
+            <ChatInput
+              onSubmit={handleSubmit}
+              disabled={inputDisabled}
+              allowEmpty={state.phase === 'context'}
+              placeholder={getPlaceholder()}
+            />
+          )}
         </Box>
       )}
 
