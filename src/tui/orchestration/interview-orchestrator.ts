@@ -313,11 +313,25 @@ export function parseInterviewResponse(response: string): InterviewQuestion | nu
     return null;
   }
 
-  // Extract question text (everything before the options block, trimmed)
-  const questionText = response.substring(0, match.index).trim();
+  // Extract everything before the options block
+  const fullText = response.substring(0, match.index).trim();
 
-  if (!questionText) {
+  if (!fullText) {
     return null;
+  }
+
+  // Split into context (acknowledgment) and question text
+  // Last paragraph ending with '?' is the question; everything before is context
+  const paragraphs = fullText.split(/\n\n+/);
+  let context = '';
+  let questionText = fullText;
+
+  if (paragraphs.length > 1) {
+    const lastParagraph = paragraphs[paragraphs.length - 1].trim();
+    if (lastParagraph.endsWith('?')) {
+      questionText = lastParagraph;
+      context = paragraphs.slice(0, -1).join('\n\n').trim();
+    }
   }
 
   // Generate a question ID (using timestamp + random for uniqueness)
@@ -325,6 +339,7 @@ export function parseInterviewResponse(response: string): InterviewQuestion | nu
 
   return {
     id: questionId,
+    context,
     text: questionText,
     options,
   };
@@ -684,8 +699,8 @@ Ask only ONE question. Be concise.`;
 
     if (parsedQuestion && this.onQuestion) {
       this.currentQuestion = parsedQuestion;
-      if (parsedQuestion.text) {
-        this.onMessage('assistant', parsedQuestion.text);
+      if (parsedQuestion.context) {
+        this.onMessage('assistant', parsedQuestion.context);
       }
       this.onQuestion(parsedQuestion);
     } else {

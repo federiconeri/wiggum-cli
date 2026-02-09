@@ -18,7 +18,9 @@ export interface InterviewOption {
 export interface InterviewQuestion {
 	/** Unique identifier for the question */
 	id: string;
-	/** Question text displayed to the user */
+	/** AI acknowledgment/context text (shown in message list only) */
+	context: string;
+	/** The actual question text (shown in MultiSelect only) */
 	text: string;
 	/** List of options for the user to select from */
 	readonly options: readonly InterviewOption[];

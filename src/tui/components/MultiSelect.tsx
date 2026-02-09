@@ -127,12 +127,14 @@ export function MultiSelect({
 				{options.map((option, index) => {
 					const isFocused = index === focusedIndex;
 					const isSelected = selectedValues.has(option.value);
-					const checkbox = isSelected ? '[x]' : '[ ]';
+					const indicator = isSelected ? '◉' : '○';
+					const num = `${index + 1}.`;
+					const color = isFocused ? colors.blue : isSelected ? colors.green : undefined;
 
 					return (
 						<Box key={option.value} paddingLeft={2}>
-							<Text color={isFocused ? colors.blue : undefined}>
-								{isFocused ? '❯ ' : '  '}{checkbox} {option.label}
+							<Text color={color}>
+								{isFocused ? '❯ ' : '  '}{num} {indicator} {option.label}
 							</Text>
 							{option.hint && <Text dimColor> ({option.hint})</Text>}
 						</Box>
@@ -142,7 +144,7 @@ export function MultiSelect({
 
 			<Box marginTop={1} paddingLeft={2}>
 				<Text dimColor>
-					(↑↓ move, Space toggle, Enter submit, c chat mode, Esc cancel)
+					(↑↓ move, Space toggle, Enter submit, c chat mode, Esc free-text)
 				</Text>
 			</Box>
 		</Box>

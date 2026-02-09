@@ -437,15 +437,20 @@ export function InterviewScreen({
         <Box marginTop={1}>
           {/* Multi-select mode for interview questions with options */}
           {state.phase === 'interview' && currentQuestion ? (
-            <MultiSelect
-              message={currentQuestion.text}
-              options={currentQuestion.options.map(opt => ({
-                value: opt.id,
-                label: opt.label,
-              }))}
-              onSubmit={handleMultiSelectSubmit}
-              onChatMode={handleChatMode}
-            />
+            <>
+              <Box><Text dimColor>{'─'.repeat(50)}</Text></Box>
+              <Box marginTop={1}>
+                <MultiSelect
+                  message={currentQuestion.text}
+                  options={currentQuestion.options.map(opt => ({
+                    value: opt.id,
+                    label: opt.label,
+                  }))}
+                  onSubmit={handleMultiSelectSubmit}
+                  onChatMode={handleChatMode}
+                />
+              </Box>
+            </>
           ) : (
             // Free-text mode (default for all phases)
             <ChatInput

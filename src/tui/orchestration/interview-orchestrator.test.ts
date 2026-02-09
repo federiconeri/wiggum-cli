@@ -310,6 +310,7 @@ describe('parseInterviewResponse', () => {
       const result = parseInterviewResponse(response);
 
       expect(result).not.toBeNull();
+      expect(result?.context).toBe('');
       expect(result?.text).toBe('What database would you like to use?');
       expect(result?.options).toHaveLength(3);
       expect(result?.options[0]).toEqual({ id: 'postgres', label: 'PostgreSQL' });
@@ -333,6 +334,7 @@ describe('parseInterviewResponse', () => {
       const result = parseInterviewResponse(response);
 
       expect(result).not.toBeNull();
+      expect(result?.context).toBe('');
       expect(result?.text).toBe('Which testing framework?');
       expect(result?.options).toHaveLength(3);
     });
@@ -356,7 +358,26 @@ describe('parseInterviewResponse', () => {
       expect(result?.options[2].label).toBe('M - Middle alphabetically');
     });
 
-    it('handles question text with multiple paragraphs', () => {
+    it('splits context from question when multiple paragraphs with question mark', () => {
+      const response = `Got it, you want JWT authentication.
+
+Which database would you prefer?
+
+\`\`\`options
+[
+  {"id": "postgres", "label": "PostgreSQL"},
+  {"id": "mysql", "label": "MySQL"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+
+      expect(result).not.toBeNull();
+      expect(result?.context).toBe('Got it, you want JWT authentication.');
+      expect(result?.text).toBe('Which database would you prefer?');
+    });
+
+    it('keeps all text as text when multiple paragraphs but none end with ?', () => {
       const response = `Let me ask about authentication.
 
 This is important for security.
@@ -371,6 +392,7 @@ This is important for security.
       const result = parseInterviewResponse(response);
 
       expect(result).not.toBeNull();
+      expect(result?.context).toBe('');
       expect(result?.text).toBe('Let me ask about authentication.\n\nThis is important for security.');
     });
   });
@@ -501,6 +523,7 @@ Choose based on your needs.`;
       const result = parseInterviewResponse(response);
 
       expect(result).not.toBeNull();
+      expect(result?.context).toBe('');
       expect(result?.text).toBe('What database?');
       expect(result?.options).toHaveLength(2);
     });

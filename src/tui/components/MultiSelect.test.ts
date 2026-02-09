@@ -50,7 +50,7 @@ describe('MultiSelect', () => {
 			expect(output).toContain('❯');
 		});
 
-		it('renders all options as unchecked initially', () => {
+		it('renders all options as unselected initially with ○ indicators', () => {
 			const { lastFrame } = render(
 				React.createElement(MultiSelect, {
 					message: 'Choose options',
@@ -60,11 +60,26 @@ describe('MultiSelect', () => {
 			);
 
 			const output = lastFrame();
-			// Count [ ] checkboxes - should be 3 (all unchecked)
-			const uncheckedCount = (output.match(/\[ \]/g) || []).length;
-			expect(uncheckedCount).toBe(3);
-			// Should be no checked boxes initially
-			expect(output).not.toContain('[x]');
+			// Count ○ indicators - should be 3 (all unselected)
+			const unselectedCount = (output.match(/○/g) || []).length;
+			expect(unselectedCount).toBe(3);
+			// Should be no selected indicators initially
+			expect(output).not.toContain('◉');
+		});
+
+		it('renders numbered prefixes for each option', () => {
+			const { lastFrame } = render(
+				React.createElement(MultiSelect, {
+					message: 'Choose options',
+					options: defaultOptions,
+					onSubmit: vi.fn(),
+				})
+			);
+
+			const output = lastFrame();
+			expect(output).toContain('1.');
+			expect(output).toContain('2.');
+			expect(output).toContain('3.');
 		});
 
 		it('displays keyboard hints', () => {
@@ -81,7 +96,7 @@ describe('MultiSelect', () => {
 			expect(output).toContain('Space toggle');
 			expect(output).toContain('Enter submit');
 			expect(output).toContain('c chat mode');
-			expect(output).toContain('Esc cancel');
+			expect(output).toContain('Esc free-text');
 		});
 
 		it('renders options with hints when provided', () => {
@@ -140,7 +155,7 @@ describe('MultiSelect', () => {
 			expect(thirdLineIndex).toBeGreaterThan(-1);
 		});
 
-		it('all options are unchecked initially', () => {
+		it('all options are unselected initially', () => {
 			const { lastFrame } = render(
 				React.createElement(MultiSelect, {
 					message: 'Choose options',
@@ -150,9 +165,9 @@ describe('MultiSelect', () => {
 			);
 
 			const output = lastFrame();
-			const uncheckedCount = (output.match(/\[ \]/g) || []).length;
-			expect(uncheckedCount).toBe(3);
-			expect(output).not.toContain('[x]');
+			const unselectedCount = (output.match(/○/g) || []).length;
+			expect(unselectedCount).toBe(3);
+			expect(output).not.toContain('◉');
 		});
 	});
 
