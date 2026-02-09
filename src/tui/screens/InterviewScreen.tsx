@@ -323,33 +323,37 @@ export function InterviewScreen({
   // Handle multi-select answer submission
   const handleMultiSelectSubmit = useCallback(
     async (selectedValues: string[]) => {
-      const orchestrator = orchestratorRef.current;
-      if (!orchestrator || !currentQuestion) return;
+      try {
+        const orchestrator = orchestratorRef.current;
+        if (!orchestrator || !currentQuestion) return;
 
-      // Add user message to display
-      if (selectedValues.length === 0) {
-        addMessage('user', '(No options selected)');
-      } else {
-        // Map IDs back to labels for display
-        const labels = selectedValues
-          .map(id => currentQuestion.options.find(opt => opt.id === id)?.label)
-          .filter(Boolean);
-        addMessage('user', labels.join(', '));
+        // Add user message to display
+        if (selectedValues.length === 0) {
+          addMessage('user', '(No options selected)');
+        } else {
+          // Map IDs back to labels for display
+          const labels = selectedValues
+            .map(id => currentQuestion.options.find(opt => opt.id === id)?.label)
+            .filter(Boolean);
+          addMessage('user', labels.join(', '));
+        }
+
+        // Submit multi-select answer
+        const answer: InterviewAnswer = {
+          mode: 'multiSelect',
+          questionId: currentQuestion.id,
+          selectedOptionIds: selectedValues,
+        };
+        await orchestrator.submitAnswer(answer);
+
+        // Reset question state after submission
+        setCurrentQuestion(null);
+        setAnswerMode('freeText');
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
       }
-
-      // Submit multi-select answer
-      const answer: InterviewAnswer = {
-        mode: 'multiSelect',
-        questionId: currentQuestion.id,
-        selectedOptionIds: selectedValues,
-      };
-      await orchestrator.submitAnswer(answer);
-
-      // Reset question state after submission
-      setCurrentQuestion(null);
-      setAnswerMode('freeText');
     },
-    [addMessage, currentQuestion]
+    [addMessage, currentQuestion, setError]
   );
 
   // Handle "Chat about this" mode switch
@@ -362,6 +366,12 @@ export function InterviewScreen({
   // Handle keyboard input for Escape key and Ctrl+O
   useInput((input, key) => {
     if (key.escape) {
+      // When in multiSelect mode, Escape switches back to free-text instead of cancelling
+      if (answerMode === 'multiSelect' && currentQuestion) {
+        setAnswerMode('freeText');
+        setCurrentQuestion(null);
+        return;
+      }
       onCancel();
     }
     // Ctrl+O to toggle tool call expansion

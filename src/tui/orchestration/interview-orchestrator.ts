@@ -262,77 +262,64 @@ When generating the spec, use this format:
  * @internal Exported for testing
  */
 export function parseInterviewResponse(response: string): InterviewQuestion | null {
-  try {
-    // Look for the ```options fenced block
-    const optionsBlockRegex = /```options\s*\n([\s\S]*?)\n```/;
-    const match = response.match(optionsBlockRegex);
+  // Look for the ```options fenced block
+  const optionsBlockRegex = /```options\s*\n([\s\S]*?)\n```/;
+  const match = response.match(optionsBlockRegex);
 
-    if (!match) {
-      // No options block found
-      return null;
-    }
-
-    // Extract the JSON content
-    const jsonContent = match[1].trim();
-
-    // Parse the JSON
-    let parsedOptions: unknown;
-    try {
-      parsedOptions = JSON.parse(jsonContent);
-    } catch {
-      // Malformed JSON
-      return null;
-    }
-
-    // Validate it's an array
-    if (!Array.isArray(parsedOptions)) {
-      return null;
-    }
-
-    // Validate each option has id and label
-    const options: InterviewOption[] = [];
-    for (const option of parsedOptions) {
-      if (
-        typeof option === 'object' &&
-        option !== null &&
-        typeof option.id === 'string' &&
-        typeof option.label === 'string'
-      ) {
-        options.push({
-          id: option.id,
-          label: option.label,
-        });
-      } else {
-        // Invalid option shape
-        return null;
-      }
-    }
-
-    // Empty options array is considered invalid
-    if (options.length === 0) {
-      return null;
-    }
-
-    // Extract question text (everything before the options block, trimmed)
-    const questionText = response.substring(0, match.index).trim();
-
-    if (!questionText) {
-      // No question text found
-      return null;
-    }
-
-    // Generate a question ID (using timestamp + random for uniqueness)
-    const questionId = `q_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-
-    return {
-      id: questionId,
-      text: questionText,
-      options,
-    };
-  } catch {
-    // Any unexpected error
+  if (!match) {
     return null;
   }
+
+  const jsonContent = match[1].trim();
+
+  let parsedOptions: unknown;
+  try {
+    parsedOptions = JSON.parse(jsonContent);
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(parsedOptions)) {
+    return null;
+  }
+
+  // Validate each option has id and label
+  const options: InterviewOption[] = [];
+  for (const option of parsedOptions) {
+    if (
+      typeof option === 'object' &&
+      option !== null &&
+      typeof option.id === 'string' &&
+      typeof option.label === 'string'
+    ) {
+      options.push({
+        id: option.id,
+        label: option.label,
+      });
+    } else {
+      return null;
+    }
+  }
+
+  if (options.length === 0) {
+    return null;
+  }
+
+  // Extract question text (everything before the options block, trimmed)
+  const questionText = response.substring(0, match.index).trim();
+
+  if (!questionText) {
+    return null;
+  }
+
+  // Generate a question ID (using timestamp + random for uniqueness)
+  const questionId = `q_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+  return {
+    id: questionId,
+    text: questionText,
+    options,
+  };
 }
 
 /**
