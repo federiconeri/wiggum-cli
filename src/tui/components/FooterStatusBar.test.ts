@@ -1,18 +1,59 @@
 import { describe, it, expect } from 'vitest';
-
-// We test the module exports and basic construction.
-// Ink component rendering requires ink-testing-library; we verify
-// the module shape and that the component is a function.
+import React from 'react';
+import { render } from 'ink-testing-library';
+import { FooterStatusBar } from './FooterStatusBar.js';
+import { stripAnsi } from '../../__test-utils__/ink-helpers.js';
 
 describe('FooterStatusBar', () => {
-  it('exports FooterStatusBar as a function component', async () => {
-    const mod = await import('./FooterStatusBar.js');
-    expect(typeof mod.FooterStatusBar).toBe('function');
+  it('renders a separator line', () => {
+    const { lastFrame, unmount } = render(
+      React.createElement(FooterStatusBar, {
+        action: 'Test Action',
+      }),
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    // Separator is box-drawing horizontal character
+    expect(frame).toContain('\u2500');
+    unmount();
   });
 
-  it('exports FooterStatusBarProps type (module loads without error)', async () => {
-    // Type-only export: just ensure the module loads cleanly
-    const mod = await import('./FooterStatusBar.js');
-    expect(mod).toBeDefined();
+  it('renders action text', () => {
+    const { lastFrame, unmount } = render(
+      React.createElement(FooterStatusBar, {
+        action: 'New Spec',
+      }),
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('New Spec');
+    unmount();
+  });
+
+  it('renders phase text when provided', () => {
+    const { lastFrame, unmount } = render(
+      React.createElement(FooterStatusBar, {
+        action: 'New Spec',
+        phase: 'Context (1/4)',
+      }),
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Context (1/4)');
+    unmount();
+  });
+
+  it('renders path text when provided', () => {
+    const { lastFrame, unmount } = render(
+      React.createElement(FooterStatusBar, {
+        action: 'New Spec',
+        phase: 'Context (1/4)',
+        path: 'my-feature',
+      }),
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('my-feature');
+    unmount();
   });
 });

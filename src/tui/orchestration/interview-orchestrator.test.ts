@@ -2,7 +2,7 @@
  * Unit tests for interview-orchestrator
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   extractSessionContext,
   buildSystemPrompt,
@@ -553,3 +553,4 @@ Choose based on your needs.`;
     });
   });
 });
+
