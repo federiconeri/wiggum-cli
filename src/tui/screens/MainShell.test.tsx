@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { MainShell } from './MainShell.js';
+import type { NavigationTarget, NavigationProps } from './MainShell.js';
 import { createTestSessionState } from '../../__test-utils__/fixtures.js';
 import { stripAnsi, wait, type as typeText, pressEnter, renderAndWait } from '../../__test-utils__/ink-helpers.js';
 
@@ -21,7 +22,7 @@ vi.mock('../hooks/useSync.js', () => ({
 }));
 
 describe('MainShell', () => {
-  let onNavigate: ReturnType<typeof vi.fn>;
+  let onNavigate: ReturnType<typeof vi.fn<(target: NavigationTarget, props?: NavigationProps) => void>>;
 
   beforeEach(() => {
     onNavigate = vi.fn();

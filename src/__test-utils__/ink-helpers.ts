@@ -5,7 +5,9 @@
  * Built on top of ink-testing-library.
  */
 
-import type { Instance } from 'ink-testing-library';
+import { render } from 'ink-testing-library';
+
+type Instance = ReturnType<typeof render>;
 
 /**
  * Wait for a short period to let React effects settle.
