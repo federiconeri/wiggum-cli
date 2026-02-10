@@ -28,7 +28,10 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      - name: Test with coverage
+      - name: Test
+        run: npm test
+      - name: Coverage
+        if: matrix.node-version == 20
         run: npm test -- --coverage
 
       - name: Upload coverage
