@@ -74,12 +74,12 @@ describe('main', () => {
     consoleLogSpy.mockRestore();
   });
 
-  it('no args → screen="welcome"', async () => {
+  it('no args → screen="shell"', async () => {
     process.argv = ['node', 'ralph.js'];
     await main();
 
     expect(mockRenderApp).toHaveBeenCalledWith(
-      expect.objectContaining({ screen: 'welcome' }),
+      expect.objectContaining({ screen: 'shell' }),
     );
   });
 

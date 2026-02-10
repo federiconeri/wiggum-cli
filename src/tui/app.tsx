@@ -4,49 +4,31 @@
  * The root component for the Ink-based TUI. Routes to different screens
  * based on the current screen state. Manages session state and navigation.
  *
- * Uses a "continuous thread" model like Claude Code - all output stays
- * visible in the terminal as a growing thread, rather than clearing screens.
+ * Uses an AppShell-based layout where each screen wraps itself in
+ * <AppShell> with a shared header element. No Static/thread model -
+ * screen transitions are clean React mount/unmount cycles.
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { render, Static, Box, Text, type Instance } from 'ink';
-import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import React, { useState, useCallback, useMemo } from 'react';
+import { render, type Instance } from 'ink';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AIProvider } from '../ai/providers.js';
 import type { ScanResult } from '../scanner/types.js';
 import type { SessionState } from '../repl/session-state.js';
 import { loadConfigWithDefaults } from '../utils/config.js';
 import { InterviewScreen } from './screens/InterviewScreen.js';
-import { WelcomeScreen } from './screens/WelcomeScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
 import { RunScreen, type RunSummary } from './screens/RunScreen.js';
 import { MainShell, type NavigationTarget, type NavigationProps } from './screens/MainShell.js';
-import { WiggumBanner } from './components/WiggumBanner.js';
-import { StatusLine } from './components/StatusLine.js';
-import { PHASE_CONFIGS } from './hooks/useSpecGenerator.js';
+import { HeaderContent } from './components/HeaderContent.js';
+import { useBackgroundRuns } from './hooks/useBackgroundRuns.js';
 import type { Message } from './components/MessageList.js';
-import { colors, theme } from './theme.js';
-import { formatNumber } from './utils/loop-status.js';
-
-/**
- * Thread item representing a completed action in the history
- */
-interface ThreadItem {
-  id: string;
-  type: 'banner' | 'init-complete' | 'spec-complete' | 'run-complete' | 'message';
-  content: React.ReactNode;
-}
-
-interface CompletionQueue {
-  summaryContent: React.ReactNode;
-  summaryType: ThreadItem['type'];
-  action: 'exit' | 'shell';
-}
 
 /**
  * Available screen types for the App component
  */
-export type AppScreen = 'welcome' | 'shell' | 'interview' | 'init' | 'run';
+export type AppScreen = 'shell' | 'interview' | 'init' | 'run';
 
 /**
  * Props for the interview screen
@@ -85,26 +67,9 @@ export interface AppProps {
 /**
  * Main App component for the Ink-based TUI
  *
- * Routes to different screens based on the current screen state.
- * Manages session state and provides navigation between screens.
- *
- * @example
- * ```tsx
- * renderApp({
- *   screen: 'welcome',
- *   initialSessionState: sessionState,
- *   version: '0.8.0',
- *   onExit: () => process.exit(0),
- * });
- * ```
+ * Simple routing + shared state. Each screen wraps itself in AppShell
+ * and receives a shared headerElement prop.
  */
-/**
- * Generate a unique ID for thread items
- */
-function generateThreadId(): string {
-  return `thread-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-}
-
 export function App({
   screen: initialScreen,
   initialSessionState,
@@ -119,57 +84,21 @@ export function App({
   );
   const [sessionState, setSessionState] = useState<SessionState>(initialSessionState);
 
-  const renderBannerContent = useCallback(
-    (state: SessionState) => (
-      <Box flexDirection="column" padding={1}>
-        <WiggumBanner />
-        <Box marginTop={1} flexDirection="row">
-          <Text color={colors.pink}>v{version}</Text>
-          <Text dimColor>{theme.statusLine.separator}</Text>
-          {state.provider ? (
-            <Text color={colors.blue}>{state.provider}/{state.model}</Text>
-          ) : (
-            <Text color={colors.orange}>not configured</Text>
-          )}
-          <Text dimColor>{theme.statusLine.separator}</Text>
-          <Text color={state.initialized ? colors.green : colors.orange}>
-            {state.initialized ? 'Ready' : 'Not initialized'}
-          </Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text dimColor>
-            Tip: {state.initialized ? '/new <feature> to create spec' : '/init to set up'}, /help for commands
-          </Text>
-        </Box>
-      </Box>
+  // Background run tracking
+  const { runs: backgroundRuns, background, dismiss } = useBackgroundRuns();
+
+  // Shared header element - memoized to avoid re-creating on every render
+  const headerElement = useMemo(
+    () => (
+      <HeaderContent
+        version={version}
+        sessionState={sessionState}
+        backgroundRuns={backgroundRuns}
+        compact={false}
+      />
     ),
-    [version]
+    [version, sessionState, backgroundRuns]
   );
-
-  // Thread history - preserves all output as a continuous thread
-  const [threadHistory, setThreadHistory] = useState<ThreadItem[]>(() => {
-    // Start with banner if showing welcome screen
-    if (initialScreen === 'welcome') {
-      return [{
-        id: generateThreadId(),
-        type: 'banner',
-        content: renderBannerContent(initialSessionState),
-      }];
-    }
-    return [];
-  });
-  const [completionQueue, setCompletionQueue] = useState<CompletionQueue | null>(null);
-  const [isTransitioning, setIsTransitioning] = useState(false);
-  const [threadResetKey, setThreadResetKey] = useState(0);
-
-  /**
-   * Add an item to the thread history
-   */
-  const addToThread = useCallback((type: ThreadItem['type'], content: React.ReactNode): string => {
-    const id = generateThreadId();
-    setThreadHistory(prev => [...prev, { id, type, content }]);
-    return id;
-  }, []);
 
   /**
    * Navigate to a different screen
@@ -180,268 +109,51 @@ export function App({
   }, []);
 
   /**
-   * Handle interview completion - save spec to disk and add to thread
+   * Handle session state changes
    */
-  const handleInterviewComplete = useCallback(async (spec: string, messages: Message[]) => {
-    // Get feature name from navigation props or initial interview props
+  const handleSessionStateChange = useCallback((newState: SessionState) => {
+    setSessionState(newState);
+  }, []);
+
+  /**
+   * Handle interview completion - save spec to disk and navigate to shell
+   */
+  const handleInterviewComplete = useCallback(async (spec: string, messages: Message[], specPath: string) => {
     const featureName = screenProps?.featureName || interviewProps?.featureName;
-    let specPath = '';
+    let savedPath = specPath;
 
     if (featureName && typeof featureName === 'string') {
       try {
-        // Load config to get specs directory
         const config = await loadConfigWithDefaults(sessionState.projectRoot);
         const specsDir = join(sessionState.projectRoot, config.paths.specs);
 
-        // Create specs directory if it doesn't exist
         if (!existsSync(specsDir)) {
           mkdirSync(specsDir, { recursive: true });
         }
 
-        // Write spec to file
-        specPath = join(specsDir, `${featureName}.md`);
-        writeFileSync(specPath, spec, 'utf-8');
-
-        // Call onComplete with the spec path for logging
-        onComplete?.(specPath);
-      } catch (error) {
-        // If saving fails, still call onComplete with spec content
+        savedPath = join(specsDir, `${featureName}.md`);
+        writeFileSync(savedPath, spec, 'utf-8');
+        onComplete?.(savedPath);
+      } catch {
         onComplete?.(spec);
       }
     } else {
       onComplete?.(spec);
     }
 
-    // Prefer previewing the spec from disk if available (ensures consistent output)
-    let specForPreview = typeof spec === 'string' ? spec : '';
-    if (specPath && existsSync(specPath)) {
-      try {
-        specForPreview = readFileSync(specPath, 'utf-8');
-      } catch {
-        // Ignore read errors and fall back to in-memory spec
-      }
+    // If started on interview screen directly (--tui mode), exit
+    if (initialScreen === 'interview') {
+      onExit?.();
+      return;
     }
 
-    const specLines = specForPreview ? specForPreview.split('\n') : [];
-    const totalLines = specLines.length;
-    const previewLines = specLines.slice(0, 5);
-    const remainingLines = Math.max(0, totalLines - 5);
-
-    const MAX_RECAP_SOURCE_LENGTH = 1200;
-    const userMessages = messages
-      .filter((msg) => msg.role === 'user')
-      .map((msg) => msg.content.trim())
-      .filter((content) => content.length > 0 && content.length <= MAX_RECAP_SOURCE_LENGTH);
-
-    const nonUrlUserMessages = userMessages.filter((content) => !/^https?:\/\//i.test(content) && !/^www\./i.test(content));
-
-    const assistantParagraphs = messages
-      .filter((msg) => msg.role === 'assistant' && msg.content && msg.content.length <= MAX_RECAP_SOURCE_LENGTH)
-      .flatMap((msg) => msg.content.split('\n\n'))
-      .map((para) => para.replace(/\s+/g, ' ').trim())
-      .filter((para) => para.length > 0 && para.length <= 320);
-
-    const recapCandidates = assistantParagraphs
-      .map((para) => para.replace(/^[^a-z0-9]+/i, '').trim())
-      .filter((para) => /^(you want|understood|got it)/i.test(para))
-      .map((para) => para.split(/next question:/i)[0].trim())
-      .filter((para) => para.length > 0);
-
-    const normalizeRecap = (text: string): string => {
-      let result = text.trim();
-      result = result.replace(/^[^a-z0-9]+/i, '');
-      result = result.replace(/^you want\s*/i, '');
-      result = result.replace(/^understood[:,]?\s*/i, '');
-      result = result.replace(/^got it[-—:]*\s*/i, '');
-      return result.charAt(0).toUpperCase() + result.slice(1);
-    };
-
-    const normalizeUserDecision = (text: string): string => {
-      let result = text.trim();
-      result = result.replace(/^[^a-z0-9]+/i, '');
-      result = result.replace(/^i (?:would like|want|need|prefer|expect) to\s*/i, '');
-      result = result.replace(/^i (?:would like|want|need|prefer|expect)\s*/i, '');
-      result = result.replace(/^please\s*/i, '');
-      result = result.replace(/^up to you[:,]?\s*/i, '');
-      result = result.replace(/^both\s*/i, 'Both ');
-      if (result && !/[.!?]$/.test(result)) {
-        result += '.';
-      }
-      return result.charAt(0).toUpperCase() + result.slice(1);
-    };
-
-    const goalCandidate = recapCandidates.length > 0
-      ? normalizeRecap(recapCandidates[0]!)
-      : (nonUrlUserMessages.find((content) => content.length > 20)
-        ? normalizeUserDecision(nonUrlUserMessages.find((content) => content.length > 20)!)
-        : (nonUrlUserMessages[0] ? normalizeUserDecision(nonUrlUserMessages[0]) : `Define "${featureName}"`));
-
-    const summarizeText = (text: string, max = 160): string => {
-      if (text.length <= max) return text;
-      return `${text.slice(0, max - 1)}…`;
-    };
-
-    const decisions: string[] = [];
-    const seen = new Set<string>();
-    const isUsefulDecision = (entry: string): boolean => {
-      const normalized = entry.trim().toLowerCase();
-      if (normalized.length < 8) return false;
-      const wordCount = normalized.split(/\s+/).length;
-      if (wordCount < 3) return false;
-      if (['yes', 'no', 'both', 'ok', 'okay'].includes(normalized)) return false;
-      return true;
-    };
-    for (let i = nonUrlUserMessages.length - 1; i >= 0; i -= 1) {
-      const entry = nonUrlUserMessages[i];
-      const normalized = entry.toLowerCase();
-      if (entry === goalCandidate) continue;
-      if (!isUsefulDecision(entry)) continue;
-      if (entry.length > 160) continue;
-      if (seen.has(normalized)) continue;
-      decisions.unshift(normalizeUserDecision(entry));
-      seen.add(normalized);
-      if (decisions.length >= 4) break;
-    }
-
-    if (recapCandidates.length > 1) {
-      decisions.length = 0;
-      seen.clear();
-      for (let i = 1; i < recapCandidates.length; i += 1) {
-        const entry = normalizeRecap(recapCandidates[i]!);
-        const normalized = entry.toLowerCase();
-        if (!isUsefulDecision(entry)) continue;
-        if (seen.has(normalized)) continue;
-        decisions.push(entry);
-        seen.add(normalized);
-        if (decisions.length >= 4) break;
-      }
-    }
-
-    const summaryContent = (
-      <Box flexDirection="column" marginY={1}>
-        <StatusLine
-          action="New Spec"
-          phase={`Complete (${PHASE_CONFIGS.complete.number}/${PHASE_CONFIGS.complete.number})`}
-          path={featureName}
-        />
-        <Box marginTop={1} flexDirection="column">
-          <Text bold>Summary</Text>
-          <Text>- Goal: {summarizeText(goalCandidate)}</Text>
-          <Text>- Outcome: Spec written to {specPath || `${featureName}.md`} ({totalLines} lines)</Text>
-        </Box>
-
-        {decisions.length > 0 && (
-          <Box marginTop={1} flexDirection="column">
-            <Text bold>Key decisions</Text>
-            {decisions.map((decision, idx) => (
-              <Text key={`${decision}-${idx}`}>{idx + 1}. {summarizeText(decision, 120)}</Text>
-            ))}
-          </Box>
-        )}
-
-        {/* Tool-call style preview */}
-        <Box marginTop={1} flexDirection="row">
-          <Text color={colors.green}>{theme.chars.bullet} </Text>
-          <Text bold>Write</Text>
-          <Text dimColor>({specPath || `${featureName}.md`})</Text>
-        </Box>
-        <Box marginLeft={2}>
-          <Text dimColor>└ Wrote {totalLines} lines</Text>
-        </Box>
-
-        {/* Preview with line numbers */}
-        <Box marginLeft={4} flexDirection="column">
-          {previewLines.map((line, i) => (
-            <Box key={i} flexDirection="row">
-              <Text dimColor>{String(i + 1).padStart(4)} </Text>
-              <Text dimColor>{line}</Text>
-            </Box>
-          ))}
-          {remainingLines > 0 && (
-            <Text dimColor>… +{remainingLines} lines</Text>
-          )}
-        </Box>
-
-        {/* Done message */}
-        <Box marginTop={1} flexDirection="row">
-          <Text color={colors.green}>{theme.chars.bullet} </Text>
-          <Text>Done. Specification generated successfully.</Text>
-        </Box>
-
-        {/* What's next */}
-        <Box marginTop={1} flexDirection="column">
-          <Text bold>What's next:</Text>
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>›</Text>
-            <Text dimColor>Review the spec in your editor</Text>
-          </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>›</Text>
-            <Text color={colors.blue}>/help</Text>
-            <Text dimColor>See all commands</Text>
-          </Box>
-        </Box>
-      </Box>
-    );
-
-    // Hide the live interview UI before appending to the static thread
-    setIsTransitioning(true);
-    setCompletionQueue({
-      summaryContent,
-      summaryType: 'spec-complete',
-      action: initialScreen === 'interview' ? 'exit' : 'shell',
-    });
-  }, [onComplete, navigate, initialScreen, onExit, screenProps, interviewProps, sessionState.projectRoot, addToThread]);
-
-  // Append completion items after the interview UI is hidden
-  useEffect(() => {
-    if (!isTransitioning || !completionQueue) return;
-
-    const completionItem: ThreadItem = {
-      id: generateThreadId(),
-      type: completionQueue.summaryType,
-      content: completionQueue.summaryContent,
-    };
-
-    const clearScrollback = completionQueue.summaryType === 'spec-complete' ? '\x1b[3J' : '';
-    process.stdout.write(`${clearScrollback}\x1b[2J\x1b[0;0H`);
-    if (completionQueue.summaryType === 'spec-complete') {
-      // Replace the interview thread with banner + completion summary only.
-      const bannerItem: ThreadItem = {
-        id: generateThreadId(),
-        type: 'banner',
-        content: renderBannerContent(sessionState),
-      };
-      setThreadHistory([bannerItem, completionItem]);
-    } else {
-      setThreadHistory((prev) => [...prev, completionItem]);
-    }
-    setThreadResetKey((prev) => prev + 1);
-
-    const action = completionQueue.action;
-    setCompletionQueue(null);
-
-    setTimeout(() => {
-      if (action === 'exit') {
-        if (onExit) {
-          onExit();
-          return;
-        }
-        navigate('shell');
-        setIsTransitioning(false);
-        return;
-      }
-      navigate('shell');
-      setIsTransitioning(false);
-    }, 0);
-  }, [isTransitioning, completionQueue, navigate, onExit]);
+    navigate('shell');
+  }, [screenProps, interviewProps, sessionState.projectRoot, onComplete, initialScreen, onExit, navigate]);
 
   /**
    * Handle interview cancel
    */
   const handleInterviewCancel = useCallback(() => {
-    // If started on interview (--tui mode), call onExit to resolve promise
-    // Otherwise, return to shell
     if (initialScreen === 'interview') {
       onExit?.();
     } else {
@@ -450,246 +162,108 @@ export function App({
   }, [navigate, initialScreen, onExit]);
 
   /**
-   * Handle welcome continue
+   * Handle init completion - update state and navigate to shell
    */
-  const handleWelcomeContinue = useCallback(() => {
+  const handleInitComplete = useCallback((newState: SessionState, _generatedFiles?: string[]) => {
+    setSessionState(newState);
     navigate('shell');
   }, [navigate]);
 
   /**
-   * Handle session state changes
-   */
-  const handleSessionStateChange = useCallback((newState: SessionState) => {
-    setSessionState(newState);
-  }, []);
-
-  /**
-   * Handle init completion - add summary to thread and update state
-   */
-  const handleInitComplete = useCallback((newState: SessionState, generatedFiles?: string[]) => {
-    // Add init completion to thread
-    addToThread('init-complete', (
-      <Box flexDirection="column" marginY={1}>
-        {/* Tool-call style display for files */}
-        {generatedFiles && generatedFiles.slice(0, 5).map((file) => (
-          <Box key={file} flexDirection="column">
-            <Box flexDirection="row">
-              <Text color={colors.green}>{theme.chars.bullet} </Text>
-              <Text bold>Write</Text>
-              <Text dimColor>({file})</Text>
-            </Box>
-            <Box marginLeft={2}>
-              <Text dimColor>└ Created {file}</Text>
-            </Box>
-          </Box>
-        ))}
-        {generatedFiles && generatedFiles.length > 5 && (
-          <Text dimColor>  ... and {generatedFiles.length - 5} more files</Text>
-        )}
-
-        {/* Done message */}
-        <Box marginTop={1} flexDirection="row">
-          <Text color={colors.green}>{theme.chars.bullet} </Text>
-          <Text>Done. Created Ralph configuration files.</Text>
-        </Box>
-
-        {/* What's next */}
-        <Box marginTop={1} flexDirection="column">
-          <Text bold>What's next:</Text>
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>›</Text>
-            <Text color={colors.blue}>/new {'<feature>'}</Text>
-            <Text dimColor>Create a feature specification</Text>
-          </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>›</Text>
-            <Text color={colors.blue}>/help</Text>
-            <Text dimColor>See all commands</Text>
-          </Box>
-        </Box>
-      </Box>
-    ));
-
-    setSessionState(newState);
-    navigate('shell');
-  }, [addToThread, navigate]);
-
-  /**
-   * Handle run completion - add summary to thread
+   * Handle run completion - dismiss background run if any, navigate to shell
    */
   const handleRunComplete = useCallback((summary: RunSummary) => {
-    const totalTokens = summary.tokensInput + summary.tokensOutput;
-    const stoppedCodes = new Set([130, 143]);
-    const exitState = summary.exitCode === 0
-      ? { label: 'Complete', color: colors.green, message: 'Done. Feature loop completed successfully.' }
-      : stoppedCodes.has(summary.exitCode)
-        ? { label: 'Stopped', color: colors.orange, message: 'Stopped. Feature loop interrupted.' }
-        : { label: 'Failed', color: colors.pink, message: `Done. Feature loop exited with code ${summary.exitCode}.` };
-
-    addToThread('run-complete', (
-      <Box flexDirection="column" marginY={1}>
-        <StatusLine
-          action="Run Loop"
-          phase={exitState.label}
-          path={summary.feature}
-        />
-
-        <Box marginTop={1} flexDirection="column">
-          <Text bold>Summary</Text>
-          <Text>- Feature: {summary.feature}</Text>
-          <Text>- Iterations: {summary.iterations}/{summary.maxIterations}</Text>
-          <Text>- Tasks: {summary.tasksDone}/{summary.tasksTotal}</Text>
-          <Text>- Tokens: {formatNumber(totalTokens)} (in:{formatNumber(summary.tokensInput)} out:{formatNumber(summary.tokensOutput)})</Text>
-          {summary.branch && summary.branch !== '-' && (
-            <Text>- Branch: {summary.branch}</Text>
-          )}
-        </Box>
-
-        <Box marginTop={1} flexDirection="row">
-          <Text color={exitState.color}>{theme.chars.bullet} </Text>
-          <Text>{exitState.message}</Text>
-        </Box>
-
-        {(summary.errorTail || summary.logPath) && (
-          <Box marginTop={1} flexDirection="column">
-            {summary.logPath && (
-              <Text dimColor>Log: {summary.logPath}</Text>
-            )}
-            {summary.errorTail && (
-              <Box marginTop={1} flexDirection="column">
-                <Text dimColor>Last output:</Text>
-                {summary.errorTail.split('\n').map((line, idx) => (
-                  <Text key={`${line}-${idx}`} dimColor>
-                    {line}
-                  </Text>
-                ))}
-              </Box>
-            )}
-          </Box>
-        )}
-
-        <Box marginTop={1} flexDirection="column">
-          <Text bold>What's next:</Text>
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>›</Text>
-            <Text dimColor>Review changes and open a PR if needed</Text>
-          </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>›</Text>
-            <Text color={colors.blue}>/new {'<feature>'}</Text>
-            <Text dimColor>Create another feature specification</Text>
-          </Box>
-          <Box flexDirection="row" gap={1}>
-            <Text color={colors.green}>›</Text>
-            <Text color={colors.blue}>/help</Text>
-            <Text dimColor>See all commands</Text>
-          </Box>
-        </Box>
-      </Box>
-    ));
-
+    // Dismiss from background tracking if it was backgrounded
+    dismiss(summary.feature);
     navigate('shell');
-  }, [addToThread, navigate]);
+  }, [dismiss, navigate]);
 
-  // Render current screen content
-  const renderCurrentScreen = () => {
-    // Hide screens while we transition interview output to static thread
-    if (isTransitioning) {
-      return null;
-    }
+  /**
+   * Handle run background - add to background tracking, navigate to shell
+   */
+  const handleRunBackground = useCallback((featureName: string) => {
+    background(featureName);
+    navigate('shell');
+  }, [background, navigate]);
 
-    switch (currentScreen) {
-      case 'welcome':
-        // Banner is already in thread history, fall through to shell
-      case 'shell':
-        return (
-          <MainShell
-            sessionState={sessionState}
-            onNavigate={navigate}
-            onSessionStateChange={handleSessionStateChange}
-          />
-        );
+  // Render current screen
+  switch (currentScreen) {
+    case 'shell':
+      return (
+        <MainShell
+          header={headerElement}
+          sessionState={sessionState}
+          onNavigate={navigate}
+          onSessionStateChange={handleSessionStateChange}
+          backgroundRuns={backgroundRuns}
+        />
+      );
 
-      case 'interview': {
-        // Get feature name from props or navigation
-        const featureName = screenProps?.featureName || interviewProps?.featureName;
+    case 'interview': {
+      const featureName = screenProps?.featureName || interviewProps?.featureName;
 
-        if (!featureName || typeof featureName !== 'string') {
-          // Missing feature name, go back to shell
-          navigate('shell');
-          return null;
-        }
-
-        if (!sessionState.provider) {
-          // No provider configured, can't run interview
-          navigate('shell');
-          return null;
-        }
-
-        return (
-          <InterviewScreen
-            featureName={featureName}
-            projectRoot={sessionState.projectRoot}
-            provider={sessionState.provider}
-            model={sessionState.model}
-            scanResult={sessionState.scanResult}
-            specsPath={sessionState.config?.paths.specs}
-            onComplete={handleInterviewComplete}
-            onCancel={handleInterviewCancel}
-          />
-        );
-      }
-
-      case 'init': {
-        return (
-          <InitScreen
-            projectRoot={sessionState.projectRoot}
-            sessionState={sessionState}
-            onComplete={handleInitComplete}
-            onCancel={() => navigate('shell')}
-          />
-        );
-      }
-
-      case 'run': {
-        const featureName = screenProps?.featureName;
-
-        if (!featureName || typeof featureName !== 'string') {
-          navigate('shell');
-          return null;
-        }
-
-        return (
-          <RunScreen
-            featureName={featureName}
-            projectRoot={sessionState.projectRoot}
-            sessionState={sessionState}
-            onComplete={handleRunComplete}
-            onCancel={() => navigate('shell')}
-          />
-        );
-      }
-
-      default:
+      if (!featureName || typeof featureName !== 'string') {
+        navigate('shell');
         return null;
+      }
+
+      if (!sessionState.provider) {
+        navigate('shell');
+        return null;
+      }
+
+      return (
+        <InterviewScreen
+          header={headerElement}
+          featureName={featureName}
+          projectRoot={sessionState.projectRoot}
+          provider={sessionState.provider}
+          model={sessionState.model}
+          scanResult={sessionState.scanResult}
+          specsPath={sessionState.config?.paths.specs}
+          onComplete={handleInterviewComplete}
+          onCancel={handleInterviewCancel}
+        />
+      );
     }
-  };
 
-  // Render with thread history (Static) + current screen
-  return (
-    <Box flexDirection="column">
-      <Static key={threadResetKey} items={threadHistory}>
-        {(item) => (
-          <Box key={item.id}>
-            {item.content}
-          </Box>
-        )}
-      </Static>
+    case 'init':
+      return (
+        <InitScreen
+          header={headerElement}
+          projectRoot={sessionState.projectRoot}
+          sessionState={sessionState}
+          onComplete={handleInitComplete}
+          onCancel={() => navigate('shell')}
+        />
+      );
 
-      {/* Current active screen */}
-      {!isTransitioning && renderCurrentScreen()}
-    </Box>
-  );
+    case 'run': {
+      const featureName = screenProps?.featureName;
+      const monitorOnly = screenProps?.monitorOnly === true;
+
+      if (!featureName || typeof featureName !== 'string') {
+        navigate('shell');
+        return null;
+      }
+
+      return (
+        <RunScreen
+          header={headerElement}
+          featureName={featureName}
+          projectRoot={sessionState.projectRoot}
+          sessionState={sessionState}
+          monitorOnly={monitorOnly}
+          onComplete={handleRunComplete}
+          onBackground={handleRunBackground}
+          onCancel={() => navigate('shell')}
+        />
+      );
+    }
+
+    default:
+      return null;
+  }
 }
 
 /**
@@ -712,29 +286,9 @@ export interface RenderAppOptions {
 
 /**
  * Render the App component to the terminal
- *
- * Helper function that wraps Ink's render() to provide a clean API
- * for starting the TUI from command handlers.
- *
- * @param options - Render options
- * @returns Ink Instance that can be used to control/cleanup the render
- *
- * @example
- * ```typescript
- * const instance = renderApp({
- *   screen: 'welcome',
- *   initialSessionState: state,
- *   version: '0.8.0',
- *   onExit: () => instance.unmount(),
- * });
- *
- * await instance.waitUntilExit();
- * ```
  */
 export function renderApp(options: RenderAppOptions): Instance {
-  if (options.screen === 'welcome') {
-    process.stdout.write('\x1b[3J\x1b[2J\x1b[0;0H');
-  }
+  process.stdout.write('\x1b[3J\x1b[2J\x1b[0;0H');
   return render(
     <App
       screen={options.screen}

@@ -2,6 +2,14 @@
  * RunScreen - TUI screen for running feature loop
  *
  * Spawns feature-loop.sh and polls status files for progress.
+ * Wrapped in AppShell for fixed-position layout.
+ *
+ * Supports two modes:
+ * - Foreground: spawns the process and monitors it
+ * - Monitor-only: polls status files without spawning (for /monitor)
+ *
+ * Esc backgrounds the run (returns to shell, process keeps running).
+ * On completion, shows RunCompletionSummary inline.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
@@ -9,8 +17,9 @@ import { Box, Text, useInput } from 'ink';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { FooterStatusBar } from '../components/FooterStatusBar.js';
 import { Confirm } from '../components/Confirm.js';
+import { AppShell } from '../components/AppShell.js';
+import { RunCompletionSummary } from '../components/RunCompletionSummary.js';
 import { colors, theme } from '../theme.js';
 import {
   readLoopStatus,
@@ -38,19 +47,22 @@ export interface RunSummary {
 }
 
 export interface RunScreenProps {
+  /** Pre-built header element from App */
+  header: React.ReactNode;
   featureName: string;
   projectRoot: string;
   sessionState: SessionState;
+  /** Monitor-only mode: don't spawn, just poll status */
+  monitorOnly?: boolean;
   onComplete: (summary: RunSummary) => void;
+  /** Called when user presses Esc to background the run */
+  onBackground?: (featureName: string) => void;
   onCancel: () => void;
 }
 
 const POLL_INTERVAL_MS = 2500;
 const ERROR_TAIL_LINES = 12;
 
-/**
- * Find the feature-loop.sh script.
- */
 function findFeatureLoopScript(projectRoot: string, scriptsDir: string): string | null {
   const localScript = join(projectRoot, scriptsDir, 'feature-loop.sh');
   if (existsSync(localScript)) {
@@ -70,9 +82,6 @@ function findFeatureLoopScript(projectRoot: string, scriptsDir: string): string 
   return null;
 }
 
-/**
- * Validate that the spec file exists.
- */
 function findSpecFile(projectRoot: string, feature: string, specsDir: string): string | null {
   const possiblePaths = [
     join(projectRoot, specsDir, `${feature}.md`),
@@ -89,9 +98,6 @@ function findSpecFile(projectRoot: string, feature: string, specsDir: string): s
   return null;
 }
 
-/**
- * Render a simple progress bar.
- */
 function ProgressBar({ percent, width = 18 }: { percent: number; width?: number }): React.ReactElement {
   const safePercent = Math.max(0, Math.min(100, percent));
   const filled = Math.round((safePercent / 100) * width);
@@ -125,10 +131,13 @@ function readLogTail(logPath: string, maxLines: number): string | null {
 }
 
 export function RunScreen({
+  header,
   featureName,
   projectRoot,
   sessionState,
+  monitorOnly = false,
   onComplete,
+  onBackground,
   onCancel,
 }: RunScreenProps): React.ReactElement {
   const [status, setStatus] = useState<LoopStatus>(() => readLoopStatus(featureName));
@@ -140,8 +149,9 @@ export function RunScreen({
   });
   const [branch, setBranch] = useState<string>('-');
   const [error, setError] = useState<string | null>(null);
-  const [isStarting, setIsStarting] = useState(true);
+  const [isStarting, setIsStarting] = useState(!monitorOnly);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [completionSummary, setCompletionSummary] = useState<RunSummary | null>(null);
 
   const childRef = useRef<ChildProcess | null>(null);
   const stopRequestedRef = useRef(false);
@@ -154,13 +164,26 @@ export function RunScreen({
   const maxE2eAttemptsRef = useRef<number>(0);
 
   useInput((input, key) => {
+    // If showing completion summary, Enter or Esc dismisses
+    if (completionSummary) {
+      if (key.return || key.escape) {
+        onComplete(completionSummary);
+      }
+      return;
+    }
+
     if (showConfirm) return;
     if (key.ctrl && input === 'c') {
       setShowConfirm(true);
       return;
     }
     if (key.escape) {
-      onCancel();
+      if (onBackground && !monitorOnly) {
+        // Background the run: don't kill the child, just navigate away
+        onBackground(featureName);
+      } else {
+        onCancel();
+      }
     }
   });
 
@@ -175,7 +198,26 @@ export function RunScreen({
 
     if (!isMountedRef.current) return;
     setBranch(getGitBranch(projectRoot));
-  }, [featureName, projectRoot]);
+
+    // In monitor mode, detect completion
+    if (monitorOnly && !nextStatus.running) {
+      const logPath = `/tmp/ralph-loop-${featureName}.log`;
+      const tasksDone = nextTasks.tasksDone + nextTasks.e2eDone;
+      const tasksTotal = tasksDone + nextTasks.tasksPending + nextTasks.e2ePending;
+      setCompletionSummary({
+        feature: featureName,
+        iterations: nextStatus.iteration,
+        maxIterations: nextStatus.maxIterations,
+        tasksDone,
+        tasksTotal,
+        tokensInput: nextStatus.tokensInput,
+        tokensOutput: nextStatus.tokensOutput,
+        exitCode: 0,
+        branch: getGitBranch(projectRoot),
+        logPath,
+      });
+    }
+  }, [featureName, projectRoot, monitorOnly]);
 
   const stopLoop = useCallback(() => {
     stopRequestedRef.current = true;
@@ -195,6 +237,22 @@ export function RunScreen({
     let cancelled = false;
     let pollTimer: NodeJS.Timeout | null = null;
 
+    if (monitorOnly) {
+      // Monitor mode: just poll, don't spawn
+      setIsStarting(false);
+      refreshStatus();
+      pollTimer = setInterval(() => {
+        refreshStatus();
+      }, POLL_INTERVAL_MS);
+
+      return () => {
+        cancelled = true;
+        isMountedRef.current = false;
+        if (pollTimer) clearInterval(pollTimer);
+      };
+    }
+
+    // Foreground mode: spawn the process
     const startLoop = async () => {
       try {
         if (!/^[a-zA-Z0-9_-]+$/.test(featureName)) {
@@ -284,7 +342,7 @@ export function RunScreen({
           const exitCode = typeof code === 'number' ? code : 1;
           const errorTail = exitCode === 0 ? undefined : readLogTail(logPath, ERROR_TAIL_LINES) || undefined;
 
-          onComplete({
+          const summary: RunSummary = {
             feature: featureName,
             iterations: latestStatus.iteration,
             maxIterations: latestStatus.maxIterations || config.loop.maxIterations,
@@ -296,7 +354,10 @@ export function RunScreen({
             branch: getGitBranch(projectRoot),
             logPath,
             errorTail,
-          });
+          };
+
+          // Show completion summary inline
+          setCompletionSummary(summary);
         });
       } catch (err) {
         if (cancelled) return;
@@ -312,7 +373,7 @@ export function RunScreen({
       isMountedRef.current = false;
       if (pollTimer) clearInterval(pollTimer);
     };
-  }, [featureName, projectRoot, refreshStatus, onComplete, sessionState.config]);
+  }, [featureName, projectRoot, refreshStatus, monitorOnly, sessionState.config]);
 
   const totalTasks = tasks.tasksDone + tasks.tasksPending;
   const totalE2e = tasks.e2eDone + tasks.e2ePending;
@@ -324,91 +385,100 @@ export function RunScreen({
 
   const totalTokens = status.tokensInput + status.tokensOutput;
   const phaseLine = isStarting ? 'Starting...' : status.phase;
+  const isRunning = !completionSummary && !error;
+
+  // Tips text
+  const tips = completionSummary
+    ? 'Enter to return to shell'
+    : monitorOnly
+      ? 'Ctrl+C stop, Esc back'
+      : 'Ctrl+C stop, Esc background';
+
+  // Input element (only show Confirm when stopping)
+  const inputElement = showConfirm ? (
+    <Confirm
+      message={stopRequestedRef.current ? 'Stopping loop...' : 'Stop the feature loop?'}
+      onConfirm={handleConfirm}
+      onCancel={() => setShowConfirm(false)}
+      initialValue={false}
+    />
+  ) : null;
 
   return (
-    <Box flexDirection="column" padding={1}>
+    <AppShell
+      header={header}
+      tips={tips}
+      isWorking={isRunning && !isStarting}
+      workingStatus={`${phaseLine} \u2014 ${featureName}`}
+      workingHint={monitorOnly ? 'esc to go back' : 'esc to background'}
+      input={inputElement}
+      footerStatus={{
+        action: 'Run Loop',
+        phase: phaseLine,
+        path: featureName,
+      }}
+    >
       {error && (
         <Box marginTop={1}>
           <Text color={theme.colors.error}>Error: {error}</Text>
         </Box>
       )}
 
-      {!error && (
-        <>
-          <Box marginTop={1} flexDirection="row">
-            <Text>Phase: </Text>
-            <Text color={colors.yellow}>{phaseLine}</Text>
-            <Text dimColor>{theme.statusLine.separator}</Text>
-            <Text>Iter: </Text>
-            <Text color={colors.green}>{status.iteration}</Text>
-            <Text dimColor>/{status.maxIterations || maxIterationsRef.current || '-'}</Text>
-            <Text dimColor>{theme.statusLine.separator}</Text>
-            <Text>Branch: </Text>
-            <Text color={colors.blue}>{branch}</Text>
-          </Box>
-
-          <Box marginTop={1} flexDirection="row">
-            <Text>Tokens: </Text>
-            <Text color={colors.pink}>{formatNumber(totalTokens)}</Text>
-            <Text dimColor> (in:{formatNumber(status.tokensInput)} out:{formatNumber(status.tokensOutput)})</Text>
-            <Text dimColor>{theme.statusLine.separator}</Text>
-            <Text dimColor>Elapsed: {formatDuration(startTimeRef.current)}</Text>
-          </Box>
-
-          <Box marginTop={1} flexDirection="column">
-            <Box flexDirection="row" alignItems="center" gap={1}>
-              <Text bold>Implementation:</Text>
-              <ProgressBar percent={percentTasks} />
-              <Text>{percentTasks}%</Text>
-              <Text color={colors.green}>✓ {tasks.tasksDone}</Text>
-              <Text color={colors.yellow}>○ {tasks.tasksPending}</Text>
+      {completionSummary ? (
+        <RunCompletionSummary summary={completionSummary} />
+      ) : (
+        !error && (
+          <>
+            <Box marginTop={1} flexDirection="row">
+              <Text>Phase: </Text>
+              <Text color={colors.yellow}>{phaseLine}</Text>
+              <Text dimColor>{theme.statusLine.separator}</Text>
+              <Text>Iter: </Text>
+              <Text color={colors.green}>{status.iteration}</Text>
+              <Text dimColor>/{status.maxIterations || maxIterationsRef.current || '-'}</Text>
+              <Text dimColor>{theme.statusLine.separator}</Text>
+              <Text>Branch: </Text>
+              <Text color={colors.blue}>{branch}</Text>
             </Box>
 
-            {totalE2e > 0 && (
+            <Box marginTop={1} flexDirection="row">
+              <Text>Tokens: </Text>
+              <Text color={colors.pink}>{formatNumber(totalTokens)}</Text>
+              <Text dimColor> (in:{formatNumber(status.tokensInput)} out:{formatNumber(status.tokensOutput)})</Text>
+              <Text dimColor>{theme.statusLine.separator}</Text>
+              <Text dimColor>Elapsed: {formatDuration(startTimeRef.current)}</Text>
+            </Box>
+
+            <Box marginTop={1} flexDirection="column">
               <Box flexDirection="row" alignItems="center" gap={1}>
-                <Text bold>E2E Tests:</Text>
-                <ProgressBar percent={percentE2e} />
-                <Text>{percentE2e}%</Text>
-                <Text color={colors.green}>✓ {tasks.e2eDone}</Text>
-                <Text color={colors.yellow}>○ {tasks.e2ePending}</Text>
+                <Text bold>Implementation:</Text>
+                <ProgressBar percent={percentTasks} />
+                <Text>{percentTasks}%</Text>
+                <Text color={colors.green}>{'\u2713'} {tasks.tasksDone}</Text>
+                <Text color={colors.yellow}>{'\u25cb'} {tasks.tasksPending}</Text>
               </Box>
-            )}
 
-            <Box flexDirection="row" alignItems="center" gap={1} marginTop={1}>
-              <Text bold>Overall:</Text>
-              <ProgressBar percent={percentAll} />
-              <Text>{percentAll}%</Text>
-              <Text color={colors.green}>✓ {doneAll}</Text>
-              <Text color={colors.yellow}>○ {totalAll - doneAll}</Text>
+              {totalE2e > 0 && (
+                <Box flexDirection="row" alignItems="center" gap={1}>
+                  <Text bold>E2E Tests:</Text>
+                  <ProgressBar percent={percentE2e} />
+                  <Text>{percentE2e}%</Text>
+                  <Text color={colors.green}>{'\u2713'} {tasks.e2eDone}</Text>
+                  <Text color={colors.yellow}>{'\u25cb'} {tasks.e2ePending}</Text>
+                </Box>
+              )}
+
+              <Box flexDirection="row" alignItems="center" gap={1} marginTop={1}>
+                <Text bold>Overall:</Text>
+                <ProgressBar percent={percentAll} />
+                <Text>{percentAll}%</Text>
+                <Text color={colors.green}>{'\u2713'} {doneAll}</Text>
+                <Text color={colors.yellow}>{'\u25cb'} {totalAll - doneAll}</Text>
+              </Box>
             </Box>
-          </Box>
-
-          <Box marginTop={1}>
-            <Text dimColor>Tip: /monitor {featureName} in another terminal for details</Text>
-          </Box>
-          <Box>
-            <Text dimColor>Press Ctrl+C to stop the loop</Text>
-          </Box>
-        </>
+          </>
+        )
       )}
-
-      {showConfirm && (
-        <Box marginTop={1}>
-          <Confirm
-            message={stopRequestedRef.current ? 'Stopping loop...' : 'Stop the feature loop?'}
-            onConfirm={handleConfirm}
-            onCancel={() => setShowConfirm(false)}
-            initialValue={false}
-          />
-        </Box>
-      )}
-
-      {/* Footer status bar */}
-      <FooterStatusBar
-        action="Run Loop"
-        phase={phaseLine}
-        path={featureName}
-      />
-    </Box>
+    </AppShell>
   );
 }

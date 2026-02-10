@@ -29,7 +29,7 @@ function getVersion(): string {
  * Start Ink TUI mode
  * Called when wiggum is invoked with no arguments or with screen-routing args
  */
-async function startInkTui(initialScreen: AppScreen = 'welcome', interviewFeature?: string): Promise<void> {
+async function startInkTui(initialScreen: AppScreen = 'shell', interviewFeature?: string): Promise<void> {
   const projectRoot = process.cwd();
   const version = getVersion();
 
@@ -114,9 +114,9 @@ export async function main(): Promise<void> {
   // Check for updates (non-blocking, fails silently)
   await notifyIfUpdateAvailable();
 
-  // No args = start with welcome screen
+  // No args = start with shell
   if (args.length === 0) {
-    await startInkTui('welcome');
+    await startInkTui('shell');
     return;
   }
 
