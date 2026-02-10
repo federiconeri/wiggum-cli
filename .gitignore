@@ -4,6 +4,13 @@ coverage/
 *.log
 .DS_Store
 .playwright-mcp/
+.claude/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
 
 /docs
 
