@@ -1,7 +1,8 @@
 /**
  * HeaderContent - Banner + status meta for the AppShell header zone
  *
- * Extracts the banner rendering previously in App.tsx renderBannerContent().
+ * Renders the version badge, provider/model info, init status,
+ * and background run indicators in a single horizontal row.
  */
 
 import React from 'react';

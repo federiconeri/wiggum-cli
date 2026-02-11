@@ -1,8 +1,8 @@
 /**
  * RunCompletionSummary - Displays run loop completion recap
  *
- * Extracted from App.tsx handleRunComplete. Shows the feature,
- * iterations, tasks, tokens, exit status, log tail, and "what's next".
+ * Shows the feature, iterations, tasks, tokens, exit status,
+ * log tail, and "what's next" section after a feature loop completes.
  */
 
 import React from 'react';

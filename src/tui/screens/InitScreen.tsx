@@ -8,7 +8,7 @@
  * 4. AI analysis
  * 5. File generation
  *
- * Wrapped in AppShell for fixed-position layout.
+ * Wrapped in AppShell for consistent layout.
  */
 
 import React, { useEffect, useRef, useCallback } from 'react';
@@ -510,8 +510,13 @@ export function InitScreen({
         );
 
       case 'error':
-        // Error is shown via AppShell error toast
-        return null;
+        return (
+          <Box flexDirection="column">
+            <Text color={colors.pink} bold>Error</Text>
+            <Text color={colors.pink}>{state.error}</Text>
+            <Text dimColor>Press Esc to go back</Text>
+          </Box>
+        );
 
       default:
         return null;

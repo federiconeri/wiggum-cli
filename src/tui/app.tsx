@@ -17,6 +17,7 @@ import type { AIProvider } from '../ai/providers.js';
 import type { ScanResult } from '../scanner/types.js';
 import type { SessionState } from '../repl/session-state.js';
 import { loadConfigWithDefaults } from '../utils/config.js';
+import { logger } from '../utils/logger.js';
 import { InterviewScreen } from './screens/InterviewScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
 import { RunScreen, type RunSummary } from './screens/RunScreen.js';
@@ -116,13 +117,6 @@ export function App({
   }, []);
 
   /**
-   * Handle session state changes
-   */
-  const handleSessionStateChange = useCallback((newState: SessionState) => {
-    setSessionState(newState);
-  }, []);
-
-  /**
    * Handle interview completion - save spec to disk and navigate to shell
    */
   const handleInterviewComplete = useCallback(async (spec: string, messages: Message[], specPath: string) => {
@@ -141,7 +135,8 @@ export function App({
         savedPath = join(specsDir, `${featureName}.md`);
         writeFileSync(savedPath, spec, 'utf-8');
         onComplete?.(savedPath);
-      } catch {
+      } catch (err) {
+        logger.error(`Failed to save spec: ${err instanceof Error ? err.message : String(err)}`);
         onComplete?.(spec);
       }
     } else {
@@ -206,7 +201,7 @@ export function App({
           header={headerElement}
           sessionState={sessionState}
           onNavigate={navigate}
-          onSessionStateChange={handleSessionStateChange}
+
           backgroundRuns={backgroundRuns}
           initialMessage={typeof screenProps?.message === 'string' ? screenProps.message : undefined}
           initialFiles={Array.isArray(screenProps?.generatedFiles) ? screenProps.generatedFiles as string[] : undefined}
@@ -217,12 +212,12 @@ export function App({
       const featureName = screenProps?.featureName || interviewProps?.featureName;
 
       if (!featureName || typeof featureName !== 'string') {
-        navigate('shell');
+        navigate('shell', { message: 'Feature name is required for the interview screen.' });
         return null;
       }
 
       if (!sessionState.provider) {
-        navigate('shell');
+        navigate('shell', { message: 'No AI provider configured. Run /init first.' });
         return null;
       }
 
@@ -257,7 +252,7 @@ export function App({
       const monitorOnly = screenProps?.monitorOnly === true;
 
       if (!featureName || typeof featureName !== 'string') {
-        navigate('shell');
+        navigate('shell', { message: 'Feature name is required for the run screen.' });
         return null;
       }
 

@@ -126,6 +126,38 @@ describe('AppShell', () => {
     unmount();
   });
 
+  it('renders error toast when error prop is provided', () => {
+    const { lastFrame, unmount } = render(
+      <AppShell
+        header={<Text>H</Text>}
+        error="Something went wrong"
+        footerStatus={defaultFooter}
+      >
+        <Text> </Text>
+      </AppShell>,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Something went wrong');
+    unmount();
+  });
+
+  it('does not render error toast when error is null', () => {
+    const { lastFrame, unmount } = render(
+      <AppShell
+        header={<Text>H</Text>}
+        error={null}
+        footerStatus={defaultFooter}
+      >
+        <Text> </Text>
+      </AppShell>,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).not.toContain('Something went wrong');
+    unmount();
+  });
+
   it('renders all zones together', () => {
     const { lastFrame, unmount } = render(
       <AppShell

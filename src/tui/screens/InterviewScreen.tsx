@@ -8,7 +8,7 @@
  * 3. Interview - Clarifying questions
  * 4. Generation - Generate the specification
  *
- * Wrapped in AppShell for fixed-position layout. On completion,
+ * Wrapped in AppShell for consistent layout. On completion,
  * shows SpecCompletionSummary inline before returning to shell.
  */
 
@@ -34,6 +34,7 @@ import {
   toScanResultFromPersisted,
   getContextAge,
 } from '../../context/index.js';
+import { join } from 'node:path';
 import { initTracing, flushTracing } from '../../utils/tracing.js';
 import { resolveOptionLabels, type InterviewQuestion, type InterviewAnswer } from '../types/interview.js';
 import type { Message } from '../components/MessageList.js';
@@ -220,8 +221,8 @@ export function InterviewScreen({
           if (isCancelledRef.current) return;
           setGeneratedSpec(spec);
           // Show completion summary inline instead of navigating away immediately
-          const path = `${specsPath}/${featureName}.md`;
-          setCompletionData({ spec, specPath: path });
+          const specFilePath = join(projectRoot, specsPath, `${featureName}.md`);
+          setCompletionData({ spec, specPath: specFilePath });
         },
         onError: (error) => {
           if (isCancelledRef.current) return;
@@ -253,46 +254,50 @@ export function InterviewScreen({
 
   const handleSubmit = useCallback(
     async (value: string) => {
-      const orchestrator = orchestratorRef.current;
-      if (!orchestrator) return;
+      try {
+        const orchestrator = orchestratorRef.current;
+        if (!orchestrator) return;
 
-      if (value) {
-        addMessage('user', value);
-      }
+        if (value) {
+          addMessage('user', value);
+        }
 
-      const currentPhase = orchestrator.getPhase();
+        const currentPhase = orchestrator.getPhase();
 
-      switch (currentPhase) {
-        case 'context':
-          if (value) {
-            await orchestrator.addReference(value);
-          } else {
-            await orchestrator.advanceToGoals();
-          }
-          break;
+        switch (currentPhase) {
+          case 'context':
+            if (value) {
+              await orchestrator.addReference(value);
+            } else {
+              await orchestrator.advanceToGoals();
+            }
+            break;
 
-        case 'goals':
-          await orchestrator.submitGoals(value);
-          break;
+          case 'goals':
+            await orchestrator.submitGoals(value);
+            break;
 
-        case 'interview':
-          if (value.toLowerCase() === 'done' || value.toLowerCase() === 'skip') {
-            await orchestrator.skipToGeneration();
-          } else {
-            const answer: InterviewAnswer = {
-              mode: 'freeText',
-              questionId: currentQuestion?.id || '',
-              text: value,
-            };
-            await orchestrator.submitAnswer(answer);
-          }
-          break;
+          case 'interview':
+            if (value.toLowerCase() === 'done' || value.toLowerCase() === 'skip') {
+              await orchestrator.skipToGeneration();
+            } else {
+              const answer: InterviewAnswer = {
+                mode: 'freeText',
+                questionId: currentQuestion?.id || '',
+                text: value,
+              };
+              await orchestrator.submitAnswer(answer);
+            }
+            break;
 
-        default:
-          break;
+          default:
+            break;
+        }
+      } catch (error) {
+        setError(error instanceof Error ? error.message : String(error));
       }
     },
-    [addMessage, currentQuestion]
+    [addMessage, currentQuestion, setError]
   );
 
   const handleMultiSelectSubmit = useCallback(

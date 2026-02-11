@@ -3,7 +3,7 @@
  *
  * The main interactive shell for Wiggum CLI, replacing the readline REPL.
  * Handles slash commands and provides navigation to other screens.
- * Wrapped in AppShell for fixed-position layout.
+ * Wrapped in AppShell for consistent layout.
  */
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
@@ -50,8 +50,6 @@ export interface MainShellProps {
   sessionState: SessionState;
   /** Called when navigating to another screen */
   onNavigate: (target: NavigationTarget, props?: NavigationProps) => void;
-  /** Called when session state changes */
-  onSessionStateChange?: (state: SessionState) => void;
   /** Active background runs */
   backgroundRuns?: BackgroundRun[];
   /** Message to display when the shell first mounts (e.g. from init completion) */

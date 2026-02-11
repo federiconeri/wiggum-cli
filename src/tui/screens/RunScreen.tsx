@@ -2,7 +2,7 @@
  * RunScreen - TUI screen for running feature loop
  *
  * Spawns feature-loop.sh and polls status files for progress.
- * Wrapped in AppShell for fixed-position layout.
+ * Wrapped in AppShell for consistent layout.
  *
  * Supports two modes:
  * - Foreground: spawns the process and monitors it
@@ -125,8 +125,8 @@ function readLogTail(logPath: string, maxLines: number): string | null {
     const lines = content.trimEnd().split('\n');
     if (lines.length === 0) return null;
     return lines.slice(-maxLines).join('\n');
-  } catch {
-    return null;
+  } catch (err) {
+    return `[Unable to read log: ${err instanceof Error ? err.message : String(err)}]`;
   }
 }
 
@@ -202,8 +202,11 @@ export function RunScreen({
     // In monitor mode, detect completion
     if (monitorOnly && !nextStatus.running) {
       const logPath = `/tmp/ralph-loop-${featureName}.log`;
+      const finalMarker = `/tmp/ralph-loop-${featureName}.final`;
+      const exitCode = existsSync(finalMarker) ? 0 : 1;
       const tasksDone = nextTasks.tasksDone + nextTasks.e2eDone;
       const tasksTotal = tasksDone + nextTasks.tasksPending + nextTasks.e2ePending;
+      const errorTail = exitCode !== 0 ? readLogTail(logPath, ERROR_TAIL_LINES) || undefined : undefined;
       setCompletionSummary({
         feature: featureName,
         iterations: nextStatus.iteration,
@@ -212,9 +215,10 @@ export function RunScreen({
         tasksTotal,
         tokensInput: nextStatus.tokensInput,
         tokensOutput: nextStatus.tokensOutput,
-        exitCode: 0,
+        exitCode,
         branch: getGitBranch(projectRoot),
         logPath,
+        errorTail,
       });
     }
   }, [featureName, projectRoot, monitorOnly]);
@@ -334,8 +338,17 @@ export function RunScreen({
           if (cancelled) return;
           if (pollTimer) clearInterval(pollTimer);
           closeSync(logFd);
-          const latestStatus = readLoopStatus(featureName);
-          const latestTasks = await parseImplementationPlan(projectRoot, featureName, specsDirRef.current);
+          if (!isMountedRef.current) return;
+
+          let latestStatus: LoopStatus;
+          let latestTasks: TaskCounts;
+          try {
+            latestStatus = readLoopStatus(featureName);
+            latestTasks = await parseImplementationPlan(projectRoot, featureName, specsDirRef.current);
+          } catch {
+            latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+            latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0 };
+          }
 
           const tasksDone = latestTasks.tasksDone + latestTasks.e2eDone;
           const tasksTotal = tasksDone + latestTasks.tasksPending + latestTasks.e2ePending;

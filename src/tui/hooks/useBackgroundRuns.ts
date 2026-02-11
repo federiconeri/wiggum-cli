@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { readLoopStatus, type LoopStatus } from '../utils/loop-status.js';
+import { logger } from '../../utils/logger.js';
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -64,24 +65,34 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
     if (existing) clearInterval(existing);
 
     const timer = setInterval(() => {
-      const status = readLoopStatus(featureName);
-      setRuns((prev) =>
-        prev.map((run) => {
-          if (run.featureName !== featureName) return run;
-          return {
-            ...run,
-            lastStatus: status,
-            completed: !status.running,
-          };
-        })
-      );
+      try {
+        const status = readLoopStatus(featureName);
+        setRuns((prev) =>
+          prev.map((run) => {
+            if (run.featureName !== featureName) return run;
+            return {
+              ...run,
+              lastStatus: status,
+              completed: !status.running,
+            };
+          })
+        );
+      } catch (err) {
+        logger.error(`Failed to poll status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }, POLL_INTERVAL_MS);
 
     pollTimers.current.set(featureName, timer);
   }, []);
 
   const background = useCallback((featureName: string) => {
-    const status = readLoopStatus(featureName);
+    let status: LoopStatus;
+    try {
+      status = readLoopStatus(featureName);
+    } catch (err) {
+      logger.error(`Failed to read initial status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+      status = { running: true, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+    }
     const logPath = `/tmp/ralph-loop-${featureName}.log`;
 
     setRuns((prev) => {

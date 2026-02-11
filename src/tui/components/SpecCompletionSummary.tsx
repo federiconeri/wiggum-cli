@@ -1,9 +1,9 @@
 /**
  * SpecCompletionSummary - Displays spec generation recap
  *
- * Extracted from App.tsx handleInterviewComplete. Shows the goal,
- * key decisions, file preview, and "what's next" section after
- * a spec has been generated.
+ * Shows the goal, key decisions, file preview, and "what's next"
+ * section after a spec has been generated. Extracts a recap from
+ * the conversation history using NLP heuristics.
  */
 
 import React from 'react';
@@ -29,7 +29,7 @@ export interface SpecCompletionSummaryProps {
 
 const MAX_RECAP_SOURCE_LENGTH = 1200;
 
-function normalizeRecap(text: string): string {
+export function normalizeRecap(text: string): string {
   let result = text.trim();
   result = result.replace(/^[^a-z0-9]+/i, '');
   result = result.replace(/^you want\s*/i, '');
@@ -38,7 +38,7 @@ function normalizeRecap(text: string): string {
   return result.charAt(0).toUpperCase() + result.slice(1);
 }
 
-function normalizeUserDecision(text: string): string {
+export function normalizeUserDecision(text: string): string {
   let result = text.trim();
   result = result.replace(/^[^a-z0-9]+/i, '');
   result = result.replace(/^i (?:would like|want|need|prefer|expect) to\s*/i, '');
@@ -52,12 +52,12 @@ function normalizeUserDecision(text: string): string {
   return result.charAt(0).toUpperCase() + result.slice(1);
 }
 
-function summarizeText(text: string, max = 160): string {
+export function summarizeText(text: string, max = 160): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max - 1)}\u2026`;
 }
 
-function isUsefulDecision(entry: string): boolean {
+export function isUsefulDecision(entry: string): boolean {
   const normalized = entry.trim().toLowerCase();
   if (normalized.length < 8) return false;
   const wordCount = normalized.split(/\s+/).length;
@@ -69,7 +69,7 @@ function isUsefulDecision(entry: string): boolean {
 /**
  * Extract goal and key decisions from conversation messages
  */
-function extractRecap(messages: Message[], featureName: string) {
+export function extractRecap(messages: Message[], featureName: string) {
   const userMessages = messages
     .filter((msg) => msg.role === 'user')
     .map((msg) => msg.content.trim())

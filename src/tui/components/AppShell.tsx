@@ -1,16 +1,17 @@
 /**
- * AppShell - Fixed-position layout wrapper for TUI screens
+ * AppShell - Inline layout wrapper for TUI screens
  *
- * Provides a 5-zone layout where header and footer are fixed,
- * content fills the remaining space, and screen transitions are
- * clean React mount/unmount cycles.
+ * Provides a 6-zone inline layout that renders at natural height
+ * after the shell prompt. Screen transitions are clean React
+ * mount/unmount cycles.
  *
  * Zones:
- *  1. Header: banner + status meta (fixed)
+ *  1. Header: banner + status meta
  *  2. TipsBar: contextual hints (1 row or 0)
- *  3. Content: screen-specific, overflow hidden (fills remaining space)
+ *  3. Content: screen-specific (natural height)
  *  4. Spinner: WorkingIndicator (1 row when active, 0 otherwise)
- *  5. Footer: input + separator + status line (fixed)
+ *  5. Error toast: error message (1 row when present, 0 otherwise)
+ *  6. Footer: input + status line
  */
 
 import React from 'react';
@@ -47,9 +48,8 @@ export interface AppShellProps {
 /**
  * AppShell component
  *
- * Compact inline layout like Claude Code. Renders at natural height
- * right after the shell prompt. Content area has a max height to
- * prevent pushing the footer off-screen when messages accumulate.
+ * Compact inline layout. Renders at natural height right after
+ * the shell prompt. Each zone stacks vertically with gap spacing.
  */
 export function AppShell({
   header,
