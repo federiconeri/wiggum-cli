@@ -14,10 +14,11 @@
  */
 
 import React from 'react';
-import { Box, useStdout } from 'ink';
+import { Box, Text } from 'ink';
 import { TipsBar } from './TipsBar.js';
 import { WorkingIndicator } from './WorkingIndicator.js';
 import { FooterStatusBar, type FooterStatusBarProps } from './FooterStatusBar.js';
+import { phase, theme } from '../theme.js';
 
 /**
  * Props for the AppShell component
@@ -35,6 +36,8 @@ export interface AppShellProps {
   workingStatus?: string;
   /** Spinner hint (e.g. "esc to cancel") */
   workingHint?: string;
+  /** Error message to display as a toast above the footer */
+  error?: string | null;
   /** Input component: ChatInput, MultiSelect, Select, etc. */
   input?: React.ReactNode;
   /** Footer status bar props */
@@ -44,9 +47,9 @@ export interface AppShellProps {
 /**
  * AppShell component
  *
- * Wraps each screen in a fixed-position layout. The header and footer
- * remain in place while the content area fills the remaining vertical
- * space with overflow hidden.
+ * Compact inline layout like Claude Code. Renders at natural height
+ * right after the shell prompt. Content area has a max height to
+ * prevent pushing the footer off-screen when messages accumulate.
  */
 export function AppShell({
   header,
@@ -55,42 +58,22 @@ export function AppShell({
   isWorking = false,
   workingStatus = '',
   workingHint,
+  error,
   input,
   footerStatus,
 }: AppShellProps): React.ReactElement {
-  const { stdout } = useStdout();
-  const rows = stdout?.rows ?? 24;
-  const compact = rows < 20;
-
-  // Height estimates for fixed zones
-  const headerH = compact ? 3 : 9; // banner 6 lines + status + tip-gap + border
-  const tipsH = tips ? 1 : 0;
-  const spinnerH = isWorking ? 1 : 0;
-  const inputH = input ? 2 : 0;
-  const footerH = 2; // separator + status line
-
-  const contentH = Math.max(3, rows - headerH - tipsH - spinnerH - inputH - footerH);
-
   return (
-    <Box flexDirection="column" height={rows}>
-      {/* Zone 1: Header */}
-      <Box flexDirection="column">
-        {header}
-      </Box>
+    <Box flexDirection="column" gap={1}>
+      {/* Header */}
+      <Box marginTop={1} flexDirection="column">{header}</Box>
 
-      {/* Zone 2: Tips */}
+      {/* Tips */}
       {tips && <TipsBar text={tips} />}
 
-      {/* Zone 3: Content */}
-      <Box
-        flexDirection="column"
-        height={contentH}
-        overflowY="hidden"
-      >
-        {children}
-      </Box>
+      {/* Content - natural height */}
+      {children}
 
-      {/* Zone 4: Spinner */}
+      {/* Spinner */}
       {isWorking && (
         <WorkingIndicator
           state={{
@@ -102,8 +85,13 @@ export function AppShell({
         />
       )}
 
-      {/* Zone 5: Footer */}
-      <Box flexDirection="column">
+      {/* Error toast */}
+      {error && (
+        <Text color={theme.colors.error}>{phase.error} {error}</Text>
+      )}
+
+      {/* Footer */}
+      <Box marginBottom={1} flexDirection="column">
         {input}
         <FooterStatusBar {...footerStatus} />
       </Box>

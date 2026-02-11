@@ -28,7 +28,7 @@ import {
   type GeneratorPhase,
 } from '../hooks/useSpecGenerator.js';
 import { InterviewOrchestrator, type SessionContext } from '../orchestration/interview-orchestrator.js';
-import { theme } from '../theme.js';
+import { theme, phase } from '../theme.js';
 import {
   loadContext,
   toScanResultFromPersisted,
@@ -301,16 +301,20 @@ export function InterviewScreen({
         const orchestrator = orchestratorRef.current;
         if (!orchestrator || !currentQuestion) return;
 
+        // Capture question before clearing so MultiSelect disappears immediately
+        const question = currentQuestion;
+        setCurrentQuestion(null);
+
         if (selectedValues.length === 0) {
           addMessage('user', '(No options selected)');
         } else {
-          const labels = resolveOptionLabels(currentQuestion.options, selectedValues);
+          const labels = resolveOptionLabels(question.options, selectedValues);
           addMessage('user', labels.join(', '));
         }
 
         const answer: InterviewAnswer = {
           mode: 'multiSelect',
-          questionId: currentQuestion.id,
+          questionId: question.id,
           selectedOptionIds: selectedValues,
         };
         await orchestrator.submitAnswer(answer);
@@ -403,6 +407,7 @@ export function InterviewScreen({
     if (state.phase === 'interview' && currentQuestion) {
       inputElement = (
         <MultiSelect
+          key={currentQuestion.id}
           message={currentQuestion.text}
           options={currentQuestion.options.map(opt => ({
             value: opt.id,
@@ -431,6 +436,7 @@ export function InterviewScreen({
       isWorking={state.isWorking && !completionData}
       workingStatus={state.workingStatus}
       workingHint="esc to cancel"
+      error={state.error}
       input={inputElement}
       footerStatus={{
         action: 'New Spec',
@@ -438,13 +444,6 @@ export function InterviewScreen({
         path: featureName,
       }}
     >
-      {/* Error display */}
-      {state.error && (
-        <Box marginY={1}>
-          <Text color={theme.colors.error}>Error: {state.error}</Text>
-        </Box>
-      )}
-
       {/* Show completion summary when spec is done */}
       {completionData ? (
         <SpecCompletionSummary
@@ -456,14 +455,12 @@ export function InterviewScreen({
       ) : (
         <>
           {/* Conversation history */}
-          <Box marginY={1}>
-            <MessageList messages={state.messages} toolCallsExpanded={toolCallsExpanded} />
-          </Box>
+          <MessageList messages={state.messages} toolCallsExpanded={toolCallsExpanded} />
 
           {/* Completion message (before summary is shown) */}
           {state.phase === 'complete' && !completionData && (
             <Box flexDirection="row">
-              <Text color={theme.colors.success}>{theme.chars.bullet} </Text>
+              <Text color={theme.colors.success}>{phase.complete} </Text>
               <Text>Specification complete.</Text>
             </Box>
           )}

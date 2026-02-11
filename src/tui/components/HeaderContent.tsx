@@ -41,7 +41,7 @@ export function HeaderContent({
   return (
     <Box flexDirection="column" paddingX={1}>
       <WiggumBanner compact={compact} />
-      <Box marginTop={compact ? 0 : 1} flexDirection="row">
+      <Box flexDirection="row">
         <Text color={colors.pink}>v{version}</Text>
         <Text dimColor>{theme.statusLine.separator}</Text>
         {sessionState.provider ? (

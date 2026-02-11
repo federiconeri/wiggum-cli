@@ -512,7 +512,7 @@ export class InterviewOrchestrator {
     try {
       // Set initial phase
       this.onPhaseChange('context');
-      this.onMessage('system', `Spec Generator initialized for feature: ${this.featureName}`);
+      this.onMessage('system', `Phase 1: Context - New spec for feature: ${this.featureName}`);
 
       // Ready for context input
       this.onReady();

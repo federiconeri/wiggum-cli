@@ -412,18 +412,13 @@ export function RunScreen({
       workingStatus={`${phaseLine} \u2014 ${featureName}`}
       workingHint={monitorOnly ? 'esc to go back' : 'esc to background'}
       input={inputElement}
+      error={error}
       footerStatus={{
         action: 'Run Loop',
         phase: phaseLine,
         path: featureName,
       }}
     >
-      {error && (
-        <Box marginTop={1}>
-          <Text color={theme.colors.error}>Error: {error}</Text>
-        </Box>
-      )}
-
       {completionSummary ? (
         <RunCompletionSummary summary={completionSummary} />
       ) : (

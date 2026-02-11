@@ -12,7 +12,7 @@ import { MessageList, type Message } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
 import { ActionOutput } from '../components/ActionOutput.js';
 import { AppShell } from '../components/AppShell.js';
-import { colors, theme } from '../theme.js';
+import { colors, theme, phase } from '../theme.js';
 import { loadContext, getContextAge } from '../../context/index.js';
 import {
   parseInput,
@@ -54,6 +54,10 @@ export interface MainShellProps {
   onSessionStateChange?: (state: SessionState) => void;
   /** Active background runs */
   backgroundRuns?: BackgroundRun[];
+  /** Message to display when the shell first mounts (e.g. from init completion) */
+  initialMessage?: string;
+  /** File paths to display as dimmed lines below the initial message */
+  initialFiles?: string[];
 }
 
 /**
@@ -74,9 +78,22 @@ export function MainShell({
   sessionState,
   onNavigate,
   backgroundRuns,
+  initialMessage,
+  initialFiles,
 }: MainShellProps): React.ReactElement {
   const { exit } = useApp();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const initial: Message[] = [];
+    if (initialMessage) {
+      initial.push({ id: generateId(), role: 'system' as const, content: initialMessage });
+    }
+    if (initialFiles && initialFiles.length > 0) {
+      for (const file of initialFiles) {
+        initial.push({ id: generateId(), role: 'system' as const, content: `  ${file}` });
+      }
+    }
+    return initial;
+  });
   const [contextAge, setContextAge] = useState<string | null>(null);
 
   // Sync hook
@@ -326,14 +343,14 @@ export function MainShell({
     >
       {/* Message history */}
       {messages.length > 0 && (
-        <Box marginY={1} flexDirection="column">
+        <Box flexDirection="column">
           <MessageList messages={messages} />
         </Box>
       )}
 
       {/* Sync UI (non-spinner parts) */}
       {syncStatus !== 'idle' && (
-        <Box marginY={1} flexDirection="column" gap={1}>
+        <Box flexDirection="column" gap={1}>
           <ActionOutput
             actionName="Sync"
             description="Project context"
@@ -358,7 +375,7 @@ export function MainShell({
           {syncStatus === 'success' && (
             <Box marginTop={1} flexDirection="column">
               <Box flexDirection="row">
-                <Text color={colors.green}>{theme.chars.bullet} </Text>
+                <Text color={colors.green}>{phase.complete} </Text>
                 <Text>Done. Project context updated.</Text>
               </Box>
               <Box marginTop={1} flexDirection="column">

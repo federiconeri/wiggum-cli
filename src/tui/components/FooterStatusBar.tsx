@@ -39,14 +39,13 @@ const SEPARATOR_CHAR = '\u2500';
  */
 export function FooterStatusBar(props: FooterStatusBarProps): React.ReactElement {
   const { stdout } = useStdout();
-  // Screens use padding={1}, so subtract 2 to avoid wrapping on narrow terminals.
-  const width = Math.max(1, (stdout?.columns ?? 80) - 2);
+  const width = Math.max(1, stdout?.columns ?? 80);
 
   return (
     <Box flexDirection="column" width="100%">
-      {/* Horizontal separator */}
-      <Box width="100%">
-        <Text color={colors.separator}>
+      {/* Horizontal separator - truncate prevents wrapping on resize */}
+      <Box width="100%" overflow="hidden">
+        <Text color={colors.separator} wrap="truncate">
           {SEPARATOR_CHAR.repeat(width)}
         </Text>
       </Box>

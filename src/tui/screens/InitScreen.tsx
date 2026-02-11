@@ -13,7 +13,7 @@
 
 import React, { useEffect, useRef, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { colors, theme } from '../theme.js';
+import { colors, theme, phase } from '../theme.js';
 import { useInit, INIT_PHASE_CONFIGS, INIT_TOTAL_PHASES } from '../hooks/useInit.js';
 import { AppShell } from '../components/AppShell.js';
 import { Select, type SelectOption } from '../components/Select.js';
@@ -106,7 +106,7 @@ export function InitScreen({
   const aiAnalysisStarted = useRef(false);
   const generationStarted = useRef(false);
 
-  useInput((input, key) => {
+  useInput((_input, key) => {
     if (key.escape) {
       onCancel();
     }
@@ -417,7 +417,7 @@ export function InitScreen({
 
     const { stack } = state.scanResult;
     return (
-      <Box marginBottom={1} flexDirection="column">
+      <Box flexDirection="column">
         <Text color={colors.yellow} bold>
           Detected Stack
         </Text>
@@ -463,7 +463,7 @@ export function InitScreen({
               </Text>
             </Box>
             {state.toolCalls.length > 0 && (
-              <Box marginBottom={1} flexDirection="column">
+              <Box flexDirection="column">
                 {state.toolCalls.map((tc) => (
                   <ToolCallCard
                     key={tc.id}
@@ -483,8 +483,11 @@ export function InitScreen({
         return (
           <Box flexDirection="column">
             {state.enhancedResult?.aiAnalysis && (
-              <Box marginBottom={1} flexDirection="column">
-                <Text color={colors.green}>AI Analysis Complete</Text>
+              <Box flexDirection="column">
+                <Box flexDirection="row">
+                  <Text color={colors.green}>{phase.complete} </Text>
+                  <Text>AI Analysis Complete</Text>
+                </Box>
                 {state.tokenUsage && (
                   <Text dimColor>
                     Tokens: {state.tokenUsage.inputTokens} in / {state.tokenUsage.outputTokens} out
@@ -493,9 +496,7 @@ export function InitScreen({
               </Box>
             )}
             {state.error && (
-              <Box marginBottom={1}>
-                <Text color={colors.orange}>Warning: {state.error}</Text>
-              </Box>
+              <Text color={colors.orange}>Warning: {state.error}</Text>
             )}
           </Box>
         );
@@ -503,23 +504,14 @@ export function InitScreen({
       case 'complete':
         return (
           <Box flexDirection="row">
-            <Text color={colors.green}>{theme.chars.bullet} </Text>
+            <Text color={colors.green}>{phase.complete} </Text>
             <Text>Initialization complete.</Text>
           </Box>
         );
 
       case 'error':
-        return (
-          <Box flexDirection="column">
-            <Text color={colors.pink} bold>
-              Error
-            </Text>
-            <Text color={colors.pink}>{state.error}</Text>
-            <Box marginTop={1}>
-              <Text dimColor>Press Esc to go back</Text>
-            </Box>
-          </Box>
-        );
+        // Error is shown via AppShell error toast
+        return null;
 
       default:
         return null;
@@ -529,10 +521,11 @@ export function InitScreen({
   return (
     <AppShell
       header={header}
-      tips="Esc to cancel"
+      tips={state.phase === 'error' ? 'Esc to go back' : 'Esc to cancel'}
       isWorking={isWorking}
       workingStatus={workingStatus}
       workingHint="esc to cancel"
+      error={state.phase === 'error' ? state.error : null}
       input={renderInput()}
       footerStatus={{
         action: 'Initialize Project',

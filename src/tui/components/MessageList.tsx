@@ -62,7 +62,7 @@ export interface MessageListProps {
  */
 function UserMessage({ content }: { content: string }): React.ReactElement {
   return (
-    <Box flexDirection="row" marginY={1}>
+    <Box flexDirection="row">
       <Text color={theme.colors.prompt} bold>
         {theme.chars.prompt}{' '}
       </Text>
@@ -91,10 +91,10 @@ function AssistantMessage({
   const paragraphs = content ? content.split('\n\n').filter((p) => p.trim()) : [];
 
   return (
-    <Box flexDirection="column" marginY={1}>
+    <Box flexDirection="column" gap={1}>
       {/* Tool calls appear first, dimmed */}
       {toolCalls && toolCalls.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
+        <Box flexDirection="column">
           {toolCalls.map((toolCall, index) => (
             <ToolCallCard
               key={`tool-${index}`}
@@ -118,7 +118,7 @@ function AssistantMessage({
             if (isQuestion) {
               // Question - prominent, with "Next question:" prefix
               return (
-                <Box key={index} marginY={1} flexDirection="column">
+                <Box key={index} marginTop={1} flexDirection="column">
                   <Text bold>Next question:</Text>
                   <Text color={theme.colors.aiText}>{para}</Text>
                 </Box>
@@ -153,22 +153,32 @@ function AssistantMessage({
 function SystemMessage({ content }: { content: string }): React.ReactElement {
   // Check if this is a phase header (e.g., "Phase 2: Goals - Describe what you want to build")
   const phaseMatch = content.match(/^Phase (\d+): (.+?) - (.+)$/);
+  const isSuccess = content.startsWith('\u2713');
   const isSyncFailure = content.toLowerCase().startsWith('sync failed:');
   const isSyncMessage = content.toLowerCase().startsWith('sync:');
 
   if (phaseMatch) {
     const [, phaseNum, phaseName, description] = phaseMatch;
     return (
-      <Box marginY={1} flexDirection="column">
+      <Box flexDirection="column">
         <Text color={theme.colors.brand} bold>Phase {phaseNum}: {phaseName}</Text>
         <Text dimColor>{description}</Text>
       </Box>
     );
   }
 
+  if (isSuccess) {
+    return (
+      <Box flexDirection="row">
+        <Text color={colors.green}>{'\u2713'} </Text>
+        <Text>{content.slice(1).trimStart()}</Text>
+      </Box>
+    );
+  }
+
   if (isSyncFailure) {
     return (
-      <Box marginY={1}>
+      <Box>
         <Text color={colors.pink}>{content}</Text>
       </Box>
     );
@@ -176,14 +186,14 @@ function SystemMessage({ content }: { content: string }): React.ReactElement {
 
   if (isSyncMessage) {
     return (
-      <Box marginY={1}>
+      <Box>
         <Text color={colors.blue}>{content}</Text>
       </Box>
     );
   }
 
   return (
-    <Box marginY={1}>
+    <Box>
       <Text dimColor>{content}</Text>
     </Box>
   );
@@ -218,6 +228,7 @@ export function MessageList({
   return (
     <Box
       flexDirection="column"
+      gap={1}
       {...(maxHeight ? { height: maxHeight } : {})}
     >
       {messages.map((message) => {

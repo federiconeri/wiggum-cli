@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { Text, Box } from 'ink';
+import { Text, Box, useStdout } from 'ink';
 import { colors } from '../theme.js';
 
 /**
@@ -20,6 +20,9 @@ const BANNER = `██╗    ██╗██╗ ██████╗  ███
 ╚███╔███╔╝██║╚██████╔╝╚██████╔╝╚██████╔╝██║ ╚═╝ ██║
  ╚══╝╚══╝ ╚═╝ ╚═════╝  ╚═════╝  ╚═════╝ ╚═╝     ╚═╝
 `;
+
+/** Minimum terminal columns needed to display the banner without wrapping */
+const BANNER_MIN_WIDTH = 55;
 
 /**
  * Props for WiggumBanner component
@@ -47,7 +50,11 @@ export function WiggumBanner({
   color = colors.yellow,
   compact = false,
 }: WiggumBannerProps): React.ReactElement {
-  if (compact) {
+  const { stdout } = useStdout();
+  const columns = stdout?.columns ?? 80;
+
+  // Auto-compact when terminal is too narrow for the ASCII art
+  if (compact || columns < BANNER_MIN_WIDTH) {
     return (
       <Box>
         <Text color={color} bold>
@@ -58,8 +65,8 @@ export function WiggumBanner({
   }
 
   return (
-    <Box flexDirection="column">
-      <Text color={color}>{BANNER}</Text>
+    <Box flexDirection="column" overflow="hidden">
+      <Text color={color} wrap="truncate">{BANNER}</Text>
     </Box>
   );
 }

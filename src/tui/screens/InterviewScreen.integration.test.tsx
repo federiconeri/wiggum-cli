@@ -45,7 +45,7 @@ vi.mock('../orchestration/interview-orchestrator.js', () => {
         const onReady = opts.onReady as () => void;
         const onMessage = opts.onMessage as (role: string, content: string) => void;
         onPhaseChange('context');
-        onMessage('system', 'Spec Generator initialized for feature: test-feature');
+        onMessage('system', 'Phase 1: Context - New spec for feature: test-feature');
         onReady();
       });
       this.getPhase = vi.fn().mockReturnValue('context');

@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { render, type Instance } from 'ink';
+import { render, useStdout, type Instance } from 'ink';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AIProvider } from '../ai/providers.js';
@@ -87,17 +87,24 @@ export function App({
   // Background run tracking
   const { runs: backgroundRuns, background, dismiss } = useBackgroundRuns();
 
-  // Shared header element - memoized to avoid re-creating on every render
+  // Terminal dimensions for compact mode and resize reactivity
+  const { stdout } = useStdout();
+  const columns = stdout?.columns ?? 80;
+  const rows = stdout?.rows ?? 24;
+  const compact = rows < 20 || columns < 60;
+
+  // Shared header element - includes columns/rows in deps so the
+  // header subtree re-renders on terminal resize (banner auto-compacts)
   const headerElement = useMemo(
     () => (
       <HeaderContent
         version={version}
         sessionState={sessionState}
         backgroundRuns={backgroundRuns}
-        compact={false}
+        compact={compact}
       />
     ),
-    [version, sessionState, backgroundRuns]
+    [version, sessionState, backgroundRuns, compact, columns, rows]
   );
 
   /**
@@ -164,9 +171,13 @@ export function App({
   /**
    * Handle init completion - update state and navigate to shell
    */
-  const handleInitComplete = useCallback((newState: SessionState, _generatedFiles?: string[]) => {
+  const handleInitComplete = useCallback((newState: SessionState, generatedFiles?: string[]) => {
     setSessionState(newState);
-    navigate('shell');
+    const fileCount = generatedFiles?.length ?? 0;
+    const msg = fileCount > 0
+      ? `\u2713 Initialization complete. Generated ${fileCount} configuration file${fileCount === 1 ? '' : 's'}.`
+      : '\u2713 Initialization complete.';
+    navigate('shell', { message: msg, generatedFiles });
   }, [navigate]);
 
   /**
@@ -191,11 +202,14 @@ export function App({
     case 'shell':
       return (
         <MainShell
+          key={screenProps?.message ? String(screenProps.message) : 'shell'}
           header={headerElement}
           sessionState={sessionState}
           onNavigate={navigate}
           onSessionStateChange={handleSessionStateChange}
           backgroundRuns={backgroundRuns}
+          initialMessage={typeof screenProps?.message === 'string' ? screenProps.message : undefined}
+          initialFiles={Array.isArray(screenProps?.generatedFiles) ? screenProps.generatedFiles as string[] : undefined}
         />
       );
 
@@ -288,7 +302,6 @@ export interface RenderAppOptions {
  * Render the App component to the terminal
  */
 export function renderApp(options: RenderAppOptions): Instance {
-  process.stdout.write('\x1b[3J\x1b[2J\x1b[0;0H');
   return render(
     <App
       screen={options.screen}
