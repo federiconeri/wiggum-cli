@@ -64,27 +64,21 @@ EOF
 )"
 ```
 
-### Step 4: Request Codex Review
+### Step 4: Request Claude Code Review
 
-Run automated code review using Codex CLI:
+Run automated code review using Claude Code CLI:
 
 ```bash
-# Check if Codex CLI is installed
-if ! command -v codex &> /dev/null; then
-    echo "WARNING: Codex CLI not installed. Manual review needed."
-    cd {{appDir}} && gh pr comment --body "Manual review requested - Codex CLI not available. Install: brew install openai/tap/codex"
+# Check if Claude Code CLI is installed
+if ! command -v claude &> /dev/null; then
+    echo "WARNING: Claude Code CLI not installed. Manual review needed."
+    cd {{appDir}} && gh pr comment --body "Manual review requested - Claude Code CLI not available. Install: https://docs.anthropic.com/en/docs/claude-code/overview"
 else
-    echo "Running Codex code review..."
-    # Get diff summary for context
-    DIFF_SUMMARY=$(cd {{appDir}} && git diff main --stat | head -50)
+    echo "Running Claude Code review..."
 
-    # Use codex exec for non-interactive review
-    echo "Code Review Request for $FEATURE feature.
+    cd {{appDir}} && claude -p "You are reviewing a PR for the $FEATURE feature.
 
-## Changed Files:
-$DIFF_SUMMARY
-
-## Review Checklist:
+Review the git diff against main and check:
 - Code quality and patterns consistency
 - Test coverage adequacy
 - Potential bugs or edge cases
@@ -92,19 +86,21 @@ $DIFF_SUMMARY
 - Performance implications
 - Error handling completeness
 
-Please review and respond with:
+Run: git diff main
+
+Respond with:
 - APPROVED if everything looks good
-- Or list specific issues that need to be fixed" | cd {{appDir}} && codex exec --full-auto -
+- Or list specific issues with file:line references that need to be fixed"
 fi
 ```
 
 **Handle review feedback:**
-- If Codex outputs "APPROVED" -> Proceed to Step 5 (rebase and merge)
-- If Codex lists issues:
+- If Claude outputs "APPROVED" -> Proceed to Step 5 (rebase and merge)
+- If Claude lists issues:
   1. Address each issue with code fixes
   2. Commit: `git -C {{appDir}} add -A && git -C {{appDir}} commit -m "fix($FEATURE): address review feedback"`
   3. Push: `git -C {{appDir}} push origin feat/$FEATURE`
-  4. Re-run the `codex review` command above
+  4. Re-run the Claude review command above
 - Max 3 review iterations before requiring manual intervention
 
 ### Step 5: Rebase Before Merge (for Parallel Execution)
@@ -126,7 +122,7 @@ cd {{appDir}} && git push --force-with-lease origin feat/$FEATURE
 ```
 
 ### Step 6: Merge PR
-When Codex review is approved and branch is rebased:
+When Claude review is approved and branch is rebased:
 ```bash
 cd {{appDir}} && gh pr merge --squash --delete-branch
 ```
@@ -145,7 +141,7 @@ cd {{appDir}} && gh pr merge --squash --delete-branch
 Note: Spec status updates are handled in the Spec Verification phase before PR creation.
 
 ## Rules
-- Do NOT merge without Codex approval
+- Do NOT merge without Claude Code approval
 - Address ALL review comments before merging
 - Use squash merge to keep history clean
 - If gh CLI fails, check authentication: `gh auth status`
@@ -155,7 +151,7 @@ Note: Spec status updates are handled in the Spec Verification phase before PR c
 - **gh: command not found** -> Install GitHub CLI: `brew install gh`
 - **gh auth error** -> Run: `gh auth login`
 - **PR already exists** -> Use: `gh pr view` to see status
-- **Codex CLI not installed** -> Install with: `brew install openai/tap/codex`, then `codex login`
+- **Claude Code CLI not installed** -> Install: `npm install -g @anthropic-ai/claude-code`
 - **Rebase conflicts** -> Resolve carefully, re-run all tests after
 
 ## Learning Capture
