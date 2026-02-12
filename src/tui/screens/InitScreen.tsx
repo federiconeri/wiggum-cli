@@ -206,9 +206,9 @@ export function InitScreen({
             projectRoot,
           );
         } catch (saveErr) {
-          logger.error(
-            `Failed to save project context: ${saveErr instanceof Error ? saveErr.message : String(saveErr)}`,
-          );
+          const reason = saveErr instanceof Error ? saveErr.message : String(saveErr);
+          logger.error(`Failed to save project context: ${reason}`);
+          setAiError(`Context save failed (${reason}). You may need to run /sync later.`);
         }
       } catch (error) {
         setAiError(error instanceof Error ? error.message : String(error));

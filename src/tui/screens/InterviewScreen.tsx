@@ -7,6 +7,7 @@
  * 2. Goals - Understand what to build
  * 3. Interview - Clarifying questions
  * 4. Generation - Generate the specification
+ * 5. Complete - Show summary and return to shell
  *
  * Wrapped in AppShell for consistent layout. On completion,
  * shows SpecCompletionSummary inline before returning to shell.
@@ -163,9 +164,10 @@ export function InterviewScreen({
           }
         } catch (err) {
           if (!isCancelledRef.current) {
+            const reason = err instanceof Error ? err.message : String(err);
             addMessage(
               'system',
-              `Unable to load cached project context; continuing without it.`,
+              `Unable to load cached project context (${reason}); continuing without it.`,
             );
           }
         }

@@ -206,6 +206,7 @@ describe('useBackgroundRuns', () => {
     await wait(10);
 
     unmount();
+    await wait(0);
 
     // Cleanup effect should clear poll timers
     expect(clearIntervalSpy).toHaveBeenCalled();

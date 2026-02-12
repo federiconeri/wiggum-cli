@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfigWithDefaults } from '../../utils/config.js';
+import { logger } from '../../utils/logger.js';
 
 export interface LoopStatus {
   running: boolean;
@@ -30,7 +31,13 @@ function isProcessRunning(pattern: string): boolean {
   try {
     const result = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf-8' });
     return result.trim().length > 0;
-  } catch {
+  } catch (err: unknown) {
+    // pgrep exits with code 1 when no processes match — that's expected
+    if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 1) {
+      return false;
+    }
+    // Any other error (pgrep not installed, permission denied, etc.)
+    logger.debug(`isProcessRunning check failed: ${err instanceof Error ? err.message : String(err)}`);
     return false;
   }
 }
@@ -67,8 +74,8 @@ export function readLoopStatus(feature: string): LoopStatus {
       const parts = content.split('|');
       iteration = parseInt(parts[0] || '0', 10) || 0;
       maxIterations = parseInt(parts[1] || '0', 10) || 0;
-    } catch {
-      // Ignore parse errors
+    } catch (err) {
+      logger.debug(`Failed to parse status file: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -80,8 +87,8 @@ export function readLoopStatus(feature: string): LoopStatus {
       const parts = content.split('|');
       tokensInput = parseInt(parts[0] || '0', 10) || 0;
       tokensOutput = parseInt(parts[1] || '0', 10) || 0;
-    } catch {
-      // Ignore parse errors
+    } catch (err) {
+      logger.debug(`Failed to parse tokens file: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -135,8 +142,8 @@ export async function parseImplementationPlan(
           }
         }
       }
-    } catch {
-      // Ignore parse errors
+    } catch (err) {
+      logger.debug(`Failed to parse implementation plan: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

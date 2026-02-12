@@ -67,16 +67,22 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
     const timer = setInterval(() => {
       try {
         const status = readLoopStatus(featureName);
+        const nowCompleted = !status.running;
         setRuns((prev) =>
           prev.map((run) => {
             if (run.featureName !== featureName) return run;
             return {
               ...run,
               lastStatus: status,
-              completed: !status.running,
+              completed: nowCompleted,
             };
           })
         );
+        // Stop polling once the run completes
+        if (nowCompleted) {
+          clearInterval(timer);
+          pollTimers.current.delete(featureName);
+        }
       } catch (err) {
         logger.error(`Failed to poll status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -91,7 +97,7 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
       status = readLoopStatus(featureName);
     } catch (err) {
       logger.error(`Failed to read initial status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
-      status = { running: true, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+      status = { running: false, iteration: 0, maxIterations: 0, phase: 'error', tokensInput: 0, tokensOutput: 0 };
     }
     const logPath = `/tmp/ralph-loop-${featureName}.log`;
 

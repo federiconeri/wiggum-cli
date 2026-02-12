@@ -14,6 +14,7 @@ import { ActionOutput } from '../components/ActionOutput.js';
 import { AppShell } from '../components/AppShell.js';
 import { colors, theme, phase } from '../theme.js';
 import { loadContext, getContextAge } from '../../context/index.js';
+import { logger } from '../../utils/logger.js';
 import {
   parseInput,
   resolveCommandAlias,
@@ -125,7 +126,8 @@ export function MainShell({
         } else {
           setContextAge(null);
         }
-      } catch {
+      } catch (err) {
+        logger.error(`Failed to load context: ${err instanceof Error ? err.message : String(err)}`);
         if (!cancelled) {
           setContextAge(null);
         }

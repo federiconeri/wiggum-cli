@@ -1,8 +1,8 @@
 /**
  * HeaderContent - Banner + status meta for the AppShell header zone
  *
- * Renders the version badge, provider/model info, init status,
- * and background run indicators in a single horizontal row.
+ * Renders in a vertical column: banner on top, status metadata row below.
+ * Includes version badge, provider/model info, init status, and background run indicators.
  */
 
 import React from 'react';

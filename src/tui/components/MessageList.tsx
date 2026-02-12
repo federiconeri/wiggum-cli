@@ -72,9 +72,9 @@ function UserMessage({ content }: { content: string }): React.ReactElement {
 }
 
 /**
- * Renders a single assistant message with tool calls (no prefix - distinguished by color)
- * Differentiates between thinking/context (solid LED, italic) and questions (bold with prefix)
- * Preserves original paragraph order while styling differently
+ * Renders a single assistant message with tool calls
+ * Context/thinking paragraphs: dimmed bullet prefix, italic
+ * Question paragraphs: bold "Next question:" header, no bullet
  */
 function AssistantMessage({
   content,
@@ -203,9 +203,9 @@ function SystemMessage({ content }: { content: string }): React.ReactElement {
  * MessageList component
  *
  * Displays the full conversation history with clean styling:
- * - User messages: `› ` prefix in blue
- * - Assistant messages: `● ` prefix in yellow, with inline tool cards
- * - System messages: dimmed text
+ * - User messages: `› ` prefix in green
+ * - Assistant messages: context with dimmed bullet, questions with bold header
+ * - System messages: dimmed text (phase headers in yellow bold)
  *
  * @example
  * ```tsx

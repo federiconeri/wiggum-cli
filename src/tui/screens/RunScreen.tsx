@@ -14,7 +14,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Confirm } from '../components/Confirm.js';
@@ -30,6 +30,7 @@ import {
   type TaskCounts,
 } from '../utils/loop-status.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
+import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
 
 export interface RunSummary {
@@ -140,7 +141,14 @@ export function RunScreen({
   onBackground,
   onCancel,
 }: RunScreenProps): React.ReactElement {
-  const [status, setStatus] = useState<LoopStatus>(() => readLoopStatus(featureName));
+  const [status, setStatus] = useState<LoopStatus>(() => {
+    try {
+      return readLoopStatus(featureName);
+    } catch (err) {
+      logger.error(`Failed to read initial loop status: ${err instanceof Error ? err.message : String(err)}`);
+      return { running: false, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+    }
+  });
   const [tasks, setTasks] = useState<TaskCounts>({
     tasksDone: 0,
     tasksPending: 0,
@@ -227,8 +235,15 @@ export function RunScreen({
     stopRequestedRef.current = true;
     if (childRef.current) {
       childRef.current.kill('SIGINT');
+    } else if (monitorOnly) {
+      // In monitor mode, find and kill the loop process by pattern
+      try {
+        execFileSync('pkill', ['-INT', '-f', `feature-loop.sh.*${featureName}`]);
+      } catch {
+        // Process may have already exited
+      }
     }
-  }, []);
+  }, [monitorOnly, featureName]);
 
   const handleConfirm = useCallback((value: boolean) => {
     setShowConfirm(false);
@@ -242,12 +257,22 @@ export function RunScreen({
     let pollTimer: NodeJS.Timeout | null = null;
 
     if (monitorOnly) {
-      // Monitor mode: just poll, don't spawn
-      setIsStarting(false);
-      refreshStatus();
-      pollTimer = setInterval(() => {
-        refreshStatus();
-      }, POLL_INTERVAL_MS);
+      // Monitor mode: load config for correct specs path, then poll
+      const initMonitor = async () => {
+        try {
+          const config = sessionState.config ?? await loadConfigWithDefaults(projectRoot);
+          specsDirRef.current = config.paths.specs;
+        } catch {
+          // Keep default .ralph/specs
+        }
+        if (cancelled) return;
+        setIsStarting(false);
+        refreshStatus().catch(() => {});
+        pollTimer = setInterval(() => {
+          refreshStatus().catch(() => {});
+        }, POLL_INTERVAL_MS);
+      };
+      initMonitor();
 
       return () => {
         cancelled = true;
@@ -324,10 +349,10 @@ export function RunScreen({
         }
 
         pollTimer = setInterval(() => {
-          refreshStatus();
+          refreshStatus().catch(() => {});
         }, POLL_INTERVAL_MS);
 
-        refreshStatus();
+        refreshStatus().catch(() => {});
 
         child.on('error', (err) => {
           if (cancelled) return;
@@ -345,7 +370,8 @@ export function RunScreen({
           try {
             latestStatus = readLoopStatus(featureName);
             latestTasks = await parseImplementationPlan(projectRoot, featureName, specsDirRef.current);
-          } catch {
+          } catch (err) {
+            logger.error(`Failed to read final run status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
             latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
             latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0 };
           }

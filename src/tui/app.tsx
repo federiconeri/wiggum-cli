@@ -136,8 +136,15 @@ export function App({
         writeFileSync(savedPath, spec, 'utf-8');
         onComplete?.(savedPath);
       } catch (err) {
-        logger.error(`Failed to save spec: ${err instanceof Error ? err.message : String(err)}`);
+        const reason = err instanceof Error ? err.message : String(err);
+        logger.error(`Failed to save spec: ${reason}`);
         onComplete?.(spec);
+        if (initialScreen !== 'interview') {
+          navigate('shell', { message: `Warning: spec generated but could not be saved to disk (${reason}).` });
+        } else {
+          onExit?.();
+        }
+        return;
       }
     } else {
       onComplete?.(spec);
@@ -149,7 +156,7 @@ export function App({
       return;
     }
 
-    navigate('shell');
+    navigate('shell', { message: `Spec saved to ${savedPath}` });
   }, [screenProps, interviewProps, sessionState.projectRoot, onComplete, initialScreen, onExit, navigate]);
 
   /**
@@ -271,6 +278,7 @@ export function App({
     }
 
     default:
+      logger.error(`Unknown screen: ${currentScreen}`);
       return null;
   }
 }

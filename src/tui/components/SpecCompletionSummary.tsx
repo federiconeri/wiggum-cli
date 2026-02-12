@@ -3,7 +3,7 @@
  *
  * Shows the goal, key decisions, file preview, and "what's next"
  * section after a spec has been generated. Extracts a recap from
- * the conversation history using NLP heuristics.
+ * the conversation history using regex-based pattern matching.
  */
 
 import React from 'react';
