@@ -25,7 +25,7 @@ export function wait(ms = 50): Promise<void> {
  */
 export async function renderAndWait(
   renderFn: () => Instance,
-  delayMs = 50,
+  delayMs = 100,
 ): Promise<Instance> {
   const instance = renderFn();
   await wait(delayMs);

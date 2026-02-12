@@ -8,9 +8,6 @@ export type { InterviewScreenProps } from './InterviewScreen.js';
 export { InitScreen } from './InitScreen.js';
 export type { InitScreenProps } from './InitScreen.js';
 
-export { WelcomeScreen } from './WelcomeScreen.js';
-export type { WelcomeScreenProps } from './WelcomeScreen.js';
-
 export { MainShell } from './MainShell.js';
 export type { MainShellProps, NavigationTarget, NavigationProps } from './MainShell.js';
 

@@ -3,7 +3,7 @@
  *
  * Displays the full conversation history with clean formatting:
  * - User messages: › prefix
- * - Assistant messages: ● bullet with clean markdown-like styling
+ * - Assistant messages: • dimmed bullet for context, bold header for questions
  * - Tool calls: Inline action indicators
  */
 
@@ -51,7 +51,7 @@ export interface Message {
 export interface MessageListProps {
   /** Array of messages to display */
   messages: Message[];
-  /** Optional max height in lines (for future scrolling support) */
+  /** Optional max height in lines (clips content when set) */
   maxHeight?: number;
   /** Whether tool calls should show expanded preview (default: false) */
   toolCallsExpanded?: boolean;
@@ -62,7 +62,7 @@ export interface MessageListProps {
  */
 function UserMessage({ content }: { content: string }): React.ReactElement {
   return (
-    <Box flexDirection="row" marginY={1}>
+    <Box flexDirection="row">
       <Text color={theme.colors.prompt} bold>
         {theme.chars.prompt}{' '}
       </Text>
@@ -72,9 +72,9 @@ function UserMessage({ content }: { content: string }): React.ReactElement {
 }
 
 /**
- * Renders a single assistant message with tool calls (no prefix - distinguished by color)
- * Differentiates between thinking/context (solid LED, italic) and questions (bold with prefix)
- * Preserves original paragraph order while styling differently
+ * Renders a single assistant message with tool calls
+ * Context/thinking paragraphs: dimmed bullet prefix, italic
+ * Question paragraphs: bold "Next question:" header, no bullet
  */
 function AssistantMessage({
   content,
@@ -91,10 +91,10 @@ function AssistantMessage({
   const paragraphs = content ? content.split('\n\n').filter((p) => p.trim()) : [];
 
   return (
-    <Box flexDirection="column" marginY={1}>
+    <Box flexDirection="column" gap={1}>
       {/* Tool calls appear first, dimmed */}
       {toolCalls && toolCalls.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
+        <Box flexDirection="column">
           {toolCalls.map((toolCall, index) => (
             <ToolCallCard
               key={`tool-${index}`}
@@ -118,13 +118,13 @@ function AssistantMessage({
             if (isQuestion) {
               // Question - prominent, with "Next question:" prefix
               return (
-                <Box key={index} marginY={1} flexDirection="column">
+                <Box key={index} marginTop={1} flexDirection="column">
                   <Text bold>Next question:</Text>
                   <Text color={theme.colors.aiText}>{para}</Text>
                 </Box>
               );
             } else {
-              // Context/thinking - solid grey LED, italic dimmed text
+              // Context/thinking - dimmed bullet prefix, italic dimmed text
               return (
                 <Box key={index} flexDirection="row">
                   <Text dimColor>{theme.chars.bullet} </Text>
@@ -153,22 +153,32 @@ function AssistantMessage({
 function SystemMessage({ content }: { content: string }): React.ReactElement {
   // Check if this is a phase header (e.g., "Phase 2: Goals - Describe what you want to build")
   const phaseMatch = content.match(/^Phase (\d+): (.+?) - (.+)$/);
+  const isSuccess = content.startsWith('\u2713');
   const isSyncFailure = content.toLowerCase().startsWith('sync failed:');
   const isSyncMessage = content.toLowerCase().startsWith('sync:');
 
   if (phaseMatch) {
     const [, phaseNum, phaseName, description] = phaseMatch;
     return (
-      <Box marginY={1} flexDirection="column">
+      <Box flexDirection="column">
         <Text color={theme.colors.brand} bold>Phase {phaseNum}: {phaseName}</Text>
         <Text dimColor>{description}</Text>
       </Box>
     );
   }
 
+  if (isSuccess) {
+    return (
+      <Box flexDirection="row">
+        <Text color={colors.green}>{'\u2713'} </Text>
+        <Text>{content.slice(1).trimStart()}</Text>
+      </Box>
+    );
+  }
+
   if (isSyncFailure) {
     return (
-      <Box marginY={1}>
+      <Box>
         <Text color={colors.pink}>{content}</Text>
       </Box>
     );
@@ -176,14 +186,14 @@ function SystemMessage({ content }: { content: string }): React.ReactElement {
 
   if (isSyncMessage) {
     return (
-      <Box marginY={1}>
+      <Box>
         <Text color={colors.blue}>{content}</Text>
       </Box>
     );
   }
 
   return (
-    <Box marginY={1}>
+    <Box>
       <Text dimColor>{content}</Text>
     </Box>
   );
@@ -193,21 +203,23 @@ function SystemMessage({ content }: { content: string }): React.ReactElement {
  * MessageList component
  *
  * Displays the full conversation history with clean styling:
- * - User messages: `› ` prefix in blue
- * - Assistant messages: `● ` prefix in yellow, with inline tool cards
- * - System messages: dimmed text
+ * - User messages: `› ` prefix in green
+ * - Assistant messages: context with dimmed bullet, questions with bold header
+ * - System messages: dimmed text (phase headers in yellow bold)
  *
  * @example
  * ```tsx
  * <MessageList
  *   messages={[
  *     { id: '1', role: 'user', content: 'Hello' },
- *     { id: '2', role: 'assistant', content: 'Hi! How can I help?' },
+ *     { id: '2', role: 'assistant', content: 'Let me think about that.\n\nWhat framework do you prefer?' },
  *   ]}
  * />
  * // Renders:
  * // › Hello
- * // ● Hi! How can I help?
+ * // • Let me think about that.
+ * // Next question:
+ * // What framework do you prefer?
  * ```
  */
 export function MessageList({
@@ -218,6 +230,7 @@ export function MessageList({
   return (
     <Box
       flexDirection="column"
+      gap={1}
       {...(maxHeight ? { height: maxHeight } : {})}
     >
       {messages.map((message) => {

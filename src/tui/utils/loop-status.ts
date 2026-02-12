@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfigWithDefaults } from '../../utils/config.js';
+import { logger } from '../../utils/logger.js';
 
 export interface LoopStatus {
   running: boolean;
@@ -24,19 +25,49 @@ export interface TaskCounts {
 }
 
 /**
+ * Track whether pgrep is available to avoid repeated failed calls.
+ * null = untested, true = available, false = unavailable
+ */
+let pgrepAvailable: boolean | null = null;
+
+/**
  * Check if a process matching pattern is running.
  */
 function isProcessRunning(pattern: string): boolean {
+  if (pgrepAvailable === false) return false;
+
   try {
     const result = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf-8' });
+    pgrepAvailable = true;
     return result.trim().length > 0;
-  } catch {
+  } catch (err: unknown) {
+    // pgrep exits with code 1 when no processes match — that's expected
+    if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 1) {
+      pgrepAvailable = true;
+      return false;
+    }
+    // Any other error (pgrep not installed, permission denied, etc.)
+    if (pgrepAvailable === null) {
+      logger.warn(`Process detection unavailable: ${err instanceof Error ? err.message : String(err)}. Background run status may be inaccurate.`);
+      pgrepAvailable = false;
+    }
     return false;
   }
 }
 
 /**
- * Detect current phase of the loop based on active prompt files.
+ * Return the conventional log file path for a feature loop.
+ */
+export function getLoopLogPath(feature: string): string {
+  return `/tmp/ralph-loop-${feature}.log`;
+}
+
+/**
+ * Detect current phase of the loop by checking for processes with prompt file patterns in their command line.
+ *
+ * Note: prompt-file checks (PROMPT_feature.md, etc.) are global — they match any
+ * running process, not just the one for `feature`. This is acceptable because
+ * concurrent loops are rare, but callers should be aware of the limitation.
  */
 export function detectPhase(feature: string): string {
   if (isProcessRunning('PROMPT_feature.md')) return 'Planning';
@@ -50,9 +81,19 @@ export function detectPhase(feature: string): string {
 }
 
 /**
- * Read status from temp files.
+ * Read loop status from temp files written by feature-loop.sh.
+ *
+ * Reads `ralph-loop-<feature>.status` (or `.final`) for iteration progress
+ * and `ralph-loop-<feature>.tokens` for token counts. Also runs `pgrep` to
+ * check whether the loop process is still alive.
+ *
+ * @throws {Error} If `feature` contains invalid characters.
  */
 export function readLoopStatus(feature: string): LoopStatus {
+  if (!/^[a-zA-Z0-9_-]+$/.test(feature)) {
+    throw new Error(`Invalid feature name: "${feature}". Must contain only letters, numbers, hyphens, and underscores.`);
+  }
+
   const statusFile = `/tmp/ralph-loop-${feature}.status`;
   const finalStatusFile = `/tmp/ralph-loop-${feature}.final`;
   const tokensFile = `/tmp/ralph-loop-${feature}.tokens`;
@@ -67,8 +108,8 @@ export function readLoopStatus(feature: string): LoopStatus {
       const parts = content.split('|');
       iteration = parseInt(parts[0] || '0', 10) || 0;
       maxIterations = parseInt(parts[1] || '0', 10) || 0;
-    } catch {
-      // Ignore parse errors
+    } catch (err) {
+      logger.debug(`Failed to parse status file: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -80,8 +121,8 @@ export function readLoopStatus(feature: string): LoopStatus {
       const parts = content.split('|');
       tokensInput = parseInt(parts[0] || '0', 10) || 0;
       tokensOutput = parseInt(parts[1] || '0', 10) || 0;
-    } catch {
-      // Ignore parse errors
+    } catch (err) {
+      logger.debug(`Failed to parse tokens file: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -96,16 +137,26 @@ export function readLoopStatus(feature: string): LoopStatus {
 }
 
 /**
- * Parse implementation plan for task counts.
+ * Parse the markdown implementation plan for a feature to extract task/E2E counts.
+ *
+ * Looks for `- [x]` (done) and `- [ ]` (pending) checklist items.
+ * Items containing "E2E:" are counted separately as end-to-end tests.
+ *
+ * @returns Counts of done/pending tasks and E2E tests.
  */
 export async function parseImplementationPlan(
   projectRoot: string,
   feature: string,
   specsDirOverride?: string
 ): Promise<TaskCounts> {
-  const config = specsDirOverride
-    ? null
-    : await loadConfigWithDefaults(projectRoot);
+  let config = null;
+  if (!specsDirOverride) {
+    try {
+      config = await loadConfigWithDefaults(projectRoot);
+    } catch (err) {
+      logger.debug(`Failed to load config for plan parsing: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   const specsDir = specsDirOverride || config?.paths.specs || '.ralph/specs';
   const planPath = join(projectRoot, specsDir, `${feature}-implementation-plan.md`);
 
@@ -135,8 +186,8 @@ export async function parseImplementationPlan(
           }
         }
       }
-    } catch {
-      // Ignore parse errors
+    } catch (err) {
+      logger.debug(`Failed to parse implementation plan: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
@@ -151,8 +202,9 @@ export function getGitBranch(projectRoot: string): string {
     return execFileSync('git', ['branch', '--show-current'], {
       cwd: projectRoot,
       encoding: 'utf-8',
-    }).trim();
-  } catch {
+    }).trim() || '(detached HEAD)';
+  } catch (err) {
+    logger.debug(`getGitBranch failed: ${err instanceof Error ? err.message : String(err)}`);
     return '-';
   }
 }

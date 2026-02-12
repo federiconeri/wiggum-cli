@@ -6,9 +6,12 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
+import { Text } from 'ink';
 import { render } from 'ink-testing-library';
 import { InterviewScreen } from './InterviewScreen.js';
 import { stripAnsi, wait, pressEscape, renderAndWait } from '../../__test-utils__/ink-helpers.js';
+
+const testHeader = <Text>TEST HEADER</Text>;
 
 // --- Module-level mocks ---
 
@@ -45,7 +48,7 @@ vi.mock('../orchestration/interview-orchestrator.js', () => {
         const onReady = opts.onReady as () => void;
         const onMessage = opts.onMessage as (role: string, content: string) => void;
         onPhaseChange('context');
-        onMessage('system', 'Spec Generator initialized for feature: test-feature');
+        onMessage('system', 'Phase 1: Context - New spec for feature: test-feature');
         onReady();
       });
       this.getPhase = vi.fn().mockReturnValue('context');
@@ -138,6 +141,7 @@ describe('InterviewScreen integration', () => {
       () =>
         render(
           <InterviewScreen
+            header={testHeader}
             featureName="test-feature"
             projectRoot="/tmp/test"
             provider="anthropic"
@@ -165,6 +169,7 @@ describe('InterviewScreen integration', () => {
       () =>
         render(
           <InterviewScreen
+            header={testHeader}
             featureName="my-feature"
             projectRoot="/tmp/test"
             provider="anthropic"
@@ -188,6 +193,7 @@ describe('InterviewScreen integration', () => {
       () =>
         render(
           <InterviewScreen
+            header={testHeader}
             featureName="test-feature"
             projectRoot="/tmp/test"
             provider="anthropic"
@@ -211,6 +217,7 @@ describe('InterviewScreen integration', () => {
       () =>
         render(
           <InterviewScreen
+            header={testHeader}
             featureName="test-feature"
             projectRoot="/tmp/test"
             provider="anthropic"

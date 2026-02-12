@@ -3,17 +3,18 @@
  *
  * The main interactive shell for Wiggum CLI, replacing the readline REPL.
  * Handles slash commands and provides navigation to other screens.
+ * Wrapped in AppShell for consistent layout.
  */
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { MessageList, type Message } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
-import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { ActionOutput } from '../components/ActionOutput.js';
-import { FooterStatusBar } from '../components/FooterStatusBar.js';
-import { colors, theme } from '../theme.js';
+import { AppShell } from '../components/AppShell.js';
+import { colors, theme, phase } from '../theme.js';
 import { loadContext, getContextAge } from '../../context/index.js';
+import { logger } from '../../utils/logger.js';
 import {
   parseInput,
   resolveCommandAlias,
@@ -21,19 +22,22 @@ import {
   type ReplCommandName,
 } from '../../repl/command-parser.js';
 import type { SessionState } from '../../repl/session-state.js';
+import { readLoopStatus } from '../utils/loop-status.js';
 import { useSync } from '../hooks/useSync.js';
+import type { BackgroundRun } from '../hooks/useBackgroundRuns.js';
 import path from 'node:path';
 
 /**
  * Navigation targets for the shell
  */
-export type NavigationTarget = 'welcome' | 'shell' | 'interview' | 'init' | 'run';
+export type NavigationTarget = 'shell' | 'interview' | 'init' | 'run';
 
 /**
  * Navigation props passed to target screens
  */
 export interface NavigationProps {
   featureName?: string;
+  monitorOnly?: boolean;
   [key: string]: unknown;
 }
 
@@ -41,12 +45,18 @@ export interface NavigationProps {
  * Props for MainShell component
  */
 export interface MainShellProps {
+  /** Pre-built header element from App */
+  header: React.ReactNode;
   /** Current session state */
   sessionState: SessionState;
   /** Called when navigating to another screen */
   onNavigate: (target: NavigationTarget, props?: NavigationProps) => void;
-  /** Called when session state changes */
-  onSessionStateChange?: (state: SessionState) => void;
+  /** Active background runs */
+  backgroundRuns?: BackgroundRun[];
+  /** Message to display when the shell first mounts (e.g. from init completion) */
+  initialMessage?: string;
+  /** File paths to display as dimmed lines below the initial message */
+  initialFiles?: string[];
 }
 
 /**
@@ -61,29 +71,33 @@ function generateId(): string {
  *
  * The main interactive shell that handles slash commands and navigation.
  * Replaces the readline-based REPL with an Ink-powered TUI.
- *
- * @example
- * ```tsx
- * <MainShell
- *   sessionState={state}
- *   onNavigate={(target, props) => setScreen(target, props)}
- * />
- * ```
  */
 export function MainShell({
+  header,
   sessionState,
   onNavigate,
+  backgroundRuns,
+  initialMessage,
+  initialFiles,
 }: MainShellProps): React.ReactElement {
   const { exit } = useApp();
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const initial: Message[] = [];
+    if (initialMessage) {
+      initial.push({ id: generateId(), role: 'system' as const, content: initialMessage });
+    }
+    if (initialFiles && initialFiles.length > 0) {
+      for (const file of initialFiles) {
+        initial.push({ id: generateId(), role: 'system' as const, content: `  ${file}` });
+      }
+    }
+    return initial;
+  });
   const [contextAge, setContextAge] = useState<string | null>(null);
 
   // Sync hook
   const { status: syncStatus, error: syncError, sync } = useSync();
 
-  /**
-   * Add a system message to the conversation
-   */
   const addSystemMessage = useCallback((content: string) => {
     const message: Message = {
       id: generateId(),
@@ -112,9 +126,10 @@ export function MainShell({
         } else {
           setContextAge(null);
         }
-      } catch {
+      } catch (err) {
+        logger.error(`Failed to load context: ${err instanceof Error ? err.message : String(err)}`);
         if (!cancelled) {
-          setContextAge(null);
+          setContextAge('load error');
         }
       }
     };
@@ -131,24 +146,14 @@ export function MainShell({
     [sessionState.projectRoot],
   );
 
-  /**
-   * Handle /help command
-   */
   const handleHelp = useCallback(() => {
     addSystemMessage(formatHelpText());
   }, [addSystemMessage]);
 
-  /**
-   * Handle /init command
-   */
   const handleInit = useCallback(() => {
-    // Navigate to init screen
     onNavigate('init');
   }, [onNavigate]);
 
-  /**
-   * Handle /new command
-   */
   const handleNew = useCallback((args: string[]) => {
     if (args.length === 0) {
       addSystemMessage('Feature name required. Usage: /new <feature-name>');
@@ -164,9 +169,6 @@ export function MainShell({
     onNavigate('interview', { featureName });
   }, [sessionState.initialized, onNavigate, addSystemMessage]);
 
-  /**
-   * Handle /run command
-   */
   const handleRun = useCallback((args: string[]) => {
     if (args.length === 0) {
       addSystemMessage('Feature name required. Usage: /run <feature-name>');
@@ -182,24 +184,43 @@ export function MainShell({
     onNavigate('run', { featureName });
   }, [sessionState.initialized, addSystemMessage, onNavigate]);
 
-  /**
-   * Handle /monitor command
-   */
   const handleMonitor = useCallback((args: string[]) => {
     if (args.length === 0) {
       addSystemMessage('Feature name required. Usage: /monitor <feature-name>');
       return;
     }
 
-    // TODO: Implement monitor screen navigation
-    addSystemMessage(`Monitor command for "${args[0]}" - not yet implemented in TUI mode.`);
-  }, [addSystemMessage]);
+    const featureName = args[0]!;
 
-  /**
-   * Handle /config command
-   */
+    if (!/^[a-zA-Z0-9_-]+$/.test(featureName)) {
+      addSystemMessage('Feature name must contain only letters, numbers, hyphens, and underscores.');
+      return;
+    }
+
+    // Check if it's a tracked background run
+    const bgRun = backgroundRuns?.find((r) => r.featureName === featureName);
+    if (bgRun) {
+      onNavigate('run', { featureName, monitorOnly: true });
+      return;
+    }
+
+    // Check if the process is running even if not tracked
+    try {
+      const status = readLoopStatus(featureName);
+      if (status.running) {
+        onNavigate('run', { featureName, monitorOnly: true });
+        return;
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      addSystemMessage(`Could not check loop status for "${featureName}": ${reason}`);
+      return;
+    }
+
+    addSystemMessage(`No running loop found for "${featureName}".`);
+  }, [addSystemMessage, backgroundRuns, onNavigate]);
+
   const handleConfig = useCallback((args: string[]) => {
-    // TODO: Implement config screen or inline config
     if (args.length === 0) {
       addSystemMessage('Config management - not yet implemented in TUI mode. Use CLI: wiggum config');
     } else {
@@ -207,20 +228,13 @@ export function MainShell({
     }
   }, [addSystemMessage]);
 
-  /**
-   * Handle /exit command
-   */
   const handleExit = useCallback(() => {
     addSystemMessage('Goodbye!');
-    // Small delay to show message before exit
     setTimeout(() => {
       exit();
     }, 100);
   }, [addSystemMessage, exit]);
 
-  /**
-   * Handle /sync command
-   */
   const handleSync = useCallback(() => {
     if (!sessionState.initialized) {
       addSystemMessage('Project not initialized. Run /init first.');
@@ -237,9 +251,6 @@ export function MainShell({
     sync(sessionState.projectRoot, sessionState.provider, sessionState.model);
   }, [sessionState, syncStatus, addSystemMessage, sync]);
 
-  /**
-   * Execute a slash command
-   */
   const executeCommand = useCallback((commandName: ReplCommandName, args: string[]) => {
     switch (commandName) {
       case 'help':
@@ -271,23 +282,15 @@ export function MainShell({
     }
   }, [handleHelp, handleInit, handleSync, handleNew, handleRun, handleMonitor, handleConfig, handleExit, addSystemMessage]);
 
-  /**
-   * Handle natural language input
-   */
   const handleNaturalLanguage = useCallback((_text: string) => {
-    // For now, just show a tip (text parameter reserved for future AI chat)
     addSystemMessage('Tip: Use /help to see available commands, or /new <feature> to create a spec.');
   }, [addSystemMessage]);
 
-  /**
-   * Handle user input submission
-   */
   const handleSubmit = useCallback((value: string) => {
     const parsed = parseInput(value);
 
     switch (parsed.type) {
       case 'empty':
-        // Ignore empty input
         break;
 
       case 'slash-command': {
@@ -318,27 +321,49 @@ export function MainShell({
     }
   });
 
+  // Build tips text
+  const tips = sessionState.initialized
+    ? 'Tip: /new <feature> to create spec, /help for commands'
+    : 'Tip: /init to set up, /help for commands';
+
+  const inputElement = (
+    <ChatInput
+      onSubmit={handleSubmit}
+      disabled={false}
+      placeholder="Enter command or type /help..."
+      onCommand={(cmd) => handleSubmit(`/${cmd}`)}
+    />
+  );
+
   return (
-    <Box flexDirection="column" padding={1}>
+    <AppShell
+      header={header}
+      tips={tips}
+      isWorking={syncStatus === 'running'}
+      workingStatus={syncStatus === 'running' ? 'Syncing project context\u2026' : undefined}
+      input={inputElement}
+      footerStatus={{
+        action: projectLabel || 'Main Shell',
+        phase: sessionState.provider ? `${sessionState.provider}/${sessionState.model}` : 'No provider',
+        path: sessionState.initialized
+          ? contextAge === 'load error'
+            ? 'Context: unavailable \u2014 /sync to refresh'
+            : contextAge
+              ? `Context: cached ${contextAge}`
+              : 'Context: none \u2014 /sync'
+          : 'Not initialized \u2014 /init',
+      }}
+    >
       {/* Message history */}
       {messages.length > 0 && (
-        <Box marginY={1} flexDirection="column">
+        <Box flexDirection="column">
           <MessageList messages={messages} />
         </Box>
       )}
 
-      {/* Sync UI */}
+      {/* Sync UI (non-spinner parts) */}
       {syncStatus !== 'idle' && (
-        <Box marginY={1} flexDirection="column" gap={1}>
-          {syncStatus === 'running' && (
-            <WorkingIndicator
-              state={{
-                isWorking: true,
-                status: 'Syncing project context…',
-              }}
-            />
-          )}
-
+        <Box flexDirection="column" gap={1}>
           <ActionOutput
             actionName="Sync"
             description="Project context"
@@ -351,7 +376,7 @@ export function MainShell({
             }
             output={
               syncStatus === 'running'
-                ? 'Scanning + AI analysis…'
+                ? 'Scanning + AI analysis\u2026'
                 : syncStatus === 'success'
                   ? 'Updated .ralph/.context.json'
                   : undefined
@@ -363,13 +388,13 @@ export function MainShell({
           {syncStatus === 'success' && (
             <Box marginTop={1} flexDirection="column">
               <Box flexDirection="row">
-                <Text color={colors.green}>{theme.chars.bullet} </Text>
+                <Text color={colors.green}>{phase.complete} </Text>
                 <Text>Done. Project context updated.</Text>
               </Box>
               <Box marginTop={1} flexDirection="column">
                 <Text bold>What's next:</Text>
                 <Box flexDirection="row" gap={1}>
-                  <Text color={colors.green}>›</Text>
+                  <Text color={colors.green}>{theme.chars.prompt}</Text>
                   <Text color={colors.blue}>/new {'<feature>'}</Text>
                   <Text dimColor>Create a feature specification</Text>
                 </Box>
@@ -378,29 +403,6 @@ export function MainShell({
           )}
         </Box>
       )}
-
-      {/* Input */}
-      <Box marginTop={1}>
-        <ChatInput
-          onSubmit={handleSubmit}
-          disabled={false}
-          placeholder="Enter command or type /help..."
-          onCommand={(cmd) => handleSubmit(`/${cmd}`)}
-        />
-      </Box>
-
-      {/* Footer status bar */}
-      <FooterStatusBar
-        action={projectLabel || 'Main Shell'}
-        phase={sessionState.provider ? `${sessionState.provider}/${sessionState.model}` : 'No provider'}
-        path={
-          sessionState.initialized
-            ? contextAge
-              ? `Context: cached ${contextAge}`
-              : 'Context: none — /sync'
-            : 'Not initialized — /init'
-        }
-      />
-    </Box>
+    </AppShell>
   );
 }

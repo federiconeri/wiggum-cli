@@ -1,33 +1,33 @@
 /**
  * InitScreen - Full Ink-based init workflow
  *
- * Handles the complete project initialization flow within the TUI:
+ * Handles the complete project initialization flow within the TUI.
+ * High-level steps (some may be skipped if already configured):
  * 1. Scanning project structure
- * 2. API key collection (if needed)
- * 3. Model selection
- * 4. AI analysis
- * 5. File generation
+ * 2. Provider selection
+ * 3. API key collection (if needed) + optional save
+ * 4. Model selection
+ * 5. AI analysis (agentic)
+ * 6. Confirmation + file generation
+ *
+ * Wrapped in AppShell for consistent layout.
  */
 
 import React, { useEffect, useRef, useCallback } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { colors, theme } from '../theme.js';
+import { colors, theme, phase } from '../theme.js';
 import { useInit, INIT_PHASE_CONFIGS, INIT_TOTAL_PHASES } from '../hooks/useInit.js';
-import { FooterStatusBar } from '../components/FooterStatusBar.js';
-import { WorkingIndicator } from '../components/WorkingIndicator.js';
+import { AppShell } from '../components/AppShell.js';
 import { Select, type SelectOption } from '../components/Select.js';
 import { PasswordInput } from '../components/PasswordInput.js';
 import { Confirm } from '../components/Confirm.js';
-import { ActionList } from '../components/ActionOutput.js';
 import { ToolCallCard } from '../components/ToolCallCard.js';
 import { Scanner } from '../../scanner/index.js';
 import {
   AIEnhancer,
-  formatAIAnalysis,
   type EnhancedScanResult,
 } from '../../ai/index.js';
 import {
-  hasApiKey,
   getApiKeyEnvVar,
   getAvailableProvider,
   AVAILABLE_MODELS,
@@ -39,7 +39,6 @@ import { initTracing, flushTracing, traced } from '../../utils/tracing.js';
 import { writeKeysToEnvFile } from '../../utils/env.js';
 import { saveContext, toPersistedScanResult, toPersistedAIAnalysis, getGitMetadata } from '../../context/index.js';
 import { logger } from '../../utils/logger.js';
-import fs from 'node:fs';
 import path from 'node:path';
 import type { SessionState } from '../../repl/session-state.js';
 import { updateSessionState } from '../../repl/session-state.js';
@@ -48,6 +47,8 @@ import { updateSessionState } from '../../repl/session-state.js';
  * Props for the InitScreen component
  */
 export interface InitScreenProps {
+  /** Pre-built header element from App */
+  header: React.ReactNode;
   /** Project root directory */
   projectRoot: string;
   /** Current session state */
@@ -58,18 +59,12 @@ export interface InitScreenProps {
   onCancel: () => void;
 }
 
-/**
- * Provider options for the select component
- */
 const PROVIDER_OPTIONS: SelectOption<AIProvider>[] = [
   { value: 'anthropic', label: 'Anthropic', hint: 'recommended' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'openrouter', label: 'OpenRouter', hint: 'multiple providers' },
 ];
 
-/**
- * Get model options for a provider
- */
 function getModelOptions(provider: AIProvider): SelectOption<string>[] {
   return AVAILABLE_MODELS[provider].map((m) => ({
     value: m.value,
@@ -78,14 +73,13 @@ function getModelOptions(provider: AIProvider): SelectOption<string>[] {
   }));
 }
 
-
 /**
  * InitScreen component
  *
- * The complete Ink-based init workflow. Replaces the readline-based
- * init flow with native Ink components.
+ * The complete Ink-based init workflow wrapped in AppShell.
  */
 export function InitScreen({
+  header,
   projectRoot,
   sessionState,
   onComplete,
@@ -110,23 +104,16 @@ export function InitScreen({
     setError,
   } = useInit();
 
-  // Store API key in ref (not in state for security)
   const apiKeyRef = useRef<string | null>(null);
-
-  // Track if AI analysis has started
   const aiAnalysisStarted = useRef(false);
-
-  // Track if generation has started
   const generationStarted = useRef(false);
 
-  // Handle Escape to cancel
-  useInput((input, key) => {
+  useInput((_input, key) => {
     if (key.escape) {
       onCancel();
     }
   });
 
-  // Initialize on mount
   useEffect(() => {
     initialize(projectRoot);
   }, [projectRoot, initialize]);
@@ -134,42 +121,39 @@ export function InitScreen({
   // Run scan when in scanning phase
   useEffect(() => {
     if (state.phase !== 'scanning' || state.scanResult) return;
+    let cancelled = false;
 
     const runScan = async () => {
       try {
         const scanner = new Scanner();
         const result = await scanner.scan(projectRoot);
+        if (cancelled) return;
         setScanResult(result);
 
-        // Check for existing API key
         const existingProvider = getAvailableProvider();
         if (existingProvider) {
           setExistingProvider(existingProvider);
-        } else {
-          // Need to collect API key - go to provider select
-          // This is done by checking state.hasApiKey in render
         }
       } catch (error) {
+        if (cancelled) return;
         setError(`Failed to scan project: ${error instanceof Error ? error.message : String(error)}`);
       }
     };
 
     runScan();
+    return () => { cancelled = true; };
   }, [state.phase, state.scanResult, projectRoot, setScanResult, setExistingProvider, setError]);
 
-  // Transition from scan to provider select if no API key
   useEffect(() => {
     if (state.phase === 'scanning' && state.scanResult && !state.hasApiKey) {
-      // Check one more time for available provider (in case env was set after initial check)
       const existingProvider = getAvailableProvider();
       if (existingProvider) {
         setExistingProvider(existingProvider);
       }
-      // Otherwise stay at scanning which will show provider-select
     }
   }, [state.phase, state.scanResult, state.hasApiKey, setExistingProvider]);
 
-  // Run AI analysis when in ai-analysis phase
+  // Run AI analysis
   useEffect(() => {
     if (state.phase !== 'ai-analysis' || aiAnalysisStarted.current) return;
     if (!state.scanResult || !state.provider || !state.model) return;
@@ -177,7 +161,11 @@ export function InitScreen({
     aiAnalysisStarted.current = true;
 
     const runAnalysis = async () => {
-      initTracing();
+      try {
+        initTracing();
+      } catch (err) {
+        logger.error(`Failed to init tracing: ${err instanceof Error ? err.message : String(err)}`);
+      }
 
       const aiEnhancer = new AIEnhancer({
         provider: state.provider!,
@@ -215,7 +203,6 @@ export function InitScreen({
           setEnhancedResult(enhancedResult);
         }
 
-        // Persist context for /sync and /new
         try {
           const git = await getGitMetadata(projectRoot);
           await saveContext(
@@ -229,10 +216,9 @@ export function InitScreen({
             projectRoot,
           );
         } catch (saveErr) {
-          logger.error(
-            `Failed to save project context: ${saveErr instanceof Error ? saveErr.message : String(saveErr)}`,
-          );
-          // Non-blocking: don't fail /init if context save fails
+          const reason = saveErr instanceof Error ? saveErr.message : String(saveErr);
+          logger.error(`Failed to save project context: ${reason}`);
+          setAiError(`Warning: AI analysis succeeded but context could not be saved (${reason}). Run /sync after init to persist context.`);
         }
       } catch (error) {
         setAiError(error instanceof Error ? error.message : String(error));
@@ -241,10 +227,14 @@ export function InitScreen({
       }
     };
 
-    runAnalysis();
+    runAnalysis().catch((err) => {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error(`AI analysis failed unexpectedly: ${reason}`);
+      setAiError(reason);
+    });
   }, [state.phase, state.scanResult, state.provider, state.model, setAiProgress, updateToolCall, setEnhancedResult, setAiError]);
 
-  // Run generation when in generating phase
+  // Run generation
   useEffect(() => {
     if (state.phase !== 'generating' || generationStarted.current) return;
     if (!state.scanResult || !state.model) return;
@@ -252,7 +242,6 @@ export function InitScreen({
     generationStarted.current = true;
 
     const runGeneration = async () => {
-      // Use enhanced result if available, otherwise use scan result
       const sourceResult = state.enhancedResult || state.scanResult;
 
       const generator = new Generator({
@@ -265,23 +254,26 @@ export function InitScreen({
         setGenerating('Writing configuration files...');
         const generationResult = await generator.generate(sourceResult as EnhancedScanResult);
 
-        // Extract generated file paths (keep full relative paths)
         const generatedFiles = generationResult.writeSummary.results
           .filter((f: { action: string }) =>
             f.action === 'created' || f.action === 'backed_up' || f.action === 'overwritten'
           )
           .map((f: { path: string }) => path.relative(projectRoot, f.path));
 
-        // Save API key to .ralph/.env.local if requested
         if (state.apiKeyEnteredThisSession && state.saveKeyToEnv && state.provider && apiKeyRef.current) {
-          const envVar = getApiKeyEnvVar(state.provider);
-          const envLocalPath = path.join(projectRoot, '.ralph', '.env.local');
-          writeKeysToEnvFile(envLocalPath, { [envVar]: apiKeyRef.current });
+          try {
+            const envVar = getApiKeyEnvVar(state.provider);
+            const envLocalPath = path.join(projectRoot, '.ralph', '.env.local');
+            writeKeysToEnvFile(envLocalPath, { [envVar]: apiKeyRef.current });
+          } catch (envErr) {
+            const reason = envErr instanceof Error ? envErr.message : String(envErr);
+            logger.error(`Failed to save API key to .env.local: ${reason}`);
+            setError(`API key was not saved to .env.local (${reason}). You may need to set the environment variable manually.`);
+          }
         }
 
         setGenerationComplete(generatedFiles);
 
-        // Load config and update session state
         const config = await loadConfigWithDefaults(projectRoot);
         const newSessionState = updateSessionState(sessionState, {
           provider: state.provider ?? undefined,
@@ -291,14 +283,17 @@ export function InitScreen({
           initialized: true,
         });
 
-        // Pass generated files to completion handler for thread history
         onComplete(newSessionState, generatedFiles);
       } catch (error) {
         setError(`Failed to generate files: ${error instanceof Error ? error.message : String(error)}`);
       }
     };
 
-    runGeneration();
+    runGeneration().catch((err) => {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error(`Generation failed unexpectedly: ${reason}`);
+      setError(reason);
+    });
   }, [
     state.phase,
     state.scanResult,
@@ -315,7 +310,6 @@ export function InitScreen({
     onComplete,
   ]);
 
-  // Handle provider selection
   const handleProviderSelect = useCallback(
     (provider: AIProvider) => {
       selectProvider(provider);
@@ -323,24 +317,17 @@ export function InitScreen({
     [selectProvider]
   );
 
-  // Handle API key input
   const handleApiKeySubmit = useCallback(
     (key: string) => {
       if (!state.provider) return;
-
-      // Store key in ref
       apiKeyRef.current = key;
-
-      // Set key in environment for this session
       const envVar = getApiKeyEnvVar(state.provider);
       process.env[envVar] = key;
-
       setApiKey(key);
     },
     [state.provider, setApiKey]
   );
 
-  // Handle save key confirmation
   const handleSaveKeyConfirm = useCallback(
     (save: boolean) => {
       setSaveKey(save);
@@ -348,7 +335,6 @@ export function InitScreen({
     [setSaveKey]
   );
 
-  // Handle model selection
   const handleModelSelect = useCallback(
     (model: string) => {
       selectModel(model);
@@ -356,7 +342,6 @@ export function InitScreen({
     [selectModel]
   );
 
-  // Handle generation confirmation
   const handleConfirmGeneration = useCallback(
     (confirmed: boolean) => {
       confirmGeneration(confirmed);
@@ -364,15 +349,26 @@ export function InitScreen({
     [confirmGeneration]
   );
 
-  // Get current phase config
   const phaseConfig = INIT_PHASE_CONFIGS[state.phase];
+  const phaseString = `${phaseConfig.name} (${phaseConfig.number}/${INIT_TOTAL_PHASES})`;
 
-  // Render based on current phase
-  const renderPhaseContent = () => {
+  // Determine if we're in a "working" state (show spinner)
+  const isWorking =
+    (state.phase === 'scanning' && !state.scanResult) ||
+    state.phase === 'ai-analysis' ||
+    state.phase === 'generating';
+
+  const workingStatus =
+    state.phase === 'scanning' ? (state.workingStatus || 'Scanning project structure...')
+    : state.phase === 'ai-analysis' ? (state.workingStatus || 'Analyzing codebase...')
+    : state.phase === 'generating' ? (state.workingStatus || 'Generating configuration files...')
+    : '';
+
+  // Build the input element based on phase
+  const renderInput = (): React.ReactNode => {
     switch (state.phase) {
       case 'scanning':
         if (state.scanResult && !state.hasApiKey) {
-          // Scan done but no API key - show provider select
           return (
             <Select
               message="Select your AI provider:"
@@ -382,16 +378,7 @@ export function InitScreen({
             />
           );
         }
-        // Still scanning
-        return (
-          <WorkingIndicator
-            state={{
-              isWorking: true,
-              status: state.workingStatus || 'Scanning project structure...',
-              hint: 'esc to cancel',
-            }}
-          />
-        );
+        return null;
 
       case 'provider-select':
         return (
@@ -433,101 +420,14 @@ export function InitScreen({
           />
         );
 
-      case 'ai-analysis':
-        return (
-          <Box flexDirection="column">
-            <Box marginBottom={1}>
-              <Text>
-                Running AI analysis with{' '}
-                <Text color={colors.blue}>
-                  {state.provider}/{state.model}
-                </Text>
-              </Text>
-            </Box>
-            {/* Tool call activity - using ToolCallCard for consistent styling */}
-            {state.toolCalls.length > 0 && (
-              <Box marginBottom={1} flexDirection="column">
-                {state.toolCalls.map((tc) => (
-                  <ToolCallCard
-                    key={tc.id}
-                    toolName={tc.actionName}
-                    status={tc.status === 'running' ? 'running' : tc.status === 'success' ? 'complete' : tc.status === 'error' ? 'error' : 'pending'}
-                    input={tc.description}
-                    output={tc.output}
-                    error={tc.error}
-                  />
-                ))}
-              </Box>
-            )}
-            <WorkingIndicator
-              state={{
-                isWorking: true,
-                status: state.workingStatus || 'Analyzing codebase...',
-                hint: 'esc to cancel',
-              }}
-            />
-          </Box>
-        );
-
       case 'confirm':
         return (
-          <Box flexDirection="column">
-            {/* Show AI analysis results if available */}
-            {state.enhancedResult?.aiAnalysis && (
-              <Box marginBottom={1} flexDirection="column">
-                <Text color={colors.green}>AI Analysis Complete</Text>
-                {state.tokenUsage && (
-                  <Text dimColor>
-                    Tokens: {state.tokenUsage.inputTokens} in / {state.tokenUsage.outputTokens} out
-                  </Text>
-                )}
-              </Box>
-            )}
-            {state.error && (
-              <Box marginBottom={1}>
-                <Text color={colors.orange}>Warning: {state.error}</Text>
-              </Box>
-            )}
-            <Confirm
-              message="Generate Ralph configuration files?"
-              onConfirm={handleConfirmGeneration}
-              onCancel={onCancel}
-              initialValue={true}
-            />
-          </Box>
-        );
-
-      case 'generating':
-        return (
-          <WorkingIndicator
-            state={{
-              isWorking: true,
-              status: state.workingStatus || 'Generating configuration files...',
-              hint: 'please wait',
-            }}
+          <Confirm
+            message="Generate Ralph configuration files?"
+            onConfirm={handleConfirmGeneration}
+            onCancel={onCancel}
+            initialValue={true}
           />
-        );
-
-      case 'complete':
-        // Brief completion message - full summary added to thread by App
-        return (
-          <Box flexDirection="row">
-            <Text color={colors.green}>{theme.chars.bullet} </Text>
-            <Text>Initialization complete.</Text>
-          </Box>
-        );
-
-      case 'error':
-        return (
-          <Box flexDirection="column">
-            <Text color={colors.pink} bold>
-              Error
-            </Text>
-            <Text color={colors.pink}>{state.error}</Text>
-            <Box marginTop={1}>
-              <Text dimColor>Press Esc to go back</Text>
-            </Box>
-          </Box>
         );
 
       default:
@@ -535,13 +435,13 @@ export function InitScreen({
     }
   };
 
-  // Show scan result summary when available
+  // Scan summary display
   const renderScanSummary = () => {
     if (!state.scanResult || state.phase === 'scanning') return null;
 
     const { stack } = state.scanResult;
     return (
-      <Box marginBottom={1} flexDirection="column">
+      <Box flexDirection="column">
         <Text color={colors.yellow} bold>
           Detected Stack
         </Text>
@@ -572,25 +472,101 @@ export function InitScreen({
     );
   };
 
-  // Build phase string for status line
-  const phaseString = `${phaseConfig.name} (${phaseConfig.number}/${INIT_TOTAL_PHASES})`;
+  // Phase-specific content (displayed in content area)
+  const renderPhaseContent = () => {
+    switch (state.phase) {
+      case 'ai-analysis':
+        return (
+          <Box flexDirection="column">
+            <Box marginBottom={1}>
+              <Text>
+                Running AI analysis with{' '}
+                <Text color={colors.blue}>
+                  {state.provider}/{state.model}
+                </Text>
+              </Text>
+            </Box>
+            {state.toolCalls.length > 0 && (
+              <Box flexDirection="column">
+                {state.toolCalls.map((tc) => (
+                  <ToolCallCard
+                    key={tc.id}
+                    toolName={tc.actionName}
+                    status={tc.status === 'running' ? 'running' : tc.status === 'success' ? 'complete' : tc.status === 'error' ? 'error' : 'pending'}
+                    input={tc.description}
+                    output={tc.output}
+                    error={tc.error}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
+        );
+
+      case 'confirm':
+        return (
+          <Box flexDirection="column">
+            {state.enhancedResult?.aiAnalysis && (
+              <Box flexDirection="column">
+                <Box flexDirection="row">
+                  <Text color={colors.green}>{phase.complete} </Text>
+                  <Text>AI Analysis Complete</Text>
+                </Box>
+                {state.tokenUsage && (
+                  <Text dimColor>
+                    Tokens: {state.tokenUsage.inputTokens} in / {state.tokenUsage.outputTokens} out
+                  </Text>
+                )}
+              </Box>
+            )}
+            {state.error && (
+              <Text color={colors.orange}>Warning: {state.error}</Text>
+            )}
+          </Box>
+        );
+
+      case 'complete':
+        return (
+          <Box flexDirection="row">
+            <Text color={colors.green}>{phase.complete} </Text>
+            <Text>Initialization complete.</Text>
+          </Box>
+        );
+
+      case 'error':
+        return (
+          <Box flexDirection="column">
+            <Text color={colors.pink} bold>Error</Text>
+            <Text color={colors.pink}>{state.error}</Text>
+            <Text dimColor>Press Esc to go back</Text>
+          </Box>
+        );
+
+      default:
+        return null;
+    }
+  };
 
   return (
-    <Box flexDirection="column" padding={1}>
+    <AppShell
+      header={header}
+      tips={state.phase === 'error' ? 'Esc to go back' : 'Esc to cancel'}
+      isWorking={isWorking}
+      workingStatus={workingStatus}
+      workingHint="esc to cancel"
+      error={state.phase === 'error' ? state.error : null}
+      input={renderInput()}
+      footerStatus={{
+        action: 'Initialize Project',
+        phase: phaseString,
+        path: projectRoot,
+      }}
+    >
       {/* Scan summary */}
-      <Box marginTop={1}>
-        {renderScanSummary()}
-      </Box>
+      {renderScanSummary()}
 
       {/* Phase-specific content */}
-      <Box marginTop={1}>{renderPhaseContent()}</Box>
-
-      {/* Footer status bar */}
-      <FooterStatusBar
-        action="Initialize Project"
-        phase={phaseString}
-        path={projectRoot}
-      />
-    </Box>
+      {renderPhaseContent()}
+    </AppShell>
   );
 }

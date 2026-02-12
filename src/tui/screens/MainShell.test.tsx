@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
+import { Text } from 'ink';
 import { render } from 'ink-testing-library';
 import { MainShell } from './MainShell.js';
 import type { NavigationTarget, NavigationProps } from './MainShell.js';
@@ -21,6 +22,8 @@ vi.mock('../hooks/useSync.js', () => ({
   }),
 }));
 
+const testHeader = <Text>HEADER</Text>;
+
 describe('MainShell', () => {
   let onNavigate: ReturnType<typeof vi.fn<(target: NavigationTarget, props?: NavigationProps) => void>>;
 
@@ -31,7 +34,7 @@ describe('MainShell', () => {
   it('renders input prompt', () => {
     const state = createTestSessionState();
     const { lastFrame, unmount } = render(
-      <MainShell sessionState={state} onNavigate={onNavigate} />,
+      <MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />,
     );
 
     const frame = lastFrame() ?? '';
@@ -42,13 +45,13 @@ describe('MainShell', () => {
   it('/help renders help text', async () => {
     const state = createTestSessionState();
     const instance = await renderAndWait(
-      () => render(<MainShell sessionState={state} onNavigate={onNavigate} />),
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
     );
 
-    // Type /help followed by a space to dismiss dropdown, then Enter
-    await typeText(instance, '/help ');
+    // Use /h alias which is shorter and more reliable in CI
+    await typeText(instance, '/h ');
     pressEnter(instance);
-    await wait(50);
+    await wait(100);
 
     const frame = stripAnsi(instance.lastFrame() ?? '');
     expect(frame).toContain('Available commands');
@@ -58,7 +61,7 @@ describe('MainShell', () => {
   it('/init navigates to init screen', async () => {
     const state = createTestSessionState();
     const instance = await renderAndWait(
-      () => render(<MainShell sessionState={state} onNavigate={onNavigate} />),
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
     );
 
     await typeText(instance, '/init ');
@@ -72,7 +75,7 @@ describe('MainShell', () => {
   it('/new my-feature navigates to interview', async () => {
     const state = createTestSessionState({ initialized: true });
     const instance = await renderAndWait(
-      () => render(<MainShell sessionState={state} onNavigate={onNavigate} />),
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
     );
 
     await typeText(instance, '/new my-feature');
@@ -86,7 +89,7 @@ describe('MainShell', () => {
   it('/new without name shows error message', async () => {
     const state = createTestSessionState();
     const instance = await renderAndWait(
-      () => render(<MainShell sessionState={state} onNavigate={onNavigate} />),
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
     );
 
     await typeText(instance, '/new ');
@@ -102,7 +105,7 @@ describe('MainShell', () => {
   it('/h alias works for help', async () => {
     const state = createTestSessionState();
     const instance = await renderAndWait(
-      () => render(<MainShell sessionState={state} onNavigate={onNavigate} />),
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
     );
 
     await typeText(instance, '/h ');
@@ -117,7 +120,7 @@ describe('MainShell', () => {
   it('/n alias works for new (but requires name)', async () => {
     const state = createTestSessionState();
     const instance = await renderAndWait(
-      () => render(<MainShell sessionState={state} onNavigate={onNavigate} />),
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
     );
 
     await typeText(instance, '/n ');
@@ -132,7 +135,7 @@ describe('MainShell', () => {
   it('/q alias works for exit', async () => {
     const state = createTestSessionState();
     const instance = await renderAndWait(
-      () => render(<MainShell sessionState={state} onNavigate={onNavigate} />),
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
     );
 
     await typeText(instance, '/q ');

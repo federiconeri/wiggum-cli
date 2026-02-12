@@ -7,17 +7,22 @@
  * 2. Goals - Understand what to build
  * 3. Interview - Clarifying questions
  * 4. Generation - Generate the specification
+ * 5. Complete - Show summary and return to shell
+ *
+ * Wrapped in AppShell for consistent layout. On completion,
+ * shows SpecCompletionSummary inline before returning to shell.
  */
 
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { AIProvider } from '../../ai/providers.js';
+import { logger } from '../../utils/logger.js';
 import type { ScanResult } from '../../scanner/types.js';
-import { FooterStatusBar } from '../components/FooterStatusBar.js';
 import { MessageList } from '../components/MessageList.js';
-import { WorkingIndicator } from '../components/WorkingIndicator.js';
 import { ChatInput } from '../components/ChatInput.js';
 import { MultiSelect } from '../components/MultiSelect.js';
+import { AppShell } from '../components/AppShell.js';
+import { SpecCompletionSummary } from '../components/SpecCompletionSummary.js';
 import {
   useSpecGenerator,
   PHASE_CONFIGS,
@@ -25,19 +30,23 @@ import {
   type GeneratorPhase,
 } from '../hooks/useSpecGenerator.js';
 import { InterviewOrchestrator, type SessionContext } from '../orchestration/interview-orchestrator.js';
-import { colors, theme } from '../theme.js';
+import { theme, phase } from '../theme.js';
 import {
   loadContext,
   toScanResultFromPersisted,
   getContextAge,
 } from '../../context/index.js';
+import { join } from 'node:path';
 import { initTracing, flushTracing } from '../../utils/tracing.js';
 import { resolveOptionLabels, type InterviewQuestion, type InterviewAnswer } from '../types/interview.js';
+import type { Message } from '../components/MessageList.js';
 
 /**
  * Props for the InterviewScreen component
  */
 export interface InterviewScreenProps {
+  /** Pre-built header element from App */
+  header: React.ReactNode;
   /** Name of the feature being specified */
   featureName: string;
   /** Project root directory path */
@@ -50,8 +59,8 @@ export interface InterviewScreenProps {
   scanResult?: ScanResult;
   /** Path to specs directory (relative to project root, defaults to '.ralph/specs') */
   specsPath?: string;
-  /** Called when spec generation is complete - receives spec and conversation messages */
-  onComplete: (spec: string, messages: import('../components/MessageList.js').Message[]) => void;
+  /** Called when spec generation is complete - receives spec, messages, and specPath */
+  onComplete: (spec: string, messages: Message[], specPath: string) => void;
   /** Called when user cancels the interview */
   onCancel: () => void;
 }
@@ -60,13 +69,10 @@ export interface InterviewScreenProps {
  * InterviewScreen component
  *
  * The main screen for the /new command interview flow. Combines all TUI
- * components (MessageList, WorkingIndicator, ChatInput, MultiSelect,
- * FooterStatusBar) to create the complete interview experience.
- *
- * Uses the useSpecGenerator hook for state and InterviewOrchestrator
- * to bridge to the AI conversation.
+ * components within an AppShell layout.
  */
 export function InterviewScreen({
+  header,
   featureName,
   projectRoot,
   provider,
@@ -92,38 +98,31 @@ export function InterviewScreen({
     setReady,
   } = useSpecGenerator();
 
-  // Track orchestrator instance
   const orchestratorRef = useRef<InterviewOrchestrator | null>(null);
-
-  // Track if we're in streaming mode for the current message
   const isStreamingRef = useRef(false);
   const streamContentRef = useRef('');
-
-  // Track if we're in generation phase (more reliable than checking orchestrator)
   const isGeneratingRef = useRef(false);
-
-  // Track if component is unmounted to prevent callbacks after cleanup
   const isCancelledRef = useRef(false);
-
-  // Use refs for callbacks and state to avoid stale closures
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
-
-  // Track messages in ref for access in callbacks
   const messagesRef = useRef(state.messages);
   messagesRef.current = state.messages;
 
-  // State for tool call expansion (Ctrl+O toggle)
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
-
-  // State for multi-select interview questions (null = free-text mode)
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
 
-  // Initialize Braintrust tracing for this interview session.
-  // flushTracing is fire-and-forget (void) to avoid blocking TUI shutdown.
-  useEffect(() => {
-    initTracing();
+  // Completion state: when spec is done, show summary inline
+  const [completionData, setCompletionData] = useState<{
+    spec: string;
+    specPath: string;
+  } | null>(null);
 
+  useEffect(() => {
+    try {
+      initTracing();
+    } catch (err) {
+      logger.error(`Failed to init tracing: ${err instanceof Error ? err.message : String(err)}`);
+    }
     return () => {
       void flushTracing();
     };
@@ -140,10 +139,7 @@ export function InterviewScreen({
       model,
     });
 
-    // Async IIFE to allow loading persisted context
     (async () => {
-      // Determine session context: use scanResult prop if available,
-      // otherwise try loading persisted context from disk
       let resolvedScanResult = scanResult;
       let resolvedSessionContext: SessionContext | undefined;
 
@@ -151,7 +147,6 @@ export function InterviewScreen({
         try {
           const persisted = await loadContext(projectRoot);
           if (persisted) {
-            // Map persisted AI analysis to SessionContext
             resolvedSessionContext = {
               entryPoints: persisted.aiAnalysis.projectContext?.entryPoints,
               keyDirectories: persisted.aiAnalysis.projectContext?.keyDirectories,
@@ -161,7 +156,6 @@ export function InterviewScreen({
               keyPatterns: persisted.aiAnalysis.technologyPractices?.practices,
             };
 
-            // Rehydrate a minimal scan result for Project Tech Stack context
             resolvedScanResult = toScanResultFromPersisted(
               persisted.scanResult,
               projectRoot,
@@ -174,11 +168,11 @@ export function InterviewScreen({
             );
           }
         } catch (err) {
-          // Show error but continue without context
           if (!isCancelledRef.current) {
+            const reason = err instanceof Error ? err.message : String(err);
             addMessage(
               'system',
-              `Unable to load cached project context; continuing without it.`,
+              `Unable to load cached project context (${reason}); continuing without it.`,
             );
           }
         }
@@ -233,7 +227,9 @@ export function InterviewScreen({
         onComplete: (spec) => {
           if (isCancelledRef.current) return;
           setGeneratedSpec(spec);
-          onCompleteRef.current(spec, messagesRef.current);
+          // Show completion summary inline instead of navigating away immediately
+          const specFilePath = join(projectRoot, specsPath, `${featureName}.md`);
+          setCompletionData({ spec, specPath: specFilePath });
         },
         onError: (error) => {
           if (isCancelledRef.current) return;
@@ -254,131 +250,170 @@ export function InterviewScreen({
       });
 
       orchestratorRef.current = orchestrator;
-      orchestrator.start();
-    })();
+      try {
+        orchestrator.start();
+      } catch (err) {
+        if (!isCancelledRef.current) {
+          const reason = err instanceof Error ? err.message : String(err);
+          logger.error(`Orchestrator start failed: ${reason}`);
+          setError(reason);
+        }
+      }
+    })().catch((err) => {
+      if (!isCancelledRef.current) {
+        const reason = err instanceof Error ? err.message : String(err);
+        logger.error(`Interview initialization failed: ${reason}`);
+        setError(reason);
+      }
+    });
 
     return () => {
       isCancelledRef.current = true;
       orchestratorRef.current = null;
     };
-  }, [featureName, projectRoot, provider, model, scanResult]);
+  }, [featureName, projectRoot, provider, model, scanResult, specsPath]);
 
-  // Handle user input submission based on current phase
   const handleSubmit = useCallback(
     async (value: string) => {
-      const orchestrator = orchestratorRef.current;
-      if (!orchestrator) return;
+      try {
+        const orchestrator = orchestratorRef.current;
+        if (!orchestrator) {
+          logger.debug('Interview submit ignored: orchestrator not ready yet');
+          return;
+        }
 
-      // Add user message to display
-      if (value) {
-        addMessage('user', value);
-      }
+        if (value) {
+          addMessage('user', value);
+        }
 
-      const currentPhase = orchestrator.getPhase();
+        const currentPhase = orchestrator.getPhase();
 
-      switch (currentPhase) {
-        case 'context':
-          if (value) {
-            // User entered a reference URL/path
-            await orchestrator.addReference(value);
-          } else {
-            // Empty input = done with context, advance to goals
-            await orchestrator.advanceToGoals();
-          }
-          break;
+        switch (currentPhase) {
+          case 'context':
+            if (value) {
+              await orchestrator.addReference(value);
+            } else {
+              await orchestrator.advanceToGoals();
+            }
+            break;
 
-        case 'goals':
-          // User entered their goals
-          await orchestrator.submitGoals(value);
-          break;
+          case 'goals':
+            await orchestrator.submitGoals(value);
+            break;
 
-        case 'interview':
-          if (value.toLowerCase() === 'done' || value.toLowerCase() === 'skip') {
-            // Skip to generation
-            await orchestrator.skipToGeneration();
-          } else {
-            // Submit free-text answer
-            const answer: InterviewAnswer = {
-              mode: 'freeText',
-              questionId: currentQuestion?.id || '',
-              text: value,
-            };
-            await orchestrator.submitAnswer(answer);
-          }
-          break;
+          case 'interview':
+            if (value.toLowerCase() === 'done' || value.toLowerCase() === 'skip') {
+              await orchestrator.skipToGeneration();
+            } else {
+              const answer: InterviewAnswer = {
+                mode: 'freeText',
+                questionId: currentQuestion?.id || '',
+                text: value,
+              };
+              await orchestrator.submitAnswer(answer);
+            }
+            break;
 
-        default:
-          // In generation or complete phase, ignore input
-          break;
+          default:
+            break;
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        logger.error(`Interview submit failed: ${reason}`);
+        setError(reason);
       }
     },
-    [addMessage, currentQuestion]
+    [addMessage, currentQuestion, setError]
   );
 
-  // Handle multi-select answer submission
   const handleMultiSelectSubmit = useCallback(
     async (selectedValues: string[]) => {
       try {
         const orchestrator = orchestratorRef.current;
         if (!orchestrator || !currentQuestion) return;
 
-        // Add user message to display
+        // Capture question before clearing so MultiSelect disappears immediately
+        const question = currentQuestion;
+        setCurrentQuestion(null);
+
         if (selectedValues.length === 0) {
           addMessage('user', '(No options selected)');
         } else {
-          const labels = resolveOptionLabels(currentQuestion.options, selectedValues);
+          const labels = resolveOptionLabels(question.options, selectedValues);
           addMessage('user', labels.join(', '));
         }
 
-        // Submit multi-select answer
         const answer: InterviewAnswer = {
           mode: 'multiSelect',
-          questionId: currentQuestion.id,
+          questionId: question.id,
           selectedOptionIds: selectedValues,
         };
         await orchestrator.submitAnswer(answer);
       } catch (error) {
-        setError(error instanceof Error ? error.message : String(error));
+        const reason = error instanceof Error ? error.message : String(error);
+        logger.error(`Interview multi-select submit failed: ${reason}`);
+        setError(reason);
       }
     },
     [addMessage, currentQuestion, setError]
   );
 
-  // Handle "Chat about this" mode switch
   const handleChatMode = useCallback(() => {
     setCurrentQuestion(null);
   }, []);
 
-  // Handle keyboard input for Escape key and Ctrl+O
+  // Handle completion dismiss (user presses Enter or Esc on summary)
+  const handleCompletionDismiss = useCallback(() => {
+    if (completionData) {
+      onCompleteRef.current(completionData.spec, messagesRef.current, completionData.specPath);
+    }
+  }, [completionData]);
+
   useInput((input, key) => {
+    // If showing completion summary, Enter or Esc dismisses
+    if (completionData) {
+      if (key.return || key.escape) {
+        handleCompletionDismiss();
+      }
+      return;
+    }
+
     if (key.escape) {
-      // When in multiSelect mode, Escape switches back to free-text instead of cancelling
       if (currentQuestion) {
         setCurrentQuestion(null);
         return;
       }
       onCancel();
     }
-    // Ctrl+O to toggle tool call expansion
     if (key.ctrl && input === 'o') {
       setToolCallsExpanded((prev) => !prev);
     }
   });
 
-  // Get current phase configuration
   const phaseConfig = PHASE_CONFIGS[state.phase];
-
-  // Determine if input should be disabled
   const inputDisabled = !state.awaitingInput || state.isWorking || state.phase === 'complete';
 
-  // Build the working indicator state
-  const workingState = {
-    isWorking: state.isWorking,
-    status: state.workingStatus,
-    hint: 'esc to cancel',
+  // Get tips text based on phase
+  const getTips = (): string | null => {
+    if (completionData) return null;
+    switch (state.phase) {
+      case 'context':
+        return 'Enter URLs or file paths. Empty input to continue.';
+      case 'goals':
+        return 'Describe what you want to build.';
+      case 'interview':
+        return currentQuestion
+          ? 'Space select, Enter confirm, C to chat, Esc cancel'
+          : "Type answer, 'done' to generate, Esc cancel";
+      case 'generation':
+        return 'Generating specification\u2026 Esc to cancel';
+      case 'complete':
+        return 'Enter to return to shell';
+      default:
+        return null;
+    }
   };
 
-  // Get placeholder text based on phase
   const getPlaceholder = () => {
     switch (state.phase) {
       case 'context':
@@ -396,79 +431,74 @@ export function InterviewScreen({
     }
   };
 
-  // Build phase string for status line
   const totalPhases = state.phase === 'complete' ? PHASE_CONFIGS.complete.number : TOTAL_DISPLAY_PHASES;
   const phaseString = `${phaseConfig.name} (${phaseConfig.number}/${totalPhases})`;
 
+  // Build input element based on phase
+  let inputElement: React.ReactNode = null;
+  if (!completionData && state.phase !== 'complete') {
+    if (state.phase === 'interview' && currentQuestion) {
+      inputElement = (
+        <MultiSelect
+          key={currentQuestion.id}
+          message={currentQuestion.text}
+          options={currentQuestion.options.map(opt => ({
+            value: opt.id,
+            label: opt.label,
+          }))}
+          onSubmit={handleMultiSelectSubmit}
+          onChatMode={handleChatMode}
+        />
+      );
+    } else {
+      inputElement = (
+        <ChatInput
+          onSubmit={handleSubmit}
+          disabled={inputDisabled}
+          allowEmpty={state.phase === 'context'}
+          placeholder={getPlaceholder()}
+        />
+      );
+    }
+  }
+
   return (
-    <Box flexDirection="column" padding={1}>
-      {/* Error display */}
-      {state.error && (
-        <Box marginY={1}>
-          <Text color={theme.colors.error}>Error: {state.error}</Text>
-        </Box>
-      )}
+    <AppShell
+      header={header}
+      tips={getTips()}
+      isWorking={state.isWorking && !completionData}
+      workingStatus={state.workingStatus}
+      workingHint="esc to cancel"
+      error={state.error}
+      input={inputElement}
+      footerStatus={{
+        action: 'New Spec',
+        phase: phaseString,
+        path: featureName,
+      }}
+    >
+      {/* Show completion summary when spec is done */}
+      {completionData ? (
+        <SpecCompletionSummary
+          featureName={featureName}
+          spec={completionData.spec}
+          specPath={completionData.specPath}
+          messages={state.messages}
+        />
+      ) : (
+        <>
+          {/* Conversation history */}
+          <MessageList messages={state.messages} toolCallsExpanded={toolCallsExpanded} />
 
-      {/* Conversation history - inline, conversational flow */}
-      <Box marginY={1}>
-        <MessageList messages={state.messages} toolCallsExpanded={toolCallsExpanded} />
-      </Box>
-
-      {/* Working indicator when AI is processing - always yellow */}
-      {state.isWorking && (
-        <Box marginY={1}>
-          <WorkingIndicator
-            state={workingState}
-            variant="active"
-          />
-        </Box>
-      )}
-
-      {/* Completion message - full summary added to thread by App */}
-      {state.phase === 'complete' && (
-        <Box flexDirection="row">
-          <Text color={theme.colors.success}>{theme.chars.bullet} </Text>
-          <Text>Specification complete.</Text>
-        </Box>
-      )}
-
-      {/* User input area */}
-      {state.phase !== 'complete' && (
-        <Box marginTop={1}>
-          {/* Multi-select mode for interview questions with options */}
-          {state.phase === 'interview' && currentQuestion ? (
-            <>
-              <Box><Text dimColor>{'─'.repeat(50)}</Text></Box>
-              <Box marginTop={1}>
-                <MultiSelect
-                  message={currentQuestion.text}
-                  options={currentQuestion.options.map(opt => ({
-                    value: opt.id,
-                    label: opt.label,
-                  }))}
-                  onSubmit={handleMultiSelectSubmit}
-                  onChatMode={handleChatMode}
-                />
-              </Box>
-            </>
-          ) : (
-            // Free-text mode (default for all phases)
-            <ChatInput
-              onSubmit={handleSubmit}
-              disabled={inputDisabled}
-              allowEmpty={state.phase === 'context'}
-              placeholder={getPlaceholder()}
-            />
+          {/* Completion message (before summary is shown) */}
+          {state.phase === 'complete' && !completionData && (
+            <Box flexDirection="row">
+              <Text color={theme.colors.success}>{phase.complete} </Text>
+              <Text>Specification complete.</Text>
+            </Box>
           )}
-        </Box>
+        </>
       )}
-
-      {/* Footer status bar */}
-      <FooterStatusBar
-        action="New Spec"
-        phase={phaseString}
-        path={featureName}
-      />
-    </Box>
+    </AppShell>
   );
 }

@@ -19,9 +19,10 @@ function getVersion(): string {
     const __dirname = dirname(__filename);
     const packagePath = join(__dirname, '..', 'package.json');
     const pkg = JSON.parse(readFileSync(packagePath, 'utf-8'));
-    return pkg.version || '0.8.0';
-  } catch {
-    return '0.8.0';
+    return pkg.version || '0.12.1';
+  } catch (err) {
+    logger.debug(`Failed to read version from package.json: ${err instanceof Error ? err.message : String(err)}`);
+    return '0.12.1'; // Fallback version (keep in sync with app.tsx)
   }
 }
 
@@ -29,7 +30,7 @@ function getVersion(): string {
  * Start Ink TUI mode
  * Called when wiggum is invoked with no arguments or with screen-routing args
  */
-async function startInkTui(initialScreen: AppScreen = 'welcome', interviewFeature?: string): Promise<void> {
+async function startInkTui(initialScreen: AppScreen = 'shell', interviewFeature?: string): Promise<void> {
   const projectRoot = process.cwd();
   const version = getVersion();
 
@@ -114,9 +115,9 @@ export async function main(): Promise<void> {
   // Check for updates (non-blocking, fails silently)
   await notifyIfUpdateAvailable();
 
-  // No args = start with welcome screen
+  // No args = start with shell
   if (args.length === 0) {
-    await startInkTui('welcome');
+    await startInkTui('shell');
     return;
   }
 
