@@ -6,7 +6,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { readLoopStatus, type LoopStatus } from '../utils/loop-status.js';
+import { readLoopStatus, getLoopLogPath, type LoopStatus } from '../utils/loop-status.js';
 import { logger } from '../../utils/logger.js';
 
 const POLL_INTERVAL_MS = 5000;
@@ -25,6 +25,8 @@ export interface BackgroundRun {
   lastStatus: LoopStatus;
   /** Whether the run has completed */
   completed: boolean;
+  /** If polling was stopped due to repeated failures, the error reason */
+  pollError?: string;
 }
 
 /**
@@ -33,7 +35,7 @@ export interface BackgroundRun {
 export interface UseBackgroundRunsReturn {
   /** Current list of background runs */
   runs: BackgroundRun[];
-  /** Add a feature to background tracking */
+  /** Add a feature to background tracking. Reads initial status and starts polling. */
   background: (featureName: string) => void;
   /** Remove a completed run from tracking */
   dismiss: (featureName: string) => void;
@@ -91,12 +93,15 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
         consecutiveFailures++;
         logger.error(`Failed to poll status for ${featureName} (attempt ${consecutiveFailures}): ${err instanceof Error ? err.message : String(err)}`);
         if (consecutiveFailures >= MAX_FAILURES) {
+          const reason = err instanceof Error ? err.message : String(err);
           logger.error(`Stopping polling for ${featureName} after ${consecutiveFailures} consecutive failures`);
           clearInterval(timer);
           pollTimers.current.delete(featureName);
           setRuns((prev) =>
             prev.map((run) =>
-              run.featureName === featureName ? { ...run, completed: true } : run
+              run.featureName === featureName
+                ? { ...run, pollError: `Status polling failed: ${reason}` }
+                : run
             )
           );
         }
@@ -115,7 +120,7 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
       // Assume still running so polling can discover truth — if truly dead, polling will detect it
       status = { running: true, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
     }
-    const logPath = `/tmp/ralph-loop-${featureName}.log`;
+    const logPath = getLoopLogPath(featureName);
 
     setRuns((prev) => {
       // Don't add duplicates

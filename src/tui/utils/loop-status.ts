@@ -56,7 +56,18 @@ function isProcessRunning(pattern: string): boolean {
 }
 
 /**
+ * Return the conventional log file path for a feature loop.
+ */
+export function getLoopLogPath(feature: string): string {
+  return `/tmp/ralph-loop-${feature}.log`;
+}
+
+/**
  * Detect current phase of the loop by checking for processes with prompt file patterns in their command line.
+ *
+ * Note: prompt-file checks (PROMPT_feature.md, etc.) are global — they match any
+ * running process, not just the one for `feature`. This is acceptable because
+ * concurrent loops are rare, but callers should be aware of the limitation.
  */
 export function detectPhase(feature: string): string {
   if (isProcessRunning('PROMPT_feature.md')) return 'Planning';
@@ -70,9 +81,19 @@ export function detectPhase(feature: string): string {
 }
 
 /**
- * Read status from temp files.
+ * Read loop status from temp files written by feature-loop.sh.
+ *
+ * Reads `ralph-loop-<feature>.status` (or `.final`) for iteration progress
+ * and `ralph-loop-<feature>.tokens` for token counts. Also runs `pgrep` to
+ * check whether the loop process is still alive.
+ *
+ * @throws {Error} If `feature` contains invalid characters.
  */
 export function readLoopStatus(feature: string): LoopStatus {
+  if (!/^[a-zA-Z0-9_-]+$/.test(feature)) {
+    throw new Error(`Invalid feature name: "${feature}". Must contain only letters, numbers, hyphens, and underscores.`);
+  }
+
   const statusFile = `/tmp/ralph-loop-${feature}.status`;
   const finalStatusFile = `/tmp/ralph-loop-${feature}.final`;
   const tokensFile = `/tmp/ralph-loop-${feature}.tokens`;
@@ -116,7 +137,12 @@ export function readLoopStatus(feature: string): LoopStatus {
 }
 
 /**
- * Parse implementation plan for task counts.
+ * Parse the markdown implementation plan for a feature to extract task/E2E counts.
+ *
+ * Looks for `- [x]` (done) and `- [ ]` (pending) checklist items.
+ * Items containing "E2E:" are counted separately as end-to-end tests.
+ *
+ * @returns Counts of done/pending tasks and E2E tests.
  */
 export async function parseImplementationPlan(
   projectRoot: string,

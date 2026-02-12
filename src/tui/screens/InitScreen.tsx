@@ -1,12 +1,14 @@
 /**
  * InitScreen - Full Ink-based init workflow
  *
- * Handles the complete project initialization flow within the TUI:
+ * Handles the complete project initialization flow within the TUI.
+ * High-level steps (some may be skipped if already configured):
  * 1. Scanning project structure
- * 2. API key collection (if needed)
- * 3. Model selection
- * 4. AI analysis
- * 5. File generation
+ * 2. Provider selection
+ * 3. API key collection (if needed) + optional save
+ * 4. Model selection
+ * 5. AI analysis (agentic)
+ * 6. Confirmation + file generation
  *
  * Wrapped in AppShell for consistent layout.
  */
@@ -212,7 +214,7 @@ export function InitScreen({
         } catch (saveErr) {
           const reason = saveErr instanceof Error ? saveErr.message : String(saveErr);
           logger.error(`Failed to save project context: ${reason}`);
-          setAiError(`Context save failed (${reason}). You may need to run /sync later.`);
+          setAiError(`Warning: AI analysis succeeded but context could not be saved (${reason}). Run /sync after init to persist context.`);
         }
       } catch (error) {
         setAiError(error instanceof Error ? error.message : String(error));

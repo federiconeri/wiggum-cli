@@ -21,6 +21,7 @@ const { mockReadLoopStatus } = vi.hoisted(() => ({
 
 vi.mock('../utils/loop-status.js', () => ({
   readLoopStatus: mockReadLoopStatus,
+  getLoopLogPath: (feature: string) => `/tmp/ralph-loop-${feature}.log`,
 }));
 
 import { useBackgroundRuns } from './useBackgroundRuns.js';

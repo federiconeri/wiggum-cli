@@ -19,10 +19,10 @@ function getVersion(): string {
     const __dirname = dirname(__filename);
     const packagePath = join(__dirname, '..', 'package.json');
     const pkg = JSON.parse(readFileSync(packagePath, 'utf-8'));
-    return pkg.version || '0.8.0';
+    return pkg.version || '0.12.1';
   } catch (err) {
     logger.debug(`Failed to read version from package.json: ${err instanceof Error ? err.message : String(err)}`);
-    return '0.8.0'; // Fallback version (keep in sync with app.tsx)
+    return '0.12.1'; // Fallback version (keep in sync with app.tsx)
   }
 }
 

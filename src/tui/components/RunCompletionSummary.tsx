@@ -35,7 +35,9 @@ export function RunCompletionSummary({
     ? { label: 'Complete', color: colors.green, message: 'Done. Feature loop completed successfully.' }
     : stoppedCodes.has(summary.exitCode)
       ? { label: 'Stopped', color: colors.orange, message: 'Stopped. Feature loop interrupted.' }
-      : { label: 'Failed', color: colors.pink, message: `Done. Feature loop exited with code ${summary.exitCode}.` };
+      : summary.exitCodeInferred
+        ? { label: 'Unknown', color: colors.orange, message: `Done. Exit status uncertain (inferred code ${summary.exitCode}). Check logs for details.` }
+        : { label: 'Failed', color: colors.pink, message: `Done. Feature loop exited with code ${summary.exitCode}.` };
 
   return (
     <Box flexDirection="column" marginY={1}>

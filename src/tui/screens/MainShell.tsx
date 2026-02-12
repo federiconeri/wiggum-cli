@@ -129,7 +129,7 @@ export function MainShell({
       } catch (err) {
         logger.error(`Failed to load context: ${err instanceof Error ? err.message : String(err)}`);
         if (!cancelled) {
-          setContextAge(null);
+          setContextAge('load error');
         }
       }
     };
@@ -205,9 +205,15 @@ export function MainShell({
     }
 
     // Check if the process is running even if not tracked
-    const status = readLoopStatus(featureName);
-    if (status.running) {
-      onNavigate('run', { featureName, monitorOnly: true });
+    try {
+      const status = readLoopStatus(featureName);
+      if (status.running) {
+        onNavigate('run', { featureName, monitorOnly: true });
+        return;
+      }
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      addSystemMessage(`Could not check loop status for "${featureName}": ${reason}`);
       return;
     }
 

@@ -37,7 +37,8 @@ export function HeaderContent({
   backgroundRuns,
   compact = false,
 }: HeaderContentProps): React.ReactElement {
-  const activeRuns = backgroundRuns?.filter((r) => !r.completed) ?? [];
+  const activeRuns = backgroundRuns?.filter((r) => !r.completed && !r.pollError) ?? [];
+  const errorRuns = backgroundRuns?.filter((r) => r.pollError) ?? [];
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -66,6 +67,14 @@ export function HeaderContent({
             {activeRuns.length > 1 && (
               <Text dimColor> +{activeRuns.length - 1} more</Text>
             )}
+          </>
+        )}
+        {errorRuns.length > 0 && (
+          <>
+            <Text dimColor>{theme.statusLine.separator}</Text>
+            <Text color={colors.orange}>
+              {theme.chars.bullet} {errorRuns[0]!.featureName} (status unknown)
+            </Text>
           </>
         )}
       </Box>

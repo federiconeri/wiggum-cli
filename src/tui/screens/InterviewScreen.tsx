@@ -118,7 +118,11 @@ export function InterviewScreen({
   } | null>(null);
 
   useEffect(() => {
-    initTracing();
+    try {
+      initTracing();
+    } catch (err) {
+      logger.error(`Failed to init tracing: ${err instanceof Error ? err.message : String(err)}`);
+    }
     return () => {
       void flushTracing();
     };
@@ -246,8 +250,22 @@ export function InterviewScreen({
       });
 
       orchestratorRef.current = orchestrator;
-      orchestrator.start();
-    })();
+      try {
+        orchestrator.start();
+      } catch (err) {
+        if (!isCancelledRef.current) {
+          const reason = err instanceof Error ? err.message : String(err);
+          logger.error(`Orchestrator start failed: ${reason}`);
+          setError(reason);
+        }
+      }
+    })().catch((err) => {
+      if (!isCancelledRef.current) {
+        const reason = err instanceof Error ? err.message : String(err);
+        logger.error(`Interview initialization failed: ${reason}`);
+        setError(reason);
+      }
+    });
 
     return () => {
       isCancelledRef.current = true;
@@ -259,7 +277,10 @@ export function InterviewScreen({
     async (value: string) => {
       try {
         const orchestrator = orchestratorRef.current;
-        if (!orchestrator) return;
+        if (!orchestrator) {
+          logger.debug('Interview submit ignored: orchestrator not ready yet');
+          return;
+        }
 
         if (value) {
           addMessage('user', value);

@@ -26,6 +26,7 @@ import {
   parseImplementationPlan,
   getGitBranch,
   formatNumber,
+  getLoopLogPath,
   type LoopStatus,
   type TaskCounts,
 } from '../utils/loop-status.js';
@@ -42,6 +43,8 @@ export interface RunSummary {
   tokensInput: number;
   tokensOutput: number;
   exitCode: number;
+  /** True when the exit code was inferred (e.g. monitor mode heuristic) rather than observed directly */
+  exitCodeInferred?: boolean;
   branch?: string;
   logPath?: string;
   errorTail?: string;
@@ -211,7 +214,7 @@ export function RunScreen({
     // In monitor mode, detect completion (only fire once)
     if (monitorOnly && !nextStatus.running && !completionSentRef.current) {
       completionSentRef.current = true;
-      const logPath = `/tmp/ralph-loop-${featureName}.log`;
+      const logPath = getLoopLogPath(featureName);
       const finalMarker = `/tmp/ralph-loop-${featureName}.final`;
       const exitCode = existsSync(finalMarker) ? 0 : 1;
       if (exitCode !== 0) {
@@ -229,6 +232,7 @@ export function RunScreen({
         tokensInput: nextStatus.tokensInput,
         tokensOutput: nextStatus.tokensOutput,
         exitCode,
+        exitCodeInferred: true,
         branch: getGitBranch(projectRoot),
         logPath,
         errorTail,
@@ -242,6 +246,11 @@ export function RunScreen({
       childRef.current.kill('SIGINT');
     } else if (monitorOnly) {
       // In monitor mode, find and kill the loop process by pattern
+      if (!/^[a-zA-Z0-9_-]+$/.test(featureName)) {
+        logger.error(`Refusing to run pkill with unsafe feature name: ${featureName}`);
+        setError('Feature name contains invalid characters.');
+        return;
+      }
       try {
         execFileSync('pkill', ['-INT', '-f', `feature-loop.sh.*${featureName}`]);
       } catch (err: unknown) {
@@ -337,7 +346,7 @@ export function RunScreen({
           return;
         }
 
-        const logPath = `/tmp/ralph-loop-${featureName}.log`;
+        const logPath = getLoopLogPath(featureName);
         const logFd = openSync(logPath, 'a');
         let logFdClosed = false;
 
@@ -380,6 +389,7 @@ export function RunScreen({
           });
 
           child.on('error', (err) => {
+            if (!logFdClosed) { closeSync(logFd); logFdClosed = true; }
             if (cancelled) return;
             setError(`Failed to start feature loop: ${err.message}`);
           });

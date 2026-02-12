@@ -3,7 +3,7 @@
  *
  * Shows the goal, key decisions, file preview, and "what's next"
  * section after a spec has been generated. Extracts a recap from
- * the conversation history using regex-based pattern matching.
+ * the conversation history using heuristic text analysis.
  */
 
 import React from 'react';
@@ -60,7 +60,7 @@ export function summarizeText(text: string, max = 160): string {
   return `${text.slice(0, max - 1)}\u2026`;
 }
 
-/** Return true if the decision string is substantive enough to display (>= 8 chars, >= 3 words, not bare yes/no). */
+/** Return true if the decision string is substantive enough to display (>= 8 chars and >= 3 words). */
 export function isUsefulDecision(entry: string): boolean {
   const normalized = entry.trim().toLowerCase();
   if (normalized.length < 8) return false;
@@ -71,7 +71,10 @@ export function isUsefulDecision(entry: string): boolean {
 }
 
 /**
- * Extract goal and key decisions from conversation messages
+ * Extract goal and key decisions from conversation messages.
+ *
+ * @returns `goalCandidate` — a one-line summary of the feature goal, and
+ *          `decisions` — up to 4 key decisions extracted from the conversation.
  */
 export function extractRecap(messages: Message[], featureName: string) {
   const userMessages = messages

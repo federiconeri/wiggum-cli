@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { render, useStdout, type Instance } from 'ink';
+import { Box, Text, render, useStdout, type Instance } from 'ink';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { AIProvider } from '../ai/providers.js';
@@ -74,7 +74,7 @@ export interface AppProps {
 export function App({
   screen: initialScreen,
   initialSessionState,
-  version = '0.8.0', // Fallback if package.json read fails (keep in sync with index.ts)
+  version = '0.12.1', // Fallback if package.json read fails (keep in sync with index.ts)
   interviewProps,
   onComplete,
   onExit,
@@ -139,7 +139,8 @@ export function App({
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           logger.error(`Failed to save spec: ${reason}`);
-          onComplete?.(spec);
+          // Pass specPath (not raw spec content) to keep the onComplete contract consistent
+          onComplete?.(specPath);
           if (initialScreen !== 'interview') {
             navigate('shell', { message: `Warning: spec generated but could not be saved to disk (${reason}).` });
           } else {
@@ -226,6 +227,9 @@ export function App({
       if (!featureName || typeof featureName !== 'string') {
         navigate('shell', { message: 'Feature name is required for the run screen.' });
       }
+    } else if (currentScreen !== 'shell' && currentScreen !== 'init') {
+      // Unknown screen — redirect to shell on next tick
+      navigate('shell', { message: `Internal error: unknown screen "${currentScreen}". Returned to shell.` });
     }
   }, [currentScreen, screenProps, interviewProps, sessionState.provider, navigate]);
 
@@ -298,10 +302,17 @@ export function App({
       );
     }
 
-    default:
-      logger.error(`Unknown screen: ${currentScreen}`);
-      navigate('shell', { message: `Internal error: unknown screen "${currentScreen}". Returned to shell.` });
-      return null;
+    default: {
+      // Return fallback UI instead of calling navigate() during render (which would be setState during render).
+      // The useEffect guard above will redirect to shell on next tick.
+      const unknownScreen = currentScreen as string;
+      logger.error(`Unknown screen: ${unknownScreen}`);
+      return (
+        <Box flexDirection="column" padding={1}>
+          <Text color="red">Internal error: unknown screen &quot;{unknownScreen}&quot;. Redirecting to shell...</Text>
+        </Box>
+      );
+    }
   }
 }
 
