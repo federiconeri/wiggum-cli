@@ -64,9 +64,13 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
     const existing = pollTimers.current.get(featureName);
     if (existing) clearInterval(existing);
 
+    let consecutiveFailures = 0;
+    const MAX_FAILURES = 3;
+
     const timer = setInterval(() => {
       try {
         const status = readLoopStatus(featureName);
+        consecutiveFailures = 0;
         const nowCompleted = !status.running;
         setRuns((prev) =>
           prev.map((run) => {
@@ -84,7 +88,18 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
           pollTimers.current.delete(featureName);
         }
       } catch (err) {
-        logger.error(`Failed to poll status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+        consecutiveFailures++;
+        logger.error(`Failed to poll status for ${featureName} (attempt ${consecutiveFailures}): ${err instanceof Error ? err.message : String(err)}`);
+        if (consecutiveFailures >= MAX_FAILURES) {
+          logger.error(`Stopping polling for ${featureName} after ${consecutiveFailures} consecutive failures`);
+          clearInterval(timer);
+          pollTimers.current.delete(featureName);
+          setRuns((prev) =>
+            prev.map((run) =>
+              run.featureName === featureName ? { ...run, completed: true } : run
+            )
+          );
+        }
       }
     }, POLL_INTERVAL_MS);
 

@@ -1,7 +1,7 @@
 /**
  * RunCompletionSummary - Displays run loop completion recap
  *
- * Shows the feature, iterations, tasks, tokens, exit status,
+ * Shows the feature, iterations, tasks, tokens, branch, exit status,
  * log tail, and "what's next" section after a feature loop completes.
  */
 

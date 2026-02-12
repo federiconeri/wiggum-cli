@@ -29,6 +29,7 @@ export interface SpecCompletionSummaryProps {
 
 const MAX_RECAP_SOURCE_LENGTH = 1200;
 
+/** Strip filler prefixes ('you want', 'understood', 'got it') from AI recap text and capitalize. */
 export function normalizeRecap(text: string): string {
   let result = text.trim();
   result = result.replace(/^[^a-z0-9]+/i, '');
@@ -38,6 +39,7 @@ export function normalizeRecap(text: string): string {
   return result.charAt(0).toUpperCase() + result.slice(1);
 }
 
+/** Strip user speech filler and normalize decision text: add trailing period if missing, capitalize. */
 export function normalizeUserDecision(text: string): string {
   let result = text.trim();
   result = result.replace(/^[^a-z0-9]+/i, '');
@@ -52,11 +54,13 @@ export function normalizeUserDecision(text: string): string {
   return result.charAt(0).toUpperCase() + result.slice(1);
 }
 
+/** Truncate text to max characters with ellipsis. */
 export function summarizeText(text: string, max = 160): string {
   if (text.length <= max) return text;
   return `${text.slice(0, max - 1)}\u2026`;
 }
 
+/** Return true if the decision string is substantive enough to display (>= 8 chars, >= 3 words, not bare yes/no). */
 export function isUsefulDecision(entry: string): boolean {
   const normalized = entry.trim().toLowerCase();
   if (normalized.length < 8) return false;

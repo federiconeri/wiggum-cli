@@ -214,6 +214,9 @@ export function RunScreen({
       const logPath = `/tmp/ralph-loop-${featureName}.log`;
       const finalMarker = `/tmp/ralph-loop-${featureName}.final`;
       const exitCode = existsSync(finalMarker) ? 0 : 1;
+      if (exitCode !== 0) {
+        logger.warn(`Monitor mode inferred exit code 1 for ${featureName} (no .final marker). This may be a false negative.`);
+      }
       const tasksDone = nextTasks.tasksDone + nextTasks.e2eDone;
       const tasksTotal = tasksDone + nextTasks.tasksPending + nextTasks.e2ePending;
       const errorTail = exitCode !== 0 ? readLogTail(logPath, ERROR_TAIL_LINES) || undefined : undefined;
@@ -280,11 +283,11 @@ export function RunScreen({
         if (cancelled) return;
         setIsStarting(false);
         refreshStatus().catch((err) => {
-          logger.debug(`refreshStatus failed: ${err instanceof Error ? err.message : String(err)}`);
+          logger.warn(`Status refresh failed: ${err instanceof Error ? err.message : String(err)}`);
         });
         pollTimer = setInterval(() => {
           refreshStatus().catch((err) => {
-            logger.debug(`refreshStatus failed: ${err instanceof Error ? err.message : String(err)}`);
+            logger.warn(`Status refresh failed: ${err instanceof Error ? err.message : String(err)}`);
           });
         }, POLL_INTERVAL_MS);
       };
@@ -336,88 +339,94 @@ export function RunScreen({
 
         const logPath = `/tmp/ralph-loop-${featureName}.log`;
         const logFd = openSync(logPath, 'a');
+        let logFdClosed = false;
 
-        const args = [
-          featureName,
-          String(config.loop.maxIterations),
-          String(config.loop.maxE2eAttempts),
-          '--review-mode',
-          reviewMode,
-        ];
+        try {
+          const args = [
+            featureName,
+            String(config.loop.maxIterations),
+            String(config.loop.maxE2eAttempts),
+            '--review-mode',
+            reviewMode,
+          ];
 
-        const child = spawn('bash', [scriptPath, ...args], {
-          cwd: dirname(scriptPath),
-          stdio: ['ignore', logFd, logFd],
-          env: {
-            ...process.env,
-            RALPH_CONFIG_ROOT: config.paths.root,
-            RALPH_SPEC_DIR: config.paths.specs,
-            RALPH_SCRIPTS_DIR: config.paths.scripts,
-          },
-        });
-
-        childRef.current = child;
-        startTimeRef.current = Date.now();
-        setIsStarting(false);
-
-        if (stopRequestedRef.current) {
-          child.kill('SIGINT');
-        }
-
-        pollTimer = setInterval(() => {
-          refreshStatus().catch((err) => {
-            logger.debug(`refreshStatus failed: ${err instanceof Error ? err.message : String(err)}`);
+          const child = spawn('bash', [scriptPath, ...args], {
+            cwd: dirname(scriptPath),
+            stdio: ['ignore', logFd, logFd],
+            env: {
+              ...process.env,
+              RALPH_CONFIG_ROOT: config.paths.root,
+              RALPH_SPEC_DIR: config.paths.specs,
+              RALPH_SCRIPTS_DIR: config.paths.scripts,
+            },
           });
-        }, POLL_INTERVAL_MS);
 
-        refreshStatus().catch((err) => {
-          logger.debug(`refreshStatus failed: ${err instanceof Error ? err.message : String(err)}`);
-        });
+          childRef.current = child;
+          startTimeRef.current = Date.now();
+          setIsStarting(false);
 
-        child.on('error', (err) => {
-          if (cancelled) return;
-          setError(`Failed to start feature loop: ${err.message}`);
-        });
-
-        child.on('close', async (code) => {
-          if (cancelled) return;
-          if (pollTimer) clearInterval(pollTimer);
-          closeSync(logFd);
-          if (!isMountedRef.current) return;
-
-          let latestStatus: LoopStatus;
-          let latestTasks: TaskCounts;
-          try {
-            latestStatus = readLoopStatus(featureName);
-            latestTasks = await parseImplementationPlan(projectRoot, featureName, specsDirRef.current);
-          } catch (err) {
-            logger.error(`Failed to read final run status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
-            latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
-            latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0 };
+          if (stopRequestedRef.current) {
+            child.kill('SIGINT');
           }
 
-          const tasksDone = latestTasks.tasksDone + latestTasks.e2eDone;
-          const tasksTotal = tasksDone + latestTasks.tasksPending + latestTasks.e2ePending;
-          const exitCode = typeof code === 'number' ? code : 1;
-          const errorTail = exitCode === 0 ? undefined : readLogTail(logPath, ERROR_TAIL_LINES) || undefined;
+          pollTimer = setInterval(() => {
+            refreshStatus().catch((err) => {
+              logger.warn(`Status refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+            });
+          }, POLL_INTERVAL_MS);
 
-          const summary: RunSummary = {
-            feature: featureName,
-            iterations: latestStatus.iteration,
-            maxIterations: latestStatus.maxIterations || config.loop.maxIterations,
-            tasksDone,
-            tasksTotal,
-            tokensInput: latestStatus.tokensInput,
-            tokensOutput: latestStatus.tokensOutput,
-            exitCode,
-            branch: getGitBranch(projectRoot),
-            logPath,
-            errorTail,
-          };
+          refreshStatus().catch((err) => {
+            logger.warn(`Status refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+          });
 
-          // Show completion summary inline
-          setCompletionSummary(summary);
-        });
+          child.on('error', (err) => {
+            if (cancelled) return;
+            setError(`Failed to start feature loop: ${err.message}`);
+          });
+
+          child.on('close', async (code) => {
+            if (cancelled) return;
+            if (pollTimer) clearInterval(pollTimer);
+            if (!logFdClosed) { closeSync(logFd); logFdClosed = true; }
+            if (!isMountedRef.current) return;
+
+            let latestStatus: LoopStatus;
+            let latestTasks: TaskCounts;
+            try {
+              latestStatus = readLoopStatus(featureName);
+              latestTasks = await parseImplementationPlan(projectRoot, featureName, specsDirRef.current);
+            } catch (err) {
+              logger.error(`Failed to read final run status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+              latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+              latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0 };
+            }
+
+            const tasksDone = latestTasks.tasksDone + latestTasks.e2eDone;
+            const tasksTotal = tasksDone + latestTasks.tasksPending + latestTasks.e2ePending;
+            const exitCode = typeof code === 'number' ? code : 1;
+            const errorTail = exitCode === 0 ? undefined : readLogTail(logPath, ERROR_TAIL_LINES) || undefined;
+
+            const summary: RunSummary = {
+              feature: featureName,
+              iterations: latestStatus.iteration,
+              maxIterations: latestStatus.maxIterations || config.loop.maxIterations,
+              tasksDone,
+              tasksTotal,
+              tokensInput: latestStatus.tokensInput,
+              tokensOutput: latestStatus.tokensOutput,
+              exitCode,
+              branch: getGitBranch(projectRoot),
+              logPath,
+              errorTail,
+            };
+
+            // Show completion summary inline
+            setCompletionSummary(summary);
+          });
+        } catch (spawnErr) {
+          if (!logFdClosed) { closeSync(logFd); logFdClosed = true; }
+          throw spawnErr;
+        }
       } catch (err) {
         if (cancelled) return;
         setError(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);

@@ -20,7 +20,7 @@ export interface HeaderContentProps {
   version: string;
   /** Current session state */
   sessionState: SessionState;
-  /** Active background runs */
+  /** Background runs (only active ones are displayed) */
   backgroundRuns?: BackgroundRun[];
   /** Use compact banner for small terminals */
   compact?: boolean;

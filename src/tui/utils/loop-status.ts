@@ -56,7 +56,7 @@ function isProcessRunning(pattern: string): boolean {
 }
 
 /**
- * Detect current phase of the loop based on active prompt files.
+ * Detect current phase of the loop by checking for processes with prompt file patterns in their command line.
  */
 export function detectPhase(feature: string): string {
   if (isProcessRunning('PROMPT_feature.md')) return 'Planning';
@@ -123,9 +123,14 @@ export async function parseImplementationPlan(
   feature: string,
   specsDirOverride?: string
 ): Promise<TaskCounts> {
-  const config = specsDirOverride
-    ? null
-    : await loadConfigWithDefaults(projectRoot);
+  let config = null;
+  if (!specsDirOverride) {
+    try {
+      config = await loadConfigWithDefaults(projectRoot);
+    } catch (err) {
+      logger.debug(`Failed to load config for plan parsing: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
   const specsDir = specsDirOverride || config?.paths.specs || '.ralph/specs';
   const planPath = join(projectRoot, specsDir, `${feature}-implementation-plan.md`);
 

@@ -258,7 +258,7 @@ export function InitScreen({
           } catch (envErr) {
             const reason = envErr instanceof Error ? envErr.message : String(envErr);
             logger.error(`Failed to save API key to .env.local: ${reason}`);
-            // Non-fatal: config files were generated, key just wasn't persisted
+            setError(`API key was not saved to .env.local (${reason}). You may need to set the environment variable manually.`);
           }
         }
 

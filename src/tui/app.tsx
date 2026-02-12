@@ -164,6 +164,7 @@ export function App({
       if (initialScreen !== 'interview') {
         navigate('shell', { message: `Error completing interview: ${reason}` });
       } else {
+        process.stderr.write(`\nError: ${reason}\n`);
         onExit?.();
       }
     }

@@ -16,6 +16,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import type { AIProvider } from '../../ai/providers.js';
+import { logger } from '../../utils/logger.js';
 import type { ScanResult } from '../../scanner/types.js';
 import { MessageList } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
@@ -296,7 +297,9 @@ export function InterviewScreen({
             break;
         }
       } catch (error) {
-        setError(error instanceof Error ? error.message : String(error));
+        const reason = error instanceof Error ? error.message : String(error);
+        logger.error(`Interview submit failed: ${reason}`);
+        setError(reason);
       }
     },
     [addMessage, currentQuestion, setError]
@@ -326,7 +329,9 @@ export function InterviewScreen({
         };
         await orchestrator.submitAnswer(answer);
       } catch (error) {
-        setError(error instanceof Error ? error.message : String(error));
+        const reason = error instanceof Error ? error.message : String(error);
+        logger.error(`Interview multi-select submit failed: ${reason}`);
+        setError(reason);
       }
     },
     [addMessage, currentQuestion, setError]
