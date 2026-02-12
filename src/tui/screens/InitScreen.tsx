@@ -161,7 +161,11 @@ export function InitScreen({
     aiAnalysisStarted.current = true;
 
     const runAnalysis = async () => {
-      initTracing();
+      try {
+        initTracing();
+      } catch (err) {
+        logger.error(`Failed to init tracing: ${err instanceof Error ? err.message : String(err)}`);
+      }
 
       const aiEnhancer = new AIEnhancer({
         provider: state.provider!,
@@ -223,7 +227,11 @@ export function InitScreen({
       }
     };
 
-    runAnalysis();
+    runAnalysis().catch((err) => {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error(`AI analysis failed unexpectedly: ${reason}`);
+      setAiError(reason);
+    });
   }, [state.phase, state.scanResult, state.provider, state.model, setAiProgress, updateToolCall, setEnhancedResult, setAiError]);
 
   // Run generation
@@ -281,7 +289,11 @@ export function InitScreen({
       }
     };
 
-    runGeneration();
+    runGeneration().catch((err) => {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error(`Generation failed unexpectedly: ${reason}`);
+      setError(reason);
+    });
   }, [
     state.phase,
     state.scanResult,

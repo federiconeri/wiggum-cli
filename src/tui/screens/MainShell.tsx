@@ -346,9 +346,11 @@ export function MainShell({
         action: projectLabel || 'Main Shell',
         phase: sessionState.provider ? `${sessionState.provider}/${sessionState.model}` : 'No provider',
         path: sessionState.initialized
-          ? contextAge
-            ? `Context: cached ${contextAge}`
-            : 'Context: none \u2014 /sync'
+          ? contextAge === 'load error'
+            ? 'Context: unavailable \u2014 /sync to refresh'
+            : contextAge
+              ? `Context: cached ${contextAge}`
+              : 'Context: none \u2014 /sync'
           : 'Not initialized \u2014 /init',
       }}
     >
