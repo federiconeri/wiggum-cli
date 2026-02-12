@@ -3,7 +3,7 @@
  *
  * Displays the full conversation history with clean formatting:
  * - User messages: › prefix
- * - Assistant messages: ● bullet with clean markdown-like styling
+ * - Assistant messages: • dimmed bullet for context, bold header for questions
  * - Tool calls: Inline action indicators
  */
 
@@ -51,7 +51,7 @@ export interface Message {
 export interface MessageListProps {
   /** Array of messages to display */
   messages: Message[];
-  /** Optional max height in lines (for future scrolling support) */
+  /** Optional max height in lines (clips content when set) */
   maxHeight?: number;
   /** Whether tool calls should show expanded preview (default: false) */
   toolCallsExpanded?: boolean;
@@ -124,7 +124,7 @@ function AssistantMessage({
                 </Box>
               );
             } else {
-              // Context/thinking - solid grey LED, italic dimmed text
+              // Context/thinking - dimmed bullet prefix, italic dimmed text
               return (
                 <Box key={index} flexDirection="row">
                   <Text dimColor>{theme.chars.bullet} </Text>
@@ -212,12 +212,14 @@ function SystemMessage({ content }: { content: string }): React.ReactElement {
  * <MessageList
  *   messages={[
  *     { id: '1', role: 'user', content: 'Hello' },
- *     { id: '2', role: 'assistant', content: 'Hi! How can I help?' },
+ *     { id: '2', role: 'assistant', content: 'Let me think about that.\n\nWhat framework do you prefer?' },
  *   ]}
  * />
  * // Renders:
  * // › Hello
- * // ● Hi! How can I help?
+ * // • Let me think about that.
+ * // Next question:
+ * // What framework do you prefer?
  * ```
  */
 export function MessageList({

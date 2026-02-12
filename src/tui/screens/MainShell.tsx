@@ -192,6 +192,11 @@ export function MainShell({
 
     const featureName = args[0]!;
 
+    if (!/^[a-zA-Z0-9_-]+$/.test(featureName)) {
+      addSystemMessage('Feature name must contain only letters, numbers, hyphens, and underscores.');
+      return;
+    }
+
     // Check if it's a tracked background run
     const bgRun = backgroundRuns?.find((r) => r.featureName === featureName);
     if (bgRun) {

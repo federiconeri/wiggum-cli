@@ -119,11 +119,13 @@ export function InitScreen({
   // Run scan when in scanning phase
   useEffect(() => {
     if (state.phase !== 'scanning' || state.scanResult) return;
+    let cancelled = false;
 
     const runScan = async () => {
       try {
         const scanner = new Scanner();
         const result = await scanner.scan(projectRoot);
+        if (cancelled) return;
         setScanResult(result);
 
         const existingProvider = getAvailableProvider();
@@ -131,11 +133,13 @@ export function InitScreen({
           setExistingProvider(existingProvider);
         }
       } catch (error) {
+        if (cancelled) return;
         setError(`Failed to scan project: ${error instanceof Error ? error.message : String(error)}`);
       }
     };
 
     runScan();
+    return () => { cancelled = true; };
   }, [state.phase, state.scanResult, projectRoot, setScanResult, setExistingProvider, setError]);
 
   useEffect(() => {
@@ -247,9 +251,15 @@ export function InitScreen({
           .map((f: { path: string }) => path.relative(projectRoot, f.path));
 
         if (state.apiKeyEnteredThisSession && state.saveKeyToEnv && state.provider && apiKeyRef.current) {
-          const envVar = getApiKeyEnvVar(state.provider);
-          const envLocalPath = path.join(projectRoot, '.ralph', '.env.local');
-          writeKeysToEnvFile(envLocalPath, { [envVar]: apiKeyRef.current });
+          try {
+            const envVar = getApiKeyEnvVar(state.provider);
+            const envLocalPath = path.join(projectRoot, '.ralph', '.env.local');
+            writeKeysToEnvFile(envLocalPath, { [envVar]: apiKeyRef.current });
+          } catch (envErr) {
+            const reason = envErr instanceof Error ? envErr.message : String(envErr);
+            logger.error(`Failed to save API key to .env.local: ${reason}`);
+            // Non-fatal: config files were generated, key just wasn't persisted
+          }
         }
 
         setGenerationComplete(generatedFiles);

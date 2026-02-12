@@ -252,7 +252,7 @@ export function InterviewScreen({
       isCancelledRef.current = true;
       orchestratorRef.current = null;
     };
-  }, [featureName, projectRoot, provider, model, scanResult]);
+  }, [featureName, projectRoot, provider, model, scanResult, specsPath]);
 
   const handleSubmit = useCallback(
     async (value: string) => {

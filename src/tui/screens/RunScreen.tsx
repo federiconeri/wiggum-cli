@@ -8,7 +8,7 @@
  * - Foreground: spawns the process and monitors it
  * - Monitor-only: polls status files without spawning (for /monitor)
  *
- * Esc backgrounds the run (returns to shell, process keeps running).
+ * Esc backgrounds the run in foreground mode; in monitor mode, Esc returns to shell.
  * On completion, shows RunCompletionSummary inline.
  */
 
@@ -166,6 +166,7 @@ export function RunScreen({
   const isMountedRef = useRef(true);
   const startTimeRef = useRef<number>(Date.now());
   const specsDirRef = useRef<string>('.ralph/specs');
+  const completionSentRef = useRef(false);
   const configRootRef = useRef<string>('.ralph');
   const scriptsDirRef = useRef<string>('.ralph/scripts');
   const maxIterationsRef = useRef<number>(0);
@@ -207,8 +208,9 @@ export function RunScreen({
     if (!isMountedRef.current) return;
     setBranch(getGitBranch(projectRoot));
 
-    // In monitor mode, detect completion
-    if (monitorOnly && !nextStatus.running) {
+    // In monitor mode, detect completion (only fire once)
+    if (monitorOnly && !nextStatus.running && !completionSentRef.current) {
+      completionSentRef.current = true;
       const logPath = `/tmp/ralph-loop-${featureName}.log`;
       const finalMarker = `/tmp/ralph-loop-${featureName}.final`;
       const exitCode = existsSync(finalMarker) ? 0 : 1;
@@ -239,8 +241,15 @@ export function RunScreen({
       // In monitor mode, find and kill the loop process by pattern
       try {
         execFileSync('pkill', ['-INT', '-f', `feature-loop.sh.*${featureName}`]);
-      } catch {
-        // Process may have already exited
+      } catch (err: unknown) {
+        // pkill exit code 1 = no matching process (already exited)
+        if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 1) {
+          // Expected — process already exited
+        } else {
+          const reason = err instanceof Error ? err.message : String(err);
+          logger.error(`Failed to stop loop process for ${featureName}: ${reason}`);
+          setError(`Could not stop the loop process (${reason}). You may need to kill it manually.`);
+        }
       }
     }
   }, [monitorOnly, featureName]);
@@ -262,14 +271,21 @@ export function RunScreen({
         try {
           const config = sessionState.config ?? await loadConfigWithDefaults(projectRoot);
           specsDirRef.current = config.paths.specs;
-        } catch {
-          // Keep default .ralph/specs
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          logger.error(`Failed to load config for monitor mode: ${reason}`);
+          // Keep default .ralph/specs but warn user
+          if (!cancelled) setError(`Could not load project config (${reason}). Showing status from default paths.`);
         }
         if (cancelled) return;
         setIsStarting(false);
-        refreshStatus().catch(() => {});
+        refreshStatus().catch((err) => {
+          logger.debug(`refreshStatus failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
         pollTimer = setInterval(() => {
-          refreshStatus().catch(() => {});
+          refreshStatus().catch((err) => {
+            logger.debug(`refreshStatus failed: ${err instanceof Error ? err.message : String(err)}`);
+          });
         }, POLL_INTERVAL_MS);
       };
       initMonitor();
@@ -349,10 +365,14 @@ export function RunScreen({
         }
 
         pollTimer = setInterval(() => {
-          refreshStatus().catch(() => {});
+          refreshStatus().catch((err) => {
+            logger.debug(`refreshStatus failed: ${err instanceof Error ? err.message : String(err)}`);
+          });
         }, POLL_INTERVAL_MS);
 
-        refreshStatus().catch(() => {});
+        refreshStatus().catch((err) => {
+          logger.debug(`refreshStatus failed: ${err instanceof Error ? err.message : String(err)}`);
+        });
 
         child.on('error', (err) => {
           if (cancelled) return;

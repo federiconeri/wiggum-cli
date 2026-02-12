@@ -97,7 +97,8 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
       status = readLoopStatus(featureName);
     } catch (err) {
       logger.error(`Failed to read initial status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
-      status = { running: false, iteration: 0, maxIterations: 0, phase: 'error', tokensInput: 0, tokensOutput: 0 };
+      // Assume still running so polling can discover truth — if truly dead, polling will detect it
+      status = { running: true, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
     }
     const logPath = `/tmp/ralph-loop-${featureName}.log`;
 
@@ -115,7 +116,9 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
       }];
     });
 
-    startPolling(featureName);
+    if (status.running) {
+      startPolling(featureName);
+    }
   }, [startPolling]);
 
   const dismiss = useCallback((featureName: string) => {

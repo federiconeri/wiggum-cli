@@ -9,7 +9,7 @@
  * screen transitions are clean React mount/unmount cycles.
  */
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { render, useStdout, type Instance } from 'ink';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -74,7 +74,7 @@ export interface AppProps {
 export function App({
   screen: initialScreen,
   initialSessionState,
-  version = '0.8.0',
+  version = '0.8.0', // Fallback if package.json read fails (keep in sync with index.ts)
   interviewProps,
   onComplete,
   onExit,
@@ -120,43 +120,53 @@ export function App({
    * Handle interview completion - save spec to disk and navigate to shell
    */
   const handleInterviewComplete = useCallback(async (spec: string, messages: Message[], specPath: string) => {
-    const featureName = screenProps?.featureName || interviewProps?.featureName;
-    let savedPath = specPath;
+    try {
+      const featureName = screenProps?.featureName || interviewProps?.featureName;
+      let savedPath = specPath;
 
-    if (featureName && typeof featureName === 'string') {
-      try {
-        const config = await loadConfigWithDefaults(sessionState.projectRoot);
-        const specsDir = join(sessionState.projectRoot, config.paths.specs);
+      if (featureName && typeof featureName === 'string') {
+        try {
+          const config = await loadConfigWithDefaults(sessionState.projectRoot);
+          const specsDir = join(sessionState.projectRoot, config.paths.specs);
 
-        if (!existsSync(specsDir)) {
-          mkdirSync(specsDir, { recursive: true });
+          if (!existsSync(specsDir)) {
+            mkdirSync(specsDir, { recursive: true });
+          }
+
+          savedPath = join(specsDir, `${featureName}.md`);
+          writeFileSync(savedPath, spec, 'utf-8');
+          onComplete?.(savedPath);
+        } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          logger.error(`Failed to save spec: ${reason}`);
+          onComplete?.(spec);
+          if (initialScreen !== 'interview') {
+            navigate('shell', { message: `Warning: spec generated but could not be saved to disk (${reason}).` });
+          } else {
+            onExit?.();
+          }
+          return;
         }
-
-        savedPath = join(specsDir, `${featureName}.md`);
-        writeFileSync(savedPath, spec, 'utf-8');
-        onComplete?.(savedPath);
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        logger.error(`Failed to save spec: ${reason}`);
+      } else {
         onComplete?.(spec);
-        if (initialScreen !== 'interview') {
-          navigate('shell', { message: `Warning: spec generated but could not be saved to disk (${reason}).` });
-        } else {
-          onExit?.();
-        }
+      }
+
+      // If started on interview screen directly (--tui mode), exit
+      if (initialScreen === 'interview') {
+        onExit?.();
         return;
       }
-    } else {
-      onComplete?.(spec);
-    }
 
-    // If started on interview screen directly (--tui mode), exit
-    if (initialScreen === 'interview') {
-      onExit?.();
-      return;
+      navigate('shell', { message: `Spec saved to ${savedPath}` });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.error(`Unexpected error in handleInterviewComplete: ${reason}`);
+      if (initialScreen !== 'interview') {
+        navigate('shell', { message: `Error completing interview: ${reason}` });
+      } else {
+        onExit?.();
+      }
     }
-
-    navigate('shell', { message: `Spec saved to ${savedPath}` });
   }, [screenProps, interviewProps, sessionState.projectRoot, onComplete, initialScreen, onExit, navigate]);
 
   /**
@@ -199,6 +209,25 @@ export function App({
     navigate('shell');
   }, [background, navigate]);
 
+  // Guard: redirect to shell if screen has invalid props (avoids setState during render)
+  useEffect(() => {
+    if (currentScreen === 'interview') {
+      const featureName = screenProps?.featureName || interviewProps?.featureName;
+      if (!featureName || typeof featureName !== 'string') {
+        navigate('shell', { message: 'Feature name is required for the interview screen.' });
+        return;
+      }
+      if (!sessionState.provider) {
+        navigate('shell', { message: 'No AI provider configured. Run /init first.' });
+      }
+    } else if (currentScreen === 'run') {
+      const featureName = screenProps?.featureName;
+      if (!featureName || typeof featureName !== 'string') {
+        navigate('shell', { message: 'Feature name is required for the run screen.' });
+      }
+    }
+  }, [currentScreen, screenProps, interviewProps, sessionState.provider, navigate]);
+
   // Render current screen
   switch (currentScreen) {
     case 'shell':
@@ -217,15 +246,8 @@ export function App({
 
     case 'interview': {
       const featureName = screenProps?.featureName || interviewProps?.featureName;
-
-      if (!featureName || typeof featureName !== 'string') {
-        navigate('shell', { message: 'Feature name is required for the interview screen.' });
-        return null;
-      }
-
-      if (!sessionState.provider) {
-        navigate('shell', { message: 'No AI provider configured. Run /init first.' });
-        return null;
+      if (!featureName || typeof featureName !== 'string' || !sessionState.provider) {
+        return null; // useEffect will redirect to shell
       }
 
       return (
@@ -257,10 +279,8 @@ export function App({
     case 'run': {
       const featureName = screenProps?.featureName;
       const monitorOnly = screenProps?.monitorOnly === true;
-
       if (!featureName || typeof featureName !== 'string') {
-        navigate('shell', { message: 'Feature name is required for the run screen.' });
-        return null;
+        return null; // useEffect will redirect to shell
       }
 
       return (
@@ -279,6 +299,7 @@ export function App({
 
     default:
       logger.error(`Unknown screen: ${currentScreen}`);
+      navigate('shell', { message: `Internal error: unknown screen "${currentScreen}". Returned to shell.` });
       return null;
   }
 }

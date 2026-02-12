@@ -25,19 +25,32 @@ export interface TaskCounts {
 }
 
 /**
+ * Track whether pgrep is available to avoid repeated failed calls.
+ * null = untested, true = available, false = unavailable
+ */
+let pgrepAvailable: boolean | null = null;
+
+/**
  * Check if a process matching pattern is running.
  */
 function isProcessRunning(pattern: string): boolean {
+  if (pgrepAvailable === false) return false;
+
   try {
     const result = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf-8' });
+    pgrepAvailable = true;
     return result.trim().length > 0;
   } catch (err: unknown) {
     // pgrep exits with code 1 when no processes match — that's expected
     if (err && typeof err === 'object' && 'status' in err && (err as { status: number }).status === 1) {
+      pgrepAvailable = true;
       return false;
     }
     // Any other error (pgrep not installed, permission denied, etc.)
-    logger.debug(`isProcessRunning check failed: ${err instanceof Error ? err.message : String(err)}`);
+    if (pgrepAvailable === null) {
+      logger.warn(`Process detection unavailable: ${err instanceof Error ? err.message : String(err)}. Background run status may be inaccurate.`);
+      pgrepAvailable = false;
+    }
     return false;
   }
 }
@@ -158,8 +171,9 @@ export function getGitBranch(projectRoot: string): string {
     return execFileSync('git', ['branch', '--show-current'], {
       cwd: projectRoot,
       encoding: 'utf-8',
-    }).trim();
-  } catch {
+    }).trim() || '(detached HEAD)';
+  } catch (err) {
+    logger.debug(`getGitBranch failed: ${err instanceof Error ? err.message : String(err)}`);
     return '-';
   }
 }
