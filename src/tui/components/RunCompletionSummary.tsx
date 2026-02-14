@@ -79,18 +79,20 @@ export function RunCompletionSummary({
 
       <SummaryBoxSection>
         {/* Timing, iterations, tasks */}
-        {summary.totalDurationMs !== undefined && (
+        {summary.totalDurationMs !== undefined ? (
           <Text>Duration: {formatDurationMs(summary.totalDurationMs)}</Text>
+        ) : (
+          <Text>Duration: Not available</Text>
         )}
         <Text>Iterations: {iterationsDisplay}</Text>
         <Text>Tasks: {tasksDisplay}</Text>
       </SummaryBoxSection>
 
-      {summary.phases && summary.phases.length > 0 && (
-        <SummaryBoxSection>
-          {/* Phases section */}
-          <Text bold>Phases</Text>
-          {summary.phases.map((phaseInfo) => {
+      <SummaryBoxSection>
+        {/* Phases section - always shown */}
+        <Text bold>Phases</Text>
+        {summary.phases && summary.phases.length > 0 ? (
+          summary.phases.map((phaseInfo) => {
             const statusIcon =
               phaseInfo.status === 'success' ? phase.complete :
               phaseInfo.status === 'failed' ? phase.error :
@@ -118,15 +120,17 @@ export function RunCompletionSummary({
                 <Text>{phaseInfo.label} {durationText}{iterationsText}{statusText}</Text>
               </Box>
             );
-          })}
-        </SummaryBoxSection>
-      )}
+          })
+        ) : (
+          <Text>No phase information available</Text>
+        )}
+      </SummaryBoxSection>
 
-      {summary.changes && (
-        <SummaryBoxSection>
-          {/* Changes section */}
-          <Text bold>Changes</Text>
-          {!summary.changes.available ? (
+      <SummaryBoxSection>
+        {/* Changes section - always shown */}
+        <Text bold>Changes</Text>
+        {summary.changes ? (
+          !summary.changes.available ? (
             <Text>Changes: Not available</Text>
           ) : summary.changes.totalFilesChanged === 0 || (summary.changes.files && summary.changes.files.length === 0) ? (
             <Text>No changes</Text>
@@ -144,59 +148,63 @@ export function RunCompletionSummary({
                 </Box>
               ))}
             </>
-          )}
+          )
+        ) : (
+          <Text>Changes: Not available</Text>
+        )}
 
-          {summary.commits && (
-            <>
-              {!summary.commits.available ? (
-                <Text>Commit: Not available</Text>
-              ) : summary.commits.fromHash && summary.commits.toHash ? (
-                <Text>
-                  Commit: {summary.commits.fromHash} → {summary.commits.toHash}
-                  {summary.commits.mergeType === 'squash' && ' (squash-merged)'}
-                  {summary.commits.mergeType === 'normal' && ' (merged)'}
-                </Text>
-              ) : summary.commits.toHash ? (
-                <Text>Commit: {summary.commits.toHash}</Text>
-              ) : (
-                <Text>Commit: Not available</Text>
-              )}
-            </>
-          )}
-        </SummaryBoxSection>
-      )}
+        {summary.commits ? (
+          !summary.commits.available ? (
+            <Text>Commit: Not available</Text>
+          ) : summary.commits.fromHash && summary.commits.toHash ? (
+            <Text>
+              Commit: {summary.commits.fromHash} → {summary.commits.toHash}
+              {summary.commits.mergeType === 'squash' && ' (squash-merged)'}
+              {summary.commits.mergeType === 'normal' && ' (merged)'}
+            </Text>
+          ) : summary.commits.toHash ? (
+            <Text>Commit: {summary.commits.toHash}</Text>
+          ) : (
+            <Text>Commit: Not available</Text>
+          )
+        ) : (
+          <Text>Commit: Not available</Text>
+        )}
+      </SummaryBoxSection>
 
-      {(summary.pr || summary.issue) && (
-        <SummaryBoxSection>
-          {/* PR and Issue section */}
-          {summary.pr && (
-            <>
-              {!summary.pr.available ? (
-                <Text>PR: Not available</Text>
-              ) : summary.pr.created && summary.pr.number && summary.pr.url ? (
-                <Text>PR #{summary.pr.number}: {summary.pr.url}</Text>
-              ) : (
-                <Text>PR: Not created</Text>
-              )}
-            </>
-          )}
+      <SummaryBoxSection>
+        {/* PR and Issue section - always shown */}
+        {summary.pr ? (
+          <>
+            {!summary.pr.available ? (
+              <Text>PR: Not available</Text>
+            ) : summary.pr.created && summary.pr.number && summary.pr.url ? (
+              <Text>PR #{summary.pr.number}: {summary.pr.url}</Text>
+            ) : (
+              <Text>PR: Not created</Text>
+            )}
+          </>
+        ) : (
+          <Text>PR: Not available</Text>
+        )}
 
-          {summary.issue && (
-            <>
-              {!summary.issue.available ? (
-                <Text>Issue: Not available</Text>
-              ) : summary.issue.linked && summary.issue.number ? (
-                <Text>
-                  Issue #{summary.issue.number}: {summary.issue.status || 'Linked'}
-                  {summary.issue.url && ` (${summary.issue.url})`}
-                </Text>
-              ) : (
-                <Text>Issue: Not linked</Text>
-              )}
-            </>
-          )}
-        </SummaryBoxSection>
-      )}
+        {summary.issue ? (
+          <>
+            {!summary.issue.available ? (
+              <Text>Issue: Not available</Text>
+            ) : summary.issue.linked && summary.issue.number ? (
+              <Text>
+                Issue #{summary.issue.number}: {summary.issue.status || 'Linked'}
+                {summary.issue.url && ` (${summary.issue.url})`}
+              </Text>
+            ) : (
+              <Text>Issue: Not linked</Text>
+            )}
+          </>
+        ) : (
+          <Text>Issue: Not available</Text>
+        )}
+      </SummaryBoxSection>
     </SummaryBox>
   );
 }

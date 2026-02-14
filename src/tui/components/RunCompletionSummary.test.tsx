@@ -304,6 +304,73 @@ describe('RunCompletionSummary', () => {
     unmount();
   });
 
+  it('renders all sections even when data is missing', () => {
+    const minimalSummary = makeSummary({
+      exitCode: 0,
+      // No enhanced fields at all - only legacy fields
+    });
+
+    const { lastFrame, unmount } = render(<RunCompletionSummary summary={minimalSummary} />);
+
+    const frame = stripAnsi(lastFrame() ?? '');
+
+    // All sections should still appear with "Not available" or similar labels
+    expect(frame).toContain('Duration: Not available');
+    expect(frame).toContain('Iterations:');
+    expect(frame).toContain('Tasks:');
+    expect(frame).toContain('Phases');
+    expect(frame).toContain('No phase information available');
+    expect(frame).toContain('Changes');
+    expect(frame).toContain('Changes: Not available');
+    expect(frame).toContain('Commit: Not available');
+    expect(frame).toContain('PR: Not available');
+    expect(frame).toContain('Issue: Not available');
+
+    unmount();
+  });
+
+  it('renders sections in stable order: header → timing → phases → changes → PR/issue', () => {
+    const summary = makeSummary({
+      exitCode: 0,
+      totalDurationMs: 754000,
+      phases: [
+        { id: 'planning', label: 'Planning', status: 'success', durationMs: 135000 },
+      ],
+      changes: {
+        available: true,
+        totalFilesChanged: 1,
+        files: [{ path: 'src/index.ts', added: 10, removed: 5 }],
+      },
+      pr: {
+        available: true,
+        created: true,
+        number: 24,
+        url: 'https://github.com/user/repo/pull/24',
+      },
+    });
+
+    const { lastFrame, unmount } = render(<RunCompletionSummary summary={summary} />);
+
+    const output = lastFrame() ?? '';
+    const frame = stripAnsi(output);
+
+    // Find the positions of each section to verify order
+    const headerPos = frame.indexOf('my-feature');
+    const durationPos = frame.indexOf('Duration:');
+    const phasesPos = frame.indexOf('Phases');
+    const changesPos = frame.indexOf('Changes');
+    const prPos = frame.indexOf('PR #24');
+
+    // Verify they appear in the correct order
+    expect(headerPos).toBeGreaterThan(-1);
+    expect(durationPos).toBeGreaterThan(headerPos);
+    expect(phasesPos).toBeGreaterThan(durationPos);
+    expect(changesPos).toBeGreaterThan(phasesPos);
+    expect(prPos).toBeGreaterThan(changesPos);
+
+    unmount();
+  });
+
   it('renders correctly at 80 columns with full enhanced data', () => {
     // Set terminal width to standard 80 columns
     (process.stdout as any).columns = 80;
