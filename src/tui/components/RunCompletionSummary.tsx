@@ -1,14 +1,14 @@
 /**
- * RunCompletionSummary - Displays run loop completion recap
+ * RunCompletionSummary - Displays enhanced run loop completion recap
  *
- * Shows the feature, iterations, tasks, tokens, branch, exit status,
- * log tail, and "what's next" section after a feature loop completes.
+ * Shows a bordered summary box with timing, phases, iterations, tasks, code changes,
+ * commits, PR/issue links, and next steps after a feature loop completes.
  */
 
 import React from 'react';
 import { Box, Text } from 'ink';
-import { StatusLine } from './StatusLine.js';
-import { colors, theme } from '../theme.js';
+import { SummaryBox, SummaryBoxSection } from './SummaryBox.js';
+import { colors, phase } from '../theme.js';
 import { formatNumber } from '../utils/loop-status.js';
 import type { RunSummary } from '../screens/RunScreen.js';
 
@@ -21,87 +21,182 @@ export interface RunCompletionSummaryProps {
 }
 
 /**
+ * Format milliseconds to human-readable duration (e.g., "12m 34s")
+ */
+function formatDurationMs(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
+/**
  * RunCompletionSummary component
  *
- * Renders the run loop completion recap inline within the
- * RunScreen content area.
+ * Renders the enhanced run loop completion summary using SummaryBox.
+ * Displays header, timing/iterations/tasks, phases, changes/commits, and PR/issue links.
  */
 export function RunCompletionSummary({
   summary,
 }: RunCompletionSummaryProps): React.ReactElement {
-  const totalTokens = summary.tokensInput + summary.tokensOutput;
   const stoppedCodes = new Set([130, 143]);
-  const exitState = summary.exitCode === 0
-    ? { label: 'Complete', color: colors.green, message: 'Done. Feature loop completed successfully.' }
+
+  // Determine final status and color
+  const exitStatus = summary.exitCode === 0
+    ? { label: 'Complete', color: colors.green }
     : stoppedCodes.has(summary.exitCode)
-      ? { label: 'Stopped', color: colors.orange, message: 'Stopped. Feature loop interrupted.' }
+      ? { label: 'Stopped', color: colors.orange }
       : summary.exitCodeInferred
-        ? { label: 'Unknown', color: colors.orange, message: `Done. Exit status uncertain (inferred code ${summary.exitCode}). Check logs for details.` }
-        : { label: 'Failed', color: colors.pink, message: `Done. Feature loop exited with code ${summary.exitCode}.` };
+        ? { label: 'Unknown', color: colors.orange }
+        : { label: 'Failed', color: colors.pink };
+
+  // Use enhanced iteration data if available, fallback to legacy
+  const iterationsTotal = summary.iterationBreakdown?.total ?? summary.iterations;
+  const iterationsImpl = summary.iterationBreakdown?.implementation;
+  const iterationsResumes = summary.iterationBreakdown?.resumes;
+
+  // Format iterations with breakdown if available
+  const iterationsDisplay =
+    iterationsImpl !== undefined && iterationsResumes !== undefined
+      ? `${iterationsTotal} (${iterationsImpl} impl + ${iterationsResumes} resume)`
+      : String(iterationsTotal);
+
+  // Tasks: use enhanced field if available, fallback to legacy
+  const tasksCompleted = summary.tasks?.completed ?? summary.tasksDone;
+  const tasksTotal = summary.tasks?.total ?? summary.tasksTotal;
+  const tasksDisplay =
+    tasksCompleted !== null && tasksTotal !== null
+      ? `${tasksCompleted}/${tasksTotal} completed`
+      : 'Not available';
 
   return (
-    <Box flexDirection="column" marginY={1}>
-      <StatusLine
-        action="Run Loop"
-        phase={exitState.label}
-        path={summary.feature}
-      />
+    <SummaryBox minWidth={60}>
+      {/* Header: feature name + status */}
+      <Box flexDirection="row" justifyContent="space-between">
+        <Text bold>{summary.feature}</Text>
+        <Text bold color={exitStatus.color}>{exitStatus.label}</Text>
+      </Box>
 
-      <Box marginTop={1} flexDirection="column">
-        <Text bold>Summary</Text>
-        <Text>- Feature: {summary.feature}</Text>
-        <Text>- Iterations: {summary.iterations}/{summary.maxIterations}</Text>
-        <Text>- Tasks: {summary.tasksDone}/{summary.tasksTotal}</Text>
-        <Text>- Tokens: {formatNumber(totalTokens)} (in:{formatNumber(summary.tokensInput)} out:{formatNumber(summary.tokensOutput)})</Text>
-        {summary.branch && summary.branch !== '-' && (
-          <Text>- Branch: {summary.branch}</Text>
+      <SummaryBoxSection>
+        {/* Timing, iterations, tasks */}
+        {summary.totalDurationMs !== undefined && (
+          <Text>Duration: {formatDurationMs(summary.totalDurationMs)}</Text>
         )}
-      </Box>
+        <Text>Iterations: {iterationsDisplay}</Text>
+        <Text>Tasks: {tasksDisplay}</Text>
+      </SummaryBoxSection>
 
-      <Box marginTop={1} flexDirection="row">
-        <Text color={exitState.color}>{theme.chars.bullet} </Text>
-        <Text>{exitState.message}</Text>
-      </Box>
+      {summary.phases && summary.phases.length > 0 && (
+        <SummaryBoxSection>
+          {/* Phases section */}
+          <Text bold>Phases</Text>
+          {summary.phases.map((phaseInfo) => {
+            const statusIcon =
+              phaseInfo.status === 'success' ? phase.complete :
+              phaseInfo.status === 'failed' ? phase.error :
+              phase.pending;
 
-      {(summary.errorTail || summary.logPath) && (
-        <Box marginTop={1} flexDirection="column">
-          {summary.logPath && (
-            <Text dimColor>Log: {summary.logPath}</Text>
-          )}
-          {summary.errorTail && (
-            <Box marginTop={1} flexDirection="column">
-              <Text dimColor>Last output:</Text>
-              {summary.errorTail.split('\n').map((line, idx) => (
-                <Text key={`${line}-${idx}`} dimColor>
-                  {line}
-                </Text>
-              ))}
-            </Box>
-          )}
-        </Box>
+            const statusColor =
+              phaseInfo.status === 'success' ? colors.green :
+              phaseInfo.status === 'failed' ? colors.pink :
+              colors.gray;
+
+            const durationText = phaseInfo.durationMs !== undefined
+              ? formatDurationMs(phaseInfo.durationMs)
+              : 'Not available';
+
+            const iterationsText = phaseInfo.iterations !== undefined && phaseInfo.iterations > 0
+              ? ` (${phaseInfo.iterations} iterations)`
+              : '';
+
+            const statusText = phaseInfo.status === 'skipped' ? ' skipped' :
+                               phaseInfo.status === 'failed' ? ' failed' : '';
+
+            return (
+              <Box key={phaseInfo.id} flexDirection="row">
+                <Text color={statusColor}>{statusIcon} </Text>
+                <Text>{phaseInfo.label} {durationText}{iterationsText}{statusText}</Text>
+              </Box>
+            );
+          })}
+        </SummaryBoxSection>
       )}
 
-      <Box marginTop={1} flexDirection="column">
-        <Text bold>What's next:</Text>
-        <Box flexDirection="row" gap={1}>
-          <Text color={colors.green}>{theme.chars.prompt}</Text>
-          <Text dimColor>Review changes and open a PR if needed</Text>
-        </Box>
-        <Box flexDirection="row" gap={1}>
-          <Text color={colors.green}>{theme.chars.prompt}</Text>
-          <Text color={colors.blue}>/new {'<feature>'}</Text>
-          <Text dimColor>Create another feature specification</Text>
-        </Box>
-        <Box flexDirection="row" gap={1}>
-          <Text color={colors.green}>{theme.chars.prompt}</Text>
-          <Text color={colors.blue}>/help</Text>
-          <Text dimColor>See all commands</Text>
-        </Box>
-      </Box>
+      {summary.changes && (
+        <SummaryBoxSection>
+          {/* Changes section */}
+          <Text bold>Changes</Text>
+          {!summary.changes.available ? (
+            <Text>Changes: Not available</Text>
+          ) : summary.changes.totalFilesChanged === 0 || (summary.changes.files && summary.changes.files.length === 0) ? (
+            <Text>No changes</Text>
+          ) : (
+            <>
+              {summary.changes.totalFilesChanged !== undefined && (
+                <Text>{summary.changes.totalFilesChanged} file{summary.changes.totalFilesChanged !== 1 ? 's' : ''} changed</Text>
+              )}
+              {summary.changes.files && summary.changes.files.map((file) => (
+                <Box key={file.path} flexDirection="row">
+                  <Text>{file.path}  </Text>
+                  <Text color={colors.green}>+{file.added} </Text>
+                  <Text color={colors.pink}>-{file.removed}</Text>
+                  <Text> lines</Text>
+                </Box>
+              ))}
+            </>
+          )}
 
-      <Box marginTop={1}>
-        <Text dimColor>Press Enter or Esc to return to shell</Text>
-      </Box>
-    </Box>
+          {summary.commits && (
+            <>
+              {!summary.commits.available ? (
+                <Text>Commit: Not available</Text>
+              ) : summary.commits.fromHash && summary.commits.toHash ? (
+                <Text>
+                  Commit: {summary.commits.fromHash} → {summary.commits.toHash}
+                  {summary.commits.mergeType === 'squash' && ' (squash-merged)'}
+                  {summary.commits.mergeType === 'normal' && ' (merged)'}
+                </Text>
+              ) : summary.commits.toHash ? (
+                <Text>Commit: {summary.commits.toHash}</Text>
+              ) : (
+                <Text>Commit: Not available</Text>
+              )}
+            </>
+          )}
+        </SummaryBoxSection>
+      )}
+
+      {(summary.pr || summary.issue) && (
+        <SummaryBoxSection>
+          {/* PR and Issue section */}
+          {summary.pr && (
+            <>
+              {!summary.pr.available ? (
+                <Text>PR: Not available</Text>
+              ) : summary.pr.created && summary.pr.number && summary.pr.url ? (
+                <Text>PR #{summary.pr.number}: {summary.pr.url}</Text>
+              ) : (
+                <Text>PR: Not created</Text>
+              )}
+            </>
+          )}
+
+          {summary.issue && (
+            <>
+              {!summary.issue.available ? (
+                <Text>Issue: Not available</Text>
+              ) : summary.issue.linked && summary.issue.number ? (
+                <Text>
+                  Issue #{summary.issue.number}: {summary.issue.status || 'Linked'}
+                  {summary.issue.url && ` (${summary.issue.url})`}
+                </Text>
+              ) : (
+                <Text>Issue: Not linked</Text>
+              )}
+            </>
+          )}
+        </SummaryBoxSection>
+      )}
+    </SummaryBox>
   );
 }
