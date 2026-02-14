@@ -34,8 +34,105 @@ import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
 
+/**
+ * Phase execution status and timing
+ */
+export interface PhaseInfo {
+  /** Unique phase identifier (e.g., 'planning', 'implementation') */
+  id: string;
+  /** Human-readable phase label */
+  label: string;
+  /** Phase completion status */
+  status: 'success' | 'skipped' | 'failed';
+  /** Duration in milliseconds, if available */
+  durationMs?: number;
+  /** Number of iterations in this phase (e.g., for implementation) */
+  iterations?: number;
+}
+
+/**
+ * Iteration breakdown across different contexts
+ */
+export interface IterationBreakdown {
+  /** Total iterations across all runs */
+  total: number;
+  /** Iterations during implementation phase */
+  implementation?: number;
+  /** Iterations during resume operations */
+  resumes?: number;
+}
+
+/**
+ * File change statistics from git diff
+ */
+export interface FileChangeStat {
+  /** Relative path from project root */
+  path: string;
+  /** Lines added */
+  added: number;
+  /** Lines removed */
+  removed: number;
+}
+
+/**
+ * Changes summary with git diff stats
+ */
+export interface ChangesSummary {
+  /** Total number of files changed */
+  totalFilesChanged?: number;
+  /** Per-file diff statistics */
+  files?: FileChangeStat[];
+  /** Whether git diff information was available */
+  available: boolean;
+}
+
+/**
+ * Commit information from git
+ */
+export interface CommitsSummary {
+  /** Starting commit hash (short) */
+  fromHash?: string;
+  /** Ending commit hash (short) */
+  toHash?: string;
+  /** Merge type if applicable */
+  mergeType?: 'squash' | 'normal' | 'none';
+  /** Whether git commit information was available */
+  available: boolean;
+}
+
+/**
+ * Pull request metadata
+ */
+export interface PrSummary {
+  /** PR number if created */
+  number?: number;
+  /** PR URL if created */
+  url?: string;
+  /** Whether PR information was available to query */
+  available: boolean;
+  /** Whether a PR was created as part of this loop */
+  created: boolean;
+}
+
+/**
+ * Issue metadata
+ */
+export interface IssueSummary {
+  /** Issue number if linked */
+  number?: number;
+  /** Issue URL if available */
+  url?: string;
+  /** Issue status (e.g., 'Closed') */
+  status?: string;
+  /** Whether issue information was available to query */
+  available: boolean;
+  /** Whether an issue was linked/closed as part of this loop */
+  linked: boolean;
+}
+
 export interface RunSummary {
   feature: string;
+  /** Legacy field: total iterations (deprecated, use iterations.total) */
   iterations: number;
   maxIterations: number;
   tasksDone: number;
@@ -48,6 +145,31 @@ export interface RunSummary {
   branch?: string;
   logPath?: string;
   errorTail?: string;
+
+  // Enhanced fields for detailed summary
+  /** Loop start timestamp (ISO 8601 or epoch ms) */
+  startedAt?: string | number;
+  /** Loop end timestamp (ISO 8601 or epoch ms) */
+  endedAt?: string | number;
+  /** Total duration across all runs/resumes in milliseconds */
+  totalDurationMs?: number;
+  /** Detailed iteration breakdown */
+  iterationBreakdown?: IterationBreakdown;
+  /** Task completion counts */
+  tasks?: {
+    completed: number | null;
+    total: number | null;
+  };
+  /** Phase execution details */
+  phases?: PhaseInfo[];
+  /** Git diff changes summary */
+  changes?: ChangesSummary;
+  /** Git commit information */
+  commits?: CommitsSummary;
+  /** Pull request metadata */
+  pr?: PrSummary;
+  /** Issue metadata */
+  issue?: IssueSummary;
 }
 
 export interface RunScreenProps {
