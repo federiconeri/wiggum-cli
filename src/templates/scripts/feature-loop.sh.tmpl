@@ -105,6 +105,8 @@ TOKENS_FILE="/tmp/ralph-loop-${1}.tokens"
 CLAUDE_OUTPUT="/tmp/ralph-loop-${1}.output"
 STATUS_FILE="/tmp/ralph-loop-${1}.status"
 FINAL_STATUS_FILE="/tmp/ralph-loop-${1}.final"
+PHASES_FILE="/tmp/ralph-loop-${1}.phases"
+BASELINE_FILE="/tmp/ralph-loop-${1}.baseline"
 
 # Initialize token tracking
 init_tokens() {
@@ -138,6 +140,33 @@ parse_and_accumulate_tokens() {
 
 # Initialize tokens
 init_tokens
+
+# Phase tracking helpers
+write_phase_start() {
+    local phase_id="$1"
+    local timestamp=$(date +%s)
+    echo "${phase_id}|started|${timestamp}|" >> "$PHASES_FILE"
+}
+
+write_phase_end() {
+    local phase_id="$1"
+    local status="$2"  # success, failed, skipped
+    local timestamp=$(date +%s)
+
+    # Find the last line for this phase and update it
+    if [ -f "$PHASES_FILE" ]; then
+        # Get all lines except the last matching phase line
+        grep -v "^${phase_id}|started|" "$PHASES_FILE" > "${PHASES_FILE}.tmp" 2>/dev/null || true
+        # Find the start timestamp from the original file
+        local start_ts=$(grep "^${phase_id}|started|" "$PHASES_FILE" | tail -1 | cut -d'|' -f3)
+        # Write updated line
+        echo "${phase_id}|${status}|${start_ts}|${timestamp}" >> "${PHASES_FILE}.tmp"
+        mv "${PHASES_FILE}.tmp" "$PHASES_FILE"
+    fi
+}
+
+# Initialize phase tracking
+> "$PHASES_FILE"
 
 FEATURE="${1:?Usage: ./feature-loop.sh <feature-name> [max-iterations] [max-e2e-attempts] [--worktree] [--resume] [--model MODEL]}"
 MAX_ITERATIONS="${2:-$DEFAULT_MAX_ITERATIONS}"
@@ -194,22 +223,42 @@ fi
 # Create output file for monitoring
 touch "$CLAUDE_OUTPUT"
 
+# Record baseline commit
+if git rev-parse --git-dir > /dev/null 2>&1; then
+    BASELINE_COMMIT=$(git rev-parse HEAD 2>/dev/null || echo "")
+    if [ -n "$BASELINE_COMMIT" ]; then
+        echo "$BASELINE_COMMIT" > "$BASELINE_FILE"
+        echo "Baseline commit: $BASELINE_COMMIT"
+    fi
+fi
+
 # Phase 3: Planning (if no implementation plan exists)
 if [ ! -f "$PLAN_FILE" ]; then
     echo "======================== PLANNING PHASE ========================"
+    write_phase_start "planning"
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
     cat "$PROMPTS_DIR/PROMPT_feature.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || {
         echo "ERROR: Planning phase failed"
+        write_phase_end "planning" "failed"
         exit 1
     }
     parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+    write_phase_end "planning" "success"
+else
+    echo "Plan file exists, skipping planning phase"
+    write_phase_start "planning"
+    write_phase_end "planning" "skipped"
 fi
 
 # Phase 4: Implementation loop
 echo "======================== IMPLEMENTATION PHASE ========================"
+write_phase_start "implementation"
+IMPL_SUCCESS=true
 while true; do
     if [ $ITERATION -ge $MAX_ITERATIONS ]; then
         echo "Reached max iterations: $MAX_ITERATIONS"
+        IMPL_SUCCESS=false
+        write_phase_end "implementation" "failed"
         exit 1
     fi
 
@@ -231,13 +280,20 @@ while true; do
 
     sleep 2
 done
+if [ "$IMPL_SUCCESS" = true ]; then
+    write_phase_end "implementation" "success"
+fi
 
 # Phase 5: E2E Testing
 echo "======================== E2E TESTING PHASE ========================"
 E2E_TOTAL=$({ grep "^- \[.\].*E2E:" "$PLAN_FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
 if [ "$E2E_TOTAL" -eq 0 ]; then
     echo "No E2E scenarios defined, skipping E2E phase."
+    write_phase_start "e2e_testing"
+    write_phase_end "e2e_testing" "skipped"
 else
+    write_phase_start "e2e_testing"
+    E2E_SUCCESS=false
     E2E_ATTEMPT=0
     while [ $E2E_ATTEMPT -lt $MAX_E2E_ATTEMPTS ]; do
         E2E_ATTEMPT=$((E2E_ATTEMPT + 1))
@@ -253,6 +309,7 @@ else
 
         if [ "$E2E_FAILED" -eq 0 ] && [ "$E2E_PENDING" -eq 0 ]; then
             echo "All E2E tests passed!"
+            E2E_SUCCESS=true
             break
         fi
 
@@ -262,16 +319,25 @@ else
             parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
         fi
     done
+
+    if [ "$E2E_SUCCESS" = true ]; then
+        write_phase_end "e2e_testing" "success"
+    else
+        write_phase_end "e2e_testing" "failed"
+    fi
 fi
 
 # Phase 6: Spec Verification
 echo "======================== SPEC VERIFICATION PHASE ========================"
+write_phase_start "verification"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 cat "$PROMPTS_DIR/PROMPT_verify.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
 parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+write_phase_end "verification" "success"
 
 # Phase 7: PR and Review
 echo "======================== PR & REVIEW PHASE ========================"
+write_phase_start "pr_review"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 if [ "$REVIEW_MODE" = "manual" ]; then
     cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
@@ -279,6 +345,7 @@ else
     cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
 fi
 parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+write_phase_end "pr_review" "success"
 
 # Persist final status for TUI summaries
 echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE" 2>/dev/null || true
