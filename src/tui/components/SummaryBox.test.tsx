@@ -8,6 +8,20 @@ import { render } from 'ink-testing-library';
 import { Text } from 'ink';
 import { SummaryBox, SummaryBoxSection } from './SummaryBox.js';
 
+// Mock useStdout to control terminal width in tests
+vi.mock('ink', async () => {
+  const actual = await vi.importActual<typeof import('ink')>('ink');
+  return {
+    ...actual,
+    useStdout: () => ({
+      stdout: {
+        columns: (process.stdout as any).columns || 100,
+      },
+      write: () => {},
+    }),
+  };
+});
+
 describe('SummaryBox', () => {
   let originalStdout: typeof process.stdout.columns;
 
@@ -207,5 +221,49 @@ describe('SummaryBoxSection', () => {
     expect(output).toContain('│');
     expect(output).toContain('├');
     expect(output).toContain('┤');
+  });
+
+  it('renders correctly at 80 columns (standard terminal width)', () => {
+    (process.stdout as any).columns = 80;
+
+    const { lastFrame } = render(
+      <SummaryBox>
+        <Text>Feature Name Complete</Text>
+        <SummaryBoxSection>
+          <Text>Duration: 12m 34s</Text>
+          <Text>Iterations: 11 (10 impl + 1 resume)</Text>
+          <Text>Tasks: 8/8 completed</Text>
+        </SummaryBoxSection>
+        <SummaryBoxSection>
+          <Text bold>Phases</Text>
+          <Text>✓ Planning 2m 15s</Text>
+          <Text>✓ Implementation 8m 42s (10 iterations)</Text>
+          <Text>○ E2E Testing skipped</Text>
+        </SummaryBoxSection>
+      </SummaryBox>
+    );
+
+    const output = lastFrame() ?? '';
+    const lines = output.split('\n');
+
+    // Verify box structure is intact
+    expect(output).toContain('┌');
+    expect(output).toContain('└');
+    expect(output).toContain('┐');
+    expect(output).toContain('┘');
+    expect(output).toContain('├');
+    expect(output).toContain('┤');
+
+    // Check that no line exceeds 80 columns
+    for (const line of lines) {
+      const cleanLine = line.replace(/\u001b\[\d+m/g, ''); // Remove ANSI codes
+      expect(cleanLine.length).toBeLessThanOrEqual(80);
+    }
+
+    // Verify all content is present
+    expect(output).toContain('Feature Name Complete');
+    expect(output).toContain('Duration: 12m 34s');
+    expect(output).toContain('Phases');
+    expect(output).toContain('Planning');
   });
 });

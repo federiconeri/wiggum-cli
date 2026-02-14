@@ -51,7 +51,8 @@ export function SummaryBox({
 }: SummaryBoxProps): React.ReactElement {
   const { stdout } = useStdout();
   const terminalWidth = stdout?.columns ?? 80;
-  const boxWidth = Math.max(minWidth, Math.min(terminalWidth, terminalWidth));
+  // Use terminal width, but respect minimum width
+  const boxWidth = Math.max(minWidth, terminalWidth);
   const contentWidth = boxWidth - 4; // Account for borders and padding
 
   // Top border: ┌─────┐

@@ -1,9 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { RunCompletionSummary } from './RunCompletionSummary.js';
 import { stripAnsi } from '../../__test-utils__/ink-helpers.js';
 import type { RunSummary } from '../screens/RunScreen.js';
+
+// Mock useStdout to control terminal width in tests
+vi.mock('ink', async () => {
+  const actual = await vi.importActual<typeof import('ink')>('ink');
+  return {
+    ...actual,
+    useStdout: () => ({
+      stdout: {
+        columns: (process.stdout as any).columns || 100,
+      },
+      write: () => {},
+    }),
+  };
+});
 
 function makeSummary(overrides: Partial<RunSummary> = {}): RunSummary {
   return {
@@ -287,6 +301,88 @@ describe('RunCompletionSummary', () => {
 
     const frame = stripAnsi(lastFrame() ?? '');
     expect(frame).toContain('Issue: Not linked');
+    unmount();
+  });
+
+  it('renders correctly at 80 columns with full enhanced data', () => {
+    // Set terminal width to standard 80 columns
+    (process.stdout as any).columns = 80;
+
+    const fullSummary = makeSummary({
+      feature: 'bracketed-paste-fix',
+      exitCode: 0,
+      totalDurationMs: 754000, // 12m 34s
+      iterationBreakdown: { total: 11, implementation: 10, resumes: 1 },
+      tasks: { completed: 8, total: 8 },
+      phases: [
+        { id: 'planning', label: 'Planning', status: 'success', durationMs: 135000 },
+        { id: 'implementation', label: 'Implementation', status: 'success', durationMs: 522000, iterations: 10 },
+        { id: 'e2e', label: 'E2E Testing', status: 'skipped' },
+        { id: 'verification', label: 'Verification', status: 'success', durationMs: 62000 },
+        { id: 'pr', label: 'PR & Review', status: 'success', durationMs: 35000 },
+      ],
+      changes: {
+        available: true,
+        totalFilesChanged: 1,
+        files: [
+          { path: 'src/tui/components/ChatInput.tsx', added: 15, removed: 6 },
+        ],
+      },
+      commits: {
+        available: true,
+        fromHash: 'ee387b9',
+        toHash: 'fc9b18a',
+        mergeType: 'squash',
+      },
+      pr: {
+        available: true,
+        created: true,
+        number: 24,
+        url: 'https://github.com/user/repo/pull/24',
+      },
+      issue: {
+        available: true,
+        linked: true,
+        number: 22,
+        status: 'Closed',
+      },
+    });
+
+    const { lastFrame, unmount } = render(<RunCompletionSummary summary={fullSummary} />);
+
+    const output = lastFrame() ?? '';
+    const frame = stripAnsi(output);
+
+    // Verify box structure is intact
+    expect(output).toContain('┌');
+    expect(output).toContain('└');
+    expect(output).toContain('┐');
+    expect(output).toContain('┘');
+    expect(output).toContain('├');
+    expect(output).toContain('┤');
+
+    // Check that no line exceeds 80 columns
+    const lines = output.split('\n');
+    for (const line of lines) {
+      const cleanLine = stripAnsi(line);
+      expect(cleanLine.length).toBeLessThanOrEqual(80);
+    }
+
+    // Verify all major sections are present
+    expect(frame).toContain('bracketed-paste-fix');
+    expect(frame).toContain('Complete');
+    expect(frame).toContain('Duration: 12m 34s');
+    expect(frame).toContain('Iterations: 11 (10 impl + 1 resume)');
+    expect(frame).toContain('Tasks: 8/8 completed');
+    expect(frame).toContain('Phases');
+    expect(frame).toContain('Planning');
+    expect(frame).toContain('Implementation');
+    expect(frame).toContain('Changes');
+    expect(frame).toContain('1 file changed');
+    expect(frame).toContain('Commit: ee387b9 → fc9b18a');
+    expect(frame).toContain('PR #24');
+    expect(frame).toContain('Issue #22');
+
     unmount();
   });
 });
