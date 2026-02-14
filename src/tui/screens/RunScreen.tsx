@@ -30,6 +30,7 @@ import {
   type LoopStatus,
   type TaskCounts,
 } from '../utils/loop-status.js';
+import { buildEnhancedRunSummary } from '../utils/build-run-summary.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
@@ -345,7 +346,8 @@ export function RunScreen({
       const tasksDone = nextTasks.tasksDone + nextTasks.e2eDone;
       const tasksTotal = tasksDone + nextTasks.tasksPending + nextTasks.e2ePending;
       const errorTail = exitCode !== 0 ? readLogTail(logPath, ERROR_TAIL_LINES) || undefined : undefined;
-      setCompletionSummary({
+
+      const basicSummary: RunSummary = {
         feature: featureName,
         iterations: nextStatus.iteration,
         maxIterations: nextStatus.maxIterations,
@@ -358,7 +360,10 @@ export function RunScreen({
         branch: getGitBranch(projectRoot),
         logPath,
         errorTail,
-      });
+      };
+
+      const enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+      setCompletionSummary(enhancedSummary);
     }
   }, [featureName, projectRoot, monitorOnly]);
 
@@ -538,7 +543,7 @@ export function RunScreen({
             const exitCode = typeof code === 'number' ? code : 1;
             const errorTail = exitCode === 0 ? undefined : readLogTail(logPath, ERROR_TAIL_LINES) || undefined;
 
-            const summary: RunSummary = {
+            const basicSummary: RunSummary = {
               feature: featureName,
               iterations: latestStatus.iteration,
               maxIterations: latestStatus.maxIterations || config.loop.maxIterations,
@@ -552,8 +557,11 @@ export function RunScreen({
               errorTail,
             };
 
+            // Build enhanced summary with phases, git stats, PR/issue metadata
+            const enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+
             // Show completion summary inline
-            setCompletionSummary(summary);
+            setCompletionSummary(enhancedSummary);
           });
         } catch (spawnErr) {
           if (!logFdClosed) { closeSync(logFd); logFdClosed = true; }
