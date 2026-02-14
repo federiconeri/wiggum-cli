@@ -31,6 +31,7 @@ import {
   type TaskCounts,
 } from '../utils/loop-status.js';
 import { buildEnhancedRunSummary } from '../utils/build-run-summary.js';
+import { writeRunSummaryFile } from '../../utils/summary-file.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
@@ -364,6 +365,11 @@ export function RunScreen({
 
       const enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
       setCompletionSummary(enhancedSummary);
+
+      // Persist summary to JSON file (non-blocking)
+      writeRunSummaryFile(featureName, enhancedSummary).catch((err) => {
+        logger.error(`Failed to persist summary file for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+      });
     }
   }, [featureName, projectRoot, monitorOnly]);
 
@@ -562,6 +568,11 @@ export function RunScreen({
 
             // Show completion summary inline
             setCompletionSummary(enhancedSummary);
+
+            // Persist summary to JSON file (non-blocking)
+            writeRunSummaryFile(featureName, enhancedSummary).catch((err) => {
+              logger.error(`Failed to persist summary file for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+            });
           });
         } catch (spawnErr) {
           if (!logFdClosed) { closeSync(logFd); logFdClosed = true; }
