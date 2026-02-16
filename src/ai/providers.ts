@@ -65,21 +65,25 @@ export interface ModelOption {
  */
 export const AVAILABLE_MODELS: Record<AIProvider, ModelOption[]> = {
   anthropic: [
-    { value: 'claude-opus-4-5-20250514', label: 'Claude Opus 4.5', hint: 'most capable' },
-    { value: 'claude-sonnet-4-5-20250514', label: 'Claude Sonnet 4.5', hint: 'recommended' },
-    { value: 'claude-haiku-4-5-20250514', label: 'Claude Haiku 4.5', hint: 'fastest' },
+    { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', hint: 'most capable' },
+    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5', hint: 'recommended' },
+    { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', hint: 'fastest' },
   ],
   openai: [
-    { value: 'gpt-5.1', label: 'GPT-5.1', hint: 'most capable' },
-    { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max', hint: 'best for code' },
+    { value: 'gpt-5.2', label: 'GPT-5.2', hint: 'most capable' },
+    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', hint: 'best for code' },
+    { value: 'gpt-5.1', label: 'GPT-5.1', hint: 'previous gen' },
+    { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max', hint: 'previous codex' },
     { value: 'gpt-5-mini', label: 'GPT-5 Mini', hint: 'fastest' },
   ],
   openrouter: [
-    { value: 'google/gemini-3-pro-preview', label: 'Gemini 3 Pro', hint: 'Google' },
-    { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash', hint: 'fast' },
-    { value: 'deepseek/deepseek-v3.2', label: 'DeepSeek v3.2', hint: 'efficient' },
-    { value: 'z-ai/glm-4.7', label: 'GLM 4.7', hint: 'Z-AI' },
+    { value: 'google/gemini-3-pro-preview', label: 'Gemini 3 Pro Preview', hint: 'Google' },
+    { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash Preview', hint: 'fast' },
+    { value: 'moonshotai/kimi-k2.5', label: 'Kimi K2.5', hint: 'Moonshot' },
+    { value: 'deepseek/deepseek-v3.2', label: 'DeepSeek V3.2', hint: 'efficient' },
     { value: 'minimax/minimax-m2.1', label: 'MiniMax M2.1', hint: 'MiniMax' },
+    { value: 'z-ai/glm-4.7', label: 'GLM 4.7', hint: 'Z-AI' },
+    { value: 'x-ai/grok-4.1-fast', label: 'Grok 4.1 Fast', hint: 'xAI' },
   ],
 };
 
@@ -88,8 +92,8 @@ export const AVAILABLE_MODELS: Record<AIProvider, ModelOption[]> = {
  * Using balanced models for good results
  */
 const DEFAULT_MODELS: Record<AIProvider, string> = {
-  anthropic: 'claude-sonnet-4-5-20250514',
-  openai: 'gpt-5.1',
+  anthropic: 'claude-sonnet-4-5-20250929',
+  openai: 'gpt-5.2',
   openrouter: 'google/gemini-3-pro-preview',
 };
 
@@ -97,9 +101,9 @@ const DEFAULT_MODELS: Record<AIProvider, string> = {
  * Anthropic shorthand aliases for legacy configs
  */
 const ANTHROPIC_MODEL_ALIASES: Record<string, string> = {
-  sonnet: 'claude-sonnet-4-5-20250514',
-  opus: 'claude-opus-4-5-20250514',
-  haiku: 'claude-haiku-4-5-20250514',
+  sonnet: 'claude-sonnet-4-5-20250929',
+  opus: 'claude-opus-4-6',
+  haiku: 'claude-haiku-4-5-20251001',
 };
 
 /**
@@ -224,6 +228,7 @@ const REASONING_MODELS = [
   'o3', 'o3-mini',
   'gpt-5', 'gpt-5.1', 'gpt-5-mini',
   'gpt-5.1-codex', 'gpt-5.1-codex-max',
+  'gpt-5.2', 'gpt-5.2-codex',
 ];
 
 /**
