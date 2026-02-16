@@ -52,6 +52,7 @@ describe('getPrForBranch', () => {
       {
         cwd: '/project/root',
         encoding: 'utf-8',
+        timeout: 10_000,
       }
     );
   });
@@ -72,7 +73,7 @@ describe('getPrForBranch', () => {
     const result = getPrForBranch('/project/root', 'feat/new-feature');
 
     expect(result).toBeNull();
-    expect(logger.debug).toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('getPrForBranch failed')
     );
   });
@@ -91,7 +92,7 @@ describe('getPrForBranch', () => {
     const result = getPrForBranch('/project/root', 'feat/new-feature');
 
     expect(result).toBeNull();
-    expect(logger.debug).toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('getPrForBranch failed')
     );
   });
@@ -321,7 +322,7 @@ describe('getLinkedIssue', () => {
 
     expect(result).toBeNull();
     // Error happens in getPrForBranch (called internally), not in getLinkedIssue
-    expect(logger.debug).toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('getPrForBranch failed')
     );
   });

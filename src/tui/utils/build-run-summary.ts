@@ -14,7 +14,7 @@ import type {
   IssueSummary,
 } from '../screens/RunScreen.js';
 import { getCurrentCommitHash, getDiffStats } from './git-summary.js';
-import { getPrForBranch, getLinkedIssue } from './pr-summary.js';
+import { getPrForBranch, getLinkedIssue, type PrInfo } from './pr-summary.js';
 
 /**
  * Phase ID to human-readable label mapping
@@ -26,6 +26,8 @@ const PHASE_LABELS: Record<string, string> = {
   verification: 'Verification',
   pr_review: 'PR & Review',
 };
+
+const VALID_PHASE_STATUSES = new Set(['success', 'skipped', 'failed']);
 
 /**
  * Parse phase information from the phases file written by feature-loop.sh.
@@ -54,11 +56,19 @@ function parsePhases(phasesFilePath: string): PhaseInfo[] {
     for (const line of lines) {
       const parts = line.split('|');
       if (parts.length < 4) {
-        logger.debug(`Skipping malformed phase line: ${line}`);
+        logger.warn(`Skipping malformed phase line: ${line}`);
         continue;
       }
 
       const [id, status, startStr, endStr] = parts;
+
+      // Validate status
+      if (!VALID_PHASE_STATUSES.has(status)) {
+        logger.warn(`Unknown phase status "${status}" for phase "${id}", treating as failed`);
+      }
+      const validatedStatus: PhaseInfo['status'] = VALID_PHASE_STATUSES.has(status)
+        ? (status as PhaseInfo['status'])
+        : 'failed';
 
       // Parse timestamps
       const startTime = parseInt(startStr, 10) || 0;
@@ -73,7 +83,7 @@ function parsePhases(phasesFilePath: string): PhaseInfo[] {
         phase = {
           id,
           label: PHASE_LABELS[id] || id,
-          status: status as 'success' | 'skipped' | 'failed',
+          status: validatedStatus,
           durationMs: 0,
           iterations: 0,
         };
@@ -81,7 +91,7 @@ function parsePhases(phasesFilePath: string): PhaseInfo[] {
       }
 
       // Update status (last status wins)
-      phase.status = status as 'success' | 'skipped' | 'failed';
+      phase.status = validatedStatus;
 
       // Aggregate duration
       if (durationMs !== undefined) {
@@ -96,7 +106,7 @@ function parsePhases(phasesFilePath: string): PhaseInfo[] {
 
     return Array.from(phaseMap.values());
   } catch (err) {
-    logger.debug(`Failed to parse phases file: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`Failed to parse phases file: ${err instanceof Error ? err.message : String(err)}`);
     return [];
   }
 }
@@ -115,10 +125,14 @@ function readBaselineCommit(baselineFilePath: string): string | null {
 
   try {
     const content = readFileSync(baselineFilePath, 'utf-8').trim();
-    // The baseline file contains the full hash, but we want short hash
+    // Validate content looks like a hex commit hash
+    if (!/^[0-9a-f]{7,40}$/i.test(content)) {
+      logger.warn(`Baseline file ${baselineFilePath} contains invalid content: "${content.substring(0, 20)}"`);
+      return null;
+    }
     return content.substring(0, 7) || null;
   } catch (err) {
-    logger.debug(`Failed to read baseline file: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`Failed to read baseline file: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
@@ -137,6 +151,9 @@ function readBaselineCommit(baselineFilePath: string): string | null {
  * @param projectRoot - Root directory of the project
  * @param feature - Feature name
  * @returns Enhanced RunSummary with all available metadata
+ *
+ * Note: This function performs synchronous I/O and subprocess execution.
+ * Callers should wrap in try-catch to avoid blocking the event loop on failure.
  */
 export function buildEnhancedRunSummary(
   basicSummary: RunSummary,
@@ -221,8 +238,8 @@ export function buildEnhancedRunSummary(
         created: true,
       };
 
-      // Try to get linked issue
-      const issueInfo = getLinkedIssue(projectRoot, basicSummary.branch);
+      // Try to get linked issue, passing prInfo to avoid redundant gh call
+      const issueInfo = getLinkedIssue(projectRoot, basicSummary.branch, prInfo);
       if (issueInfo) {
         issue = {
           number: issueInfo.number,

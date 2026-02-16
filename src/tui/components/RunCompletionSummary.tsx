@@ -2,14 +2,13 @@
  * RunCompletionSummary - Displays enhanced run loop completion recap
  *
  * Shows a bordered summary box with timing, phases, iterations, tasks, code changes,
- * commits, PR/issue links, and next steps after a feature loop completes.
+ * commits, and PR/issue links after a feature loop completes.
  */
 
 import React from 'react';
 import { Box, Text } from 'ink';
 import { SummaryBox, SummaryBoxSection } from './SummaryBox.js';
 import { colors, phase } from '../theme.js';
-import { formatNumber } from '../utils/loop-status.js';
 import type { RunSummary } from '../screens/RunScreen.js';
 
 /**
@@ -21,13 +20,17 @@ export interface RunCompletionSummaryProps {
 }
 
 /**
- * Format milliseconds to human-readable duration (e.g., "12m 34s")
+ * Format milliseconds to human-readable duration (e.g., "12m 34s", "1h 15m")
  */
 function formatDurationMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return 'Unknown';
   const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
-  return `${minutes}m ${seconds}s`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 /**
@@ -36,10 +39,11 @@ function formatDurationMs(ms: number): string {
  * Renders the enhanced run loop completion summary using SummaryBox.
  * Displays header, timing/iterations/tasks, phases, changes/commits, and PR/issue links.
  */
+const stoppedCodes = new Set([130, 143]);
+
 export function RunCompletionSummary({
   summary,
 }: RunCompletionSummaryProps): React.ReactElement {
-  const stoppedCodes = new Set([130, 143]);
 
   // Determine final status and color
   const exitStatus = summary.exitCode === 0

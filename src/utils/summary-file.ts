@@ -20,8 +20,8 @@ import type { RunSummary } from '../tui/screens/RunScreen.js';
  * ```ts
  * await writeRunSummaryFile('my-feature', {
  *   feature: 'my-feature',
- *   status: 'complete',
- *   // ... other summary fields
+ *   exitCode: 0,
+ *   // ... other RunSummary fields
  * });
  * // Writes to: /tmp/ralph-loop-my-feature.summary.json
  * ```
@@ -32,14 +32,7 @@ export async function writeRunSummaryFile(
 ): Promise<void> {
   const dir = process.env.RALPH_SUMMARY_TMP_DIR ?? tmpdir();
   const filePath = join(dir, `ralph-loop-${featureName}.summary.json`);
-
-  try {
-    const jsonContent = JSON.stringify(summary, null, 2);
-    await writeFile(filePath, jsonContent, 'utf8');
-    logger.debug(`Summary written to ${filePath}`);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    logger.error(`Failed to write summary file: ${errorMessage}`);
-    throw error;
-  }
+  const jsonContent = JSON.stringify(summary, null, 2);
+  await writeFile(filePath, jsonContent, 'utf8');
+  logger.debug(`Summary written to ${filePath}`);
 }

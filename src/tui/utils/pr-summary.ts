@@ -38,6 +38,7 @@ export function getPrForBranch(
       {
         cwd: projectRoot,
         encoding: 'utf-8',
+        timeout: 10_000,
       }
     ).trim();
 
@@ -58,27 +59,28 @@ export function getPrForBranch(
       title: pr.title,
     };
   } catch (err) {
-    logger.debug(`getPrForBranch failed: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`getPrForBranch failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
 
 /**
- * Get linked issue for a branch.
- *
- * This searches for issues that mention the branch name or are linked via PR.
+ * Get linked issue for a branch by parsing the PR body for closing keywords
+ * (Closes/Fixes/Resolves #N).
  *
  * @param projectRoot - Root directory of the git repository
  * @param branchName - Branch name to look up
+ * @param prInfo - Optional pre-fetched PR info to avoid redundant gh call
  * @returns Issue info object, or null if not found or gh not available
  */
 export function getLinkedIssue(
   projectRoot: string,
-  branchName: string
+  branchName: string,
+  prInfo?: PrInfo | null
 ): IssueInfo | null {
   try {
-    // First try to get PR for this branch
-    const pr = getPrForBranch(projectRoot, branchName);
+    // Use provided PR info or fetch it
+    const pr = prInfo !== undefined ? prInfo : getPrForBranch(projectRoot, branchName);
     if (!pr) {
       return null;
     }
@@ -90,6 +92,7 @@ export function getLinkedIssue(
       {
         cwd: projectRoot,
         encoding: 'utf-8',
+        timeout: 10_000,
       }
     ).trim();
 
@@ -111,6 +114,7 @@ export function getLinkedIssue(
       {
         cwd: projectRoot,
         encoding: 'utf-8',
+        timeout: 10_000,
       }
     ).trim();
 
@@ -122,7 +126,7 @@ export function getLinkedIssue(
       title: issue.title,
     };
   } catch (err) {
-    logger.debug(`getLinkedIssue failed: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`getLinkedIssue failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }

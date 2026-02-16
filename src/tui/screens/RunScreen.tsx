@@ -134,7 +134,7 @@ export interface IssueSummary {
 
 export interface RunSummary {
   feature: string;
-  /** Legacy field: total iterations (deprecated, use iterations.total) */
+  /** Legacy field: total iterations (deprecated, use iterationBreakdown.total) */
   iterations: number;
   maxIterations: number;
   tasksDone: number;
@@ -363,7 +363,13 @@ export function RunScreen({
         errorTail,
       };
 
-      const enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+      let enhancedSummary: RunSummary;
+      try {
+        enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+      } catch (err) {
+        logger.error(`Failed to build enhanced summary for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+        enhancedSummary = basicSummary;
+      }
       setCompletionSummary(enhancedSummary);
 
       // Persist summary to JSON file (non-blocking)
@@ -564,7 +570,13 @@ export function RunScreen({
             };
 
             // Build enhanced summary with phases, git stats, PR/issue metadata
-            const enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+            let enhancedSummary: RunSummary;
+            try {
+              enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+            } catch (err) {
+              logger.error(`Failed to build enhanced summary for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+              enhancedSummary = basicSummary;
+            }
 
             // Show completion summary inline
             setCompletionSummary(enhancedSummary);

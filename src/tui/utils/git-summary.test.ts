@@ -38,6 +38,7 @@ describe('getCurrentCommitHash', () => {
       {
         cwd: '/project/root',
         encoding: 'utf-8',
+        timeout: 10_000,
       }
     );
   });
@@ -58,7 +59,7 @@ describe('getCurrentCommitHash', () => {
     const result = getCurrentCommitHash('/project/root');
 
     expect(result).toBeNull();
-    expect(logger.debug).toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('getCurrentCommitHash failed')
     );
   });
@@ -103,6 +104,7 @@ describe('getDiffStats', () => {
       {
         cwd: '/project/root',
         encoding: 'utf-8',
+        timeout: 10_000,
       }
     );
   });
@@ -156,7 +158,7 @@ describe('getDiffStats', () => {
     const result = getDiffStats('/project/root', 'invalid', 'hashes');
 
     expect(result).toBeNull();
-    expect(logger.debug).toHaveBeenCalledWith(
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.stringContaining('getDiffStats failed')
     );
   });

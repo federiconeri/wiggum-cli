@@ -25,8 +25,6 @@ export interface SummaryBoxProps {
 export interface SummaryBoxSectionProps {
   /** Section content */
   children: React.ReactNode;
-  /** Internal prop set by SummaryBox */
-  _isSectionMarker?: boolean;
 }
 
 /**

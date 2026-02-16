@@ -15,17 +15,18 @@ export interface FileDiffStat {
  * Get the current commit hash (HEAD).
  *
  * @param projectRoot - Root directory of the git repository
- * @returns Short commit hash (7 chars), or null if not available
+ * @returns Short commit hash, or null if not available
  */
 export function getCurrentCommitHash(projectRoot: string): string | null {
   try {
     const hash = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
       cwd: projectRoot,
       encoding: 'utf-8',
+      timeout: 10_000,
     }).trim();
     return hash || null;
   } catch (err) {
-    logger.debug(`getCurrentCommitHash failed: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`getCurrentCommitHash failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
@@ -50,6 +51,7 @@ export function getDiffStats(
       {
         cwd: projectRoot,
         encoding: 'utf-8',
+        timeout: 10_000,
       }
     ).trim();
 
@@ -76,7 +78,7 @@ export function getDiffStats(
 
     return stats;
   } catch (err) {
-    logger.debug(`getDiffStats failed: ${err instanceof Error ? err.message : String(err)}`);
+    logger.warn(`getDiffStats failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }

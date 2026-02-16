@@ -331,21 +331,29 @@ fi
 echo "======================== SPEC VERIFICATION PHASE ========================"
 write_phase_start "verification"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-cat "$PROMPTS_DIR/PROMPT_verify.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
+VERIFY_STATUS="success"
+if ! cat "$PROMPTS_DIR/PROMPT_verify.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
+    VERIFY_STATUS="failed"
+fi
 parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
-write_phase_end "verification" "success"
+write_phase_end "verification" "$VERIFY_STATUS"
 
 # Phase 7: PR and Review
 echo "======================== PR & REVIEW PHASE ========================"
 write_phase_start "pr_review"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
+PR_STATUS="success"
 if [ "$REVIEW_MODE" = "manual" ]; then
-    cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
+    if ! cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
+        PR_STATUS="failed"
+    fi
 else
-    cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
+    if ! cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
+        PR_STATUS="failed"
+    fi
 fi
 parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
-write_phase_end "pr_review" "success"
+write_phase_end "pr_review" "$PR_STATUS"
 
 # Persist final status for TUI summaries
 echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE" 2>/dev/null || true
