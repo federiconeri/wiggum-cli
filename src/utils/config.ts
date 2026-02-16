@@ -57,7 +57,7 @@ export interface LoopConfig {
   maxE2eAttempts: number;
   defaultModel: string;
   planningModel: string;
-  reviewMode: 'manual' | 'auto';
+  reviewMode: 'manual' | 'auto' | 'merge';
 }
 
 /**

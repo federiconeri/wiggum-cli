@@ -85,7 +85,7 @@ describe('runCommand - reviewMode validation', () => {
     ).rejects.toThrow('process.exit(1)');
 
     expect(logger.error).toHaveBeenCalledWith(
-      "Invalid reviewMode 'invalid'. Allowed values are 'manual' or 'auto'."
+      "Invalid reviewMode 'invalid'. Allowed values are 'manual', 'auto', or 'merge'."
     );
   });
 
@@ -125,7 +125,7 @@ describe('runCommand - reviewMode validation', () => {
     ).rejects.toThrow('process.exit(1)');
 
     expect(logger.error).toHaveBeenCalledWith(
-      "Invalid reviewMode 'foo'. Allowed values are 'manual' or 'auto'."
+      "Invalid reviewMode 'foo'. Allowed values are 'manual', 'auto', or 'merge'."
     );
   });
 
@@ -166,7 +166,7 @@ describe('runCommand - reviewMode validation', () => {
     ).rejects.toThrow('process.exit(1)');
 
     expect(logger.error).toHaveBeenCalledWith(
-      "Invalid reviewMode 'AUTO'. Allowed values are 'manual' or 'auto'."
+      "Invalid reviewMode 'AUTO'. Allowed values are 'manual', 'auto', or 'merge'."
     );
 
     vi.clearAllMocks();
@@ -177,7 +177,7 @@ describe('runCommand - reviewMode validation', () => {
     ).rejects.toThrow('process.exit(1)');
 
     expect(logger.error).toHaveBeenCalledWith(
-      "Invalid reviewMode 'Manual'. Allowed values are 'manual' or 'auto'."
+      "Invalid reviewMode 'Manual'. Allowed values are 'manual', 'auto', or 'merge'."
     );
   });
 });

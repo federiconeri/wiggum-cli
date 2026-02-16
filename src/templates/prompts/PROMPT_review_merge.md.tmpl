@@ -8,7 +8,7 @@ Read @.ralph/LEARNINGS.md for patterns from previous features.
 Capture any review feedback patterns for future iterations.
 
 ## Task
-All implementation and E2E tasks are complete. Create PR and request review.
+All implementation and E2E tasks are complete. Create PR, review, and merge.
 
 ### Step 1: Verify Ready State
 1. Check all tasks are complete in implementation plan (no `- [ ]` items)
@@ -95,7 +95,7 @@ fi
 ```
 
 **Handle review feedback:**
-- If Claude outputs "APPROVED" -> Done. The PR is ready for manual merge by the user.
+- If Claude outputs "APPROVED" -> Proceed to Step 5 (rebase and merge)
 - If Claude lists issues:
   1. Address each issue with code fixes
   2. Commit: `git -C {{appDir}} add -A && git -C {{appDir}} commit -m "fix($FEATURE): address review feedback"`
@@ -103,14 +103,47 @@ fi
   4. Re-run the Claude review command above
 - Max 3 review iterations before requiring manual intervention
 
-### Step 5: Final Summary
-After review is complete (approved or max iterations reached):
-1. Post a summary comment on the PR with the review outcome
-2. Do NOT merge — the user will review and merge manually
+### Step 5: Rebase Before Merge (for Parallel Execution)
+Before merging, ensure branch is up-to-date with main:
+```bash
+cd {{appDir}} && git fetch origin main
+cd {{appDir}} && git rebase origin/main
+```
+
+If rebase has conflicts:
+1. Resolve conflicts in affected files
+2. `git add .` the resolved files
+3. `git rebase --continue`
+4. Re-run tests: `{{testCommand}} && {{buildCommand}}`
+
+Push rebased branch:
+```bash
+cd {{appDir}} && git push --force-with-lease origin feat/$FEATURE
+```
+
+### Step 6: Merge PR
+When Claude review is approved and branch is rebased:
+```bash
+cd {{appDir}} && gh pr merge --squash --delete-branch
+```
+
+### Step 7: Post-Merge Cleanup
+1. If using worktree, remove it:
+   ```bash
+   # Only if this feature used a worktree ({{appDir}}-$FEATURE directory exists)
+   git -C {{appDir}} worktree remove "../{{appDir}}-$FEATURE" 2>/dev/null || true
+   ```
+2. Checkout main and pull:
+   ```bash
+   git -C {{appDir}} checkout main && git -C {{appDir}} pull
+   ```
+
+Note: Spec status updates are handled in the Spec Verification phase before PR creation.
 
 ## Rules
-- Do NOT merge the PR — auto mode only reviews, the user merges
-- Address ALL review comments before marking as approved
+- Do NOT merge without Claude Code approval
+- Address ALL review comments before merging
+- Use squash merge to keep history clean
 - If gh CLI fails, check authentication: `gh auth status`
 - Keep review conversation focused and professional
 
@@ -119,6 +152,7 @@ After review is complete (approved or max iterations reached):
 - **gh auth error** -> Run: `gh auth login`
 - **PR already exists** -> Use: `gh pr view` to see status
 - **Claude Code CLI not installed** -> Install: `npm install -g @anthropic-ai/claude-code`
+- **Rebase conflicts** -> Resolve carefully, re-run all tests after
 
 ## Learning Capture
 If the review revealed patterns worth remembering, append to @.ralph/LEARNINGS.md:

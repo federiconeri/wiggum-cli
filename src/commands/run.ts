@@ -20,7 +20,7 @@ export interface RunOptions {
   model?: string;
   maxIterations?: number;
   maxE2eAttempts?: number;
-  reviewMode?: 'manual' | 'auto';
+  reviewMode?: 'manual' | 'auto' | 'merge';
 }
 
 /**
@@ -153,8 +153,8 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
   // Resolve and validate reviewMode
   const reviewMode: string = options.reviewMode ?? config.loop.reviewMode ?? 'manual';
 
-  if (reviewMode !== 'manual' && reviewMode !== 'auto') {
-    logger.error(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual' or 'auto'.`);
+  if (reviewMode !== 'manual' && reviewMode !== 'auto' && reviewMode !== 'merge') {
+    logger.error(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual', 'auto', or 'merge'.`);
     process.exit(1);
   }
 

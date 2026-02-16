@@ -482,8 +482,8 @@ export function RunScreen({
         }
 
         const reviewMode = reviewModeProp ?? config.loop.reviewMode ?? 'manual';
-        if (reviewMode !== 'manual' && reviewMode !== 'auto') {
-          setError(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual' or 'auto'.`);
+        if (reviewMode !== 'manual' && reviewMode !== 'auto' && reviewMode !== 'merge') {
+          setError(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual', 'auto', or 'merge'.`);
           setIsStarting(false);
           return;
         }

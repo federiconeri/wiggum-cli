@@ -7,7 +7,7 @@
 #   --worktree           Use git worktree for isolation (enables parallel execution)
 #   --resume             Resume an interrupted loop (reuses existing branch/worktree)
 #   --model MODEL        Claude model to use (e.g., opus, sonnet, claude-sonnet-4-5-20250929)
-#   --review-mode MODE   Review mode: 'manual' (stop at PR) or 'auto' (review + merge). Default: 'manual'
+#   --review-mode MODE   Review mode: 'manual' (stop at PR), 'auto' (review, no merge), or 'merge' (review + merge). Default: 'manual'
 
 set -e
 set -o pipefail
@@ -91,8 +91,8 @@ if [ -z "$REVIEW_MODE" ]; then
 fi
 
 # Validate review mode
-if [ "$REVIEW_MODE" != "manual" ] && [ "$REVIEW_MODE" != "auto" ]; then
-    echo "ERROR: Invalid review mode: '$REVIEW_MODE'. Allowed values are 'manual' or 'auto'." >&2
+if [ "$REVIEW_MODE" != "manual" ] && [ "$REVIEW_MODE" != "auto" ] && [ "$REVIEW_MODE" != "merge" ]; then
+    echo "ERROR: Invalid review mode: '$REVIEW_MODE'. Allowed values are 'manual', 'auto', or 'merge'." >&2
     exit 1
 fi
 
@@ -345,6 +345,10 @@ export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 PR_STATUS="success"
 if [ "$REVIEW_MODE" = "manual" ]; then
     if ! cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
+        PR_STATUS="failed"
+    fi
+elif [ "$REVIEW_MODE" = "merge" ]; then
+    if ! cat "$PROMPTS_DIR/PROMPT_review_merge.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
         PR_STATUS="failed"
     fi
 else

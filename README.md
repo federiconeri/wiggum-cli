@@ -9,6 +9,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/wiggum-cli"><img src="https://img.shields.io/npm/v/wiggum-cli?color=F8DB27&labelColor=1a1a1a&style=flat-square" alt="npm"></a>
   <a href="https://www.npmjs.com/package/wiggum-cli"><img src="https://img.shields.io/npm/dm/wiggum-cli?color=F8DB27&labelColor=1a1a1a&style=flat-square" alt="downloads"></a>
+  <a href="https://github.com/federiconeri/wiggum-cli/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/federiconeri/wiggum-cli/ci.yml?branch=main&color=F8DB27&labelColor=1a1a1a&style=flat-square&label=CI" alt="CI"></a>
   <a href="https://github.com/federiconeri/wiggum-cli/stargazers"><img src="https://img.shields.io/github/stars/federiconeri/wiggum-cli?color=F8DB27&labelColor=1a1a1a&style=flat-square" alt="stars"></a>
   <a href="https://github.com/federiconeri/wiggum-cli/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT%20+%20Commons%20Clause-F8DB27?labelColor=1a1a1a&style=flat-square" alt="license"></a>
   <img src="https://img.shields.io/node/v/wiggum-cli?color=F8DB27&labelColor=1a1a1a&style=flat-square" alt="node">
@@ -18,6 +19,8 @@
   <a href="#-quick-start">Quick Start</a> ·
   <a href="#-how-it-works">How It Works</a> ·
   <a href="https://wiggum.app">Website</a> ·
+  <a href="https://wiggum.app/blog">Blog</a> ·
+  <a href="https://wiggum.app/pricing">Pricing</a> ·
   <a href="https://github.com/federiconeri/wiggum-cli/issues">Issues</a>
 </p>
 
@@ -167,7 +170,8 @@ $ wiggum
 │   ├── PROMPT_e2e.md         # E2E testing
 │   ├── PROMPT_verify.md      # Verification
 │   ├── PROMPT_review_manual.md  # PR review (manual - stop at PR)
-│   └── PROMPT_review_auto.md    # PR review (auto - review + merge)
+│   ├── PROMPT_review_auto.md    # PR review (auto - review, no merge)
+│   └── PROMPT_review_merge.md   # PR review (merge - review + auto-merge)
 ├── guides/
 │   ├── AGENTS.md             # Agent instructions (CLAUDE.md)
 │   ├── FRONTEND.md           # Frontend patterns
@@ -224,7 +228,7 @@ Run the autonomous development loop.
 | `--model <model>` | Claude model (`opus`, `sonnet`) |
 | `--max-iterations <n>` | Max iterations (default: 10) |
 | `--max-e2e-attempts <n>` | Max E2E retries (default: 5) |
-| `--review-mode <mode>` | `manual` (stop at PR) or `auto` (review + merge). Default: `manual` |
+| `--review-mode <mode>` | `manual` (stop at PR), `auto` (review, no merge), or `merge` (review + merge). Default: `manual` |
 
 </details>
 
@@ -309,6 +313,16 @@ npm install
 npm run build
 npm test
 ```
+
+---
+
+## 📖 Learn More
+
+- [What Is Wiggum CLI?](https://wiggum.app/blog/what-is-wiggum-cli) — Overview of the autonomous coding agent
+- [What Is the Ralph Loop?](https://wiggum.app/blog/what-is-the-ralph-loop) — Deep dive into the Ralph loop methodology
+- [Wiggum vs Bash Scripts](https://wiggum.app/blog/wiggum-vs-ralph-wiggum-scripts) — Why spec generation matters
+- [Roadmap](https://wiggum.app/roadmap) — What's coming next
+- [Changelog](https://wiggum.app/changelog) — Release history
 
 ---
 
