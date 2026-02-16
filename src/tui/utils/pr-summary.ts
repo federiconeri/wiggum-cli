@@ -34,7 +34,7 @@ export function getPrForBranch(
     // Use gh pr list to find PR for this branch
     const output = execFileSync(
       'gh',
-      ['pr', 'list', '--head', branchName, '--json', 'number,url,state,title', '--limit', '1'],
+      ['pr', 'list', '--head', branchName, '--state', 'all', '--json', 'number,url,state,title', '--limit', '1'],
       {
         cwd: projectRoot,
         encoding: 'utf-8',

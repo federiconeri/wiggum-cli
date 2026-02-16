@@ -20,7 +20,7 @@ export interface RunCompletionSummaryProps {
 }
 
 /**
- * Format milliseconds to human-readable duration (e.g., "12m 34s", "1h 15m")
+ * Format milliseconds to human-readable duration (e.g., "12m 34s", "1h 15m 0s")
  */
 function formatDurationMs(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return 'Unknown';

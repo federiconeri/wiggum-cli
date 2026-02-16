@@ -356,7 +356,9 @@ parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
 write_phase_end "pr_review" "$PR_STATUS"
 
 # Persist final status for TUI summaries
-echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE" 2>/dev/null || true
+if ! echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE"; then
+    echo "WARNING: Failed to write final status file: $FINAL_STATUS_FILE" >&2
+fi
 
 # Cleanup temp files
 rm -f "$STATUS_FILE" 2>/dev/null || true

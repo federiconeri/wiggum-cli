@@ -100,7 +100,7 @@ describe('buildEnhancedRunSummary', () => {
       // Iteration breakdown
       expect(result.iterationBreakdown).toEqual({
         total: 10,
-        implementation: 2, // Two implementation phase entries
+        implementation: 10, // Derived from basicSummary.iterations
       });
 
       // Tasks
@@ -124,7 +124,7 @@ describe('buildEnhancedRunSummary', () => {
             label: 'Implementation',
             status: 'success',
             durationMs: 560000, // 520s + 40s
-            iterations: 2,
+            iterations: 10, // Derived from basicSummary.iterations
           }),
           expect.objectContaining({
             id: 'e2e_testing',
@@ -293,7 +293,7 @@ describe('buildEnhancedRunSummary', () => {
       vi.mocked(gitSummary.getCurrentCommitHash).mockReturnValue(null);
     });
 
-    it('should set tasks to null when no task data available', () => {
+    it('should preserve zero as valid task count', () => {
       const summaryNoTasks = {
         ...basicSummary,
         tasksDone: 0,
@@ -302,9 +302,30 @@ describe('buildEnhancedRunSummary', () => {
       const result = buildEnhancedRunSummary(summaryNoTasks, projectRoot, feature);
 
       expect(result.tasks).toEqual({
-        completed: null,
-        total: null,
+        completed: 0,
+        total: 0,
       });
+    });
+  });
+
+  describe('with unknown phase status', () => {
+    beforeEach(() => {
+      vi.mocked(fs.existsSync).mockImplementation((path) => {
+        return String(path).includes('.phases');
+      });
+
+      vi.mocked(fs.readFileSync).mockImplementation(() => {
+        return 'planning|running|1000|1100'; // 'running' is not a valid status
+      });
+
+      vi.mocked(gitSummary.getCurrentCommitHash).mockReturnValue(null);
+    });
+
+    it('should coerce unknown status to failed', () => {
+      const result = buildEnhancedRunSummary(basicSummary, projectRoot, feature);
+
+      expect(result.phases).toHaveLength(1);
+      expect(result.phases![0].status).toBe('failed');
     });
   });
 

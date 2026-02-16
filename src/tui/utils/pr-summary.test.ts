@@ -48,7 +48,7 @@ describe('getPrForBranch', () => {
     });
     expect(execFileSync).toHaveBeenCalledWith(
       'gh',
-      ['pr', 'list', '--head', 'feat/new-feature', '--json', 'number,url,state,title', '--limit', '1'],
+      ['pr', 'list', '--head', 'feat/new-feature', '--state', 'all', '--json', 'number,url,state,title', '--limit', '1'],
       {
         cwd: '/project/root',
         encoding: 'utf-8',
@@ -361,6 +361,51 @@ describe('getLinkedIssue', () => {
       state: 'CLOSED',
       title: 'Bug',
     });
+  });
+
+  it('uses provided prInfo instead of calling getPrForBranch', () => {
+    const prInfo = {
+      number: 42,
+      url: 'https://github.com/owner/repo/pull/42',
+      state: 'OPEN' as const,
+      title: 'Test PR',
+    };
+
+    const mockPrBody = JSON.stringify({
+      body: 'Closes #123',
+    });
+
+    const mockIssue = JSON.stringify({
+      number: 123,
+      url: 'https://github.com/owner/repo/issues/123',
+      state: 'OPEN',
+      title: 'Issue',
+    });
+
+    vi.mocked(execFileSync)
+      .mockReturnValueOnce(mockPrBody)   // pr view call (NOT pr list)
+      .mockReturnValueOnce(mockIssue);   // issue view call
+
+    const result = getLinkedIssue('/project/root', 'feat/test', prInfo);
+
+    expect(result).toEqual({
+      number: 123,
+      url: 'https://github.com/owner/repo/issues/123',
+      state: 'OPEN',
+      title: 'Issue',
+    });
+    // Verify getPrForBranch was NOT called (no pr list call)
+    expect(execFileSync).toHaveBeenCalledTimes(2);
+    expect(execFileSync).not.toHaveBeenCalledWith(
+      'gh', expect.arrayContaining(['pr', 'list']), expect.anything()
+    );
+  });
+
+  it('returns null when prInfo is explicitly null', () => {
+    const result = getLinkedIssue('/project/root', 'feat/test', null);
+
+    expect(result).toBeNull();
+    expect(execFileSync).not.toHaveBeenCalled();
   });
 
   it('finds first issue reference when multiple exist', () => {

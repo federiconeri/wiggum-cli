@@ -33,7 +33,9 @@ const VALID_PHASE_STATUSES = new Set(['success', 'skipped', 'failed']);
  * Parse phase information from the phases file written by feature-loop.sh.
  *
  * Format: phase_id|status|start_timestamp|end_timestamp
- * Multiple lines may exist for the same phase (e.g., if resumed).
+ * The parser handles duplicate phase entries defensively (last status wins,
+ * durations aggregate), though feature-loop.sh normally writes one final
+ * line per phase.
  *
  * @param phasesFilePath - Path to the phases file
  * @returns Array of phase info objects
@@ -85,7 +87,6 @@ function parsePhases(phasesFilePath: string): PhaseInfo[] {
           label: PHASE_LABELS[id] || id,
           status: validatedStatus,
           durationMs: 0,
-          iterations: 0,
         };
         phaseMap.set(id, phase);
       }
@@ -98,10 +99,6 @@ function parsePhases(phasesFilePath: string): PhaseInfo[] {
         phase.durationMs = (phase.durationMs || 0) + durationMs;
       }
 
-      // Count iterations for implementation phase
-      if (id === 'implementation' && status !== 'skipped') {
-        phase.iterations = (phase.iterations || 0) + 1;
-      }
     }
 
     return Array.from(phaseMap.values());
@@ -152,8 +149,9 @@ function readBaselineCommit(baselineFilePath: string): string | null {
  * @param feature - Feature name
  * @returns Enhanced RunSummary with all available metadata
  *
- * Note: This function performs synchronous I/O and subprocess execution.
- * Callers should wrap in try-catch to avoid blocking the event loop on failure.
+ * Note: This function performs synchronous I/O and subprocess execution,
+ * which blocks the event loop. Callers should wrap in try-catch to handle
+ * failures gracefully.
  */
 export function buildEnhancedRunSummary(
   basicSummary: RunSummary,
@@ -163,8 +161,12 @@ export function buildEnhancedRunSummary(
   const phasesFilePath = `/tmp/ralph-loop-${feature}.phases`;
   const baselineFilePath = `/tmp/ralph-loop-${feature}.baseline`;
 
-  // Parse phases
+  // Parse phases and set implementation iterations from actual loop count
   const phases = parsePhases(phasesFilePath);
+  const implPhase = phases.find((p) => p.id === 'implementation');
+  if (implPhase) {
+    implPhase.iterations = basicSummary.iterations;
+  }
 
   // Calculate total duration from phases
   let totalDurationMs: number | undefined;
@@ -182,8 +184,8 @@ export function buildEnhancedRunSummary(
 
   // Build task summary
   const tasks = {
-    completed: basicSummary.tasksDone > 0 ? basicSummary.tasksDone : null,
-    total: basicSummary.tasksTotal > 0 ? basicSummary.tasksTotal : null,
+    completed: basicSummary.tasksDone,
+    total: basicSummary.tasksTotal,
   };
 
   // Git changes and commits

@@ -16,6 +16,8 @@ import type { RunSummary } from '../tui/screens/RunScreen.js';
  * @param summary - The complete RunSummary object to persist
  * @returns Promise that resolves when the file is written, or rejects on error
  *
+ * Uses RALPH_SUMMARY_TMP_DIR environment variable if set, otherwise os.tmpdir().
+ *
  * @example
  * ```ts
  * await writeRunSummaryFile('my-feature', {
@@ -23,13 +25,16 @@ import type { RunSummary } from '../tui/screens/RunScreen.js';
  *   exitCode: 0,
  *   // ... other RunSummary fields
  * });
- * // Writes to: /tmp/ralph-loop-my-feature.summary.json
+ * // Writes to: <tmpdir>/ralph-loop-my-feature.summary.json
  * ```
  */
 export async function writeRunSummaryFile(
   featureName: string,
   summary: RunSummary
 ): Promise<void> {
+  if (!/^[a-zA-Z0-9_-]+$/.test(featureName)) {
+    throw new Error(`Invalid feature name: "${featureName}"`);
+  }
   const dir = process.env.RALPH_SUMMARY_TMP_DIR ?? tmpdir();
   const filePath = join(dir, `ralph-loop-${featureName}.summary.json`);
   const jsonContent = JSON.stringify(summary, null, 2);

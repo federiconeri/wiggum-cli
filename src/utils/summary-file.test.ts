@@ -226,7 +226,7 @@ describe('summary-file', () => {
       rmSync(filePath, { force: true });
     });
 
-    it('sanitizes feature name with special characters', async () => {
+    it('rejects feature names with path traversal characters', async () => {
       const summary: RunSummary = {
         feature: 'test/feature',
         iterations: 1,
@@ -238,11 +238,26 @@ describe('summary-file', () => {
         exitCode: 0,
       };
 
-      // Note: The function doesn't sanitize, so this tests the actual behavior
-      // In production, feature names should already be sanitized before calling
-      await writeRunSummaryFile('test-feature', summary);
+      await expect(writeRunSummaryFile('../etc/passwd', summary)).rejects.toThrow('Invalid feature name');
+      await expect(writeRunSummaryFile('test/feature', summary)).rejects.toThrow('Invalid feature name');
+      await expect(writeRunSummaryFile('test feature', summary)).rejects.toThrow('Invalid feature name');
+    });
 
-      const filePath = join(tempDir, 'ralph-loop-test-feature.summary.json');
+    it('accepts valid feature names with hyphens and underscores', async () => {
+      const summary: RunSummary = {
+        feature: 'my-feature_v2',
+        iterations: 1,
+        maxIterations: 10,
+        tasksDone: 0,
+        tasksTotal: 0,
+        tokensInput: 0,
+        tokensOutput: 0,
+        exitCode: 0,
+      };
+
+      await writeRunSummaryFile('my-feature_v2', summary);
+
+      const filePath = join(tempDir, 'ralph-loop-my-feature_v2.summary.json');
       expect(existsSync(filePath)).toBe(true);
     });
   });
