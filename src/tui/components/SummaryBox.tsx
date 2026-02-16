@@ -9,9 +9,9 @@ import React from 'react';
 import { Box, Text, useStdout } from 'ink';
 import { box, colors } from '../theme.js';
 
-/**
- * Props for SummaryBox component
- */
+/** Maximum box width to prevent layout conflicts with other components */
+const MAX_BOX_WIDTH = 80;
+
 export interface SummaryBoxProps {
   /** Child content to render inside the box */
   children: React.ReactNode;
@@ -49,8 +49,8 @@ export function SummaryBox({
 }: SummaryBoxProps): React.ReactElement {
   const { stdout } = useStdout();
   const terminalWidth = stdout?.columns ?? 80;
-  // Use terminal width, but respect minimum width
-  const boxWidth = Math.max(minWidth, terminalWidth);
+  // Use terminal width, clamped between minWidth and MAX_BOX_WIDTH
+  const boxWidth = Math.min(Math.max(minWidth, terminalWidth), MAX_BOX_WIDTH);
   const contentWidth = boxWidth - 4; // Account for borders and padding
 
   // Top border: ┌─────┐
