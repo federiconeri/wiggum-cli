@@ -8,6 +8,7 @@ import {
   insertTextAtCursor,
   deleteCharBefore,
   deleteCharAfter,
+  deleteWordBefore,
   moveCursorByWordLeft,
   moveCursorByWordRight,
 } from './input-utils.js';
@@ -311,6 +312,57 @@ describe('deleteCharAfter', () => {
         newValue: 'test',
         newCursorIndex: 10,
       });
+    });
+  });
+});
+
+describe('deleteWordBefore', () => {
+  it('deletes word before cursor at end of string', () => {
+    const result = deleteWordBefore('hello world', 11);
+    expect(result).toEqual({
+      newValue: 'hello ',
+      newCursorIndex: 6,
+    });
+  });
+
+  it('deletes word before cursor in middle', () => {
+    // Cursor at index 7 (space after "bar"): deletes "bar" but keeps surrounding spaces
+    const result = deleteWordBefore('foo bar baz', 7);
+    expect(result).toEqual({
+      newValue: 'foo  baz',
+      newCursorIndex: 4,
+    });
+  });
+
+  it('does nothing at start of line', () => {
+    const result = deleteWordBefore('hello', 0);
+    expect(result).toEqual({
+      newValue: 'hello',
+      newCursorIndex: 0,
+    });
+  });
+
+  it('handles empty string', () => {
+    const result = deleteWordBefore('', 0);
+    expect(result).toEqual({
+      newValue: '',
+      newCursorIndex: 0,
+    });
+  });
+
+  it('deletes single word', () => {
+    const result = deleteWordBefore('hello', 5);
+    expect(result).toEqual({
+      newValue: '',
+      newCursorIndex: 0,
+    });
+  });
+
+  it('skips trailing whitespace then deletes word', () => {
+    const result = deleteWordBefore('hello   ', 8);
+    expect(result).toEqual({
+      newValue: '',
+      newCursorIndex: 0,
     });
   });
 });

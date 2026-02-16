@@ -1,9 +1,23 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { RunCompletionSummary } from './RunCompletionSummary.js';
 import { stripAnsi } from '../../__test-utils__/ink-helpers.js';
 import type { RunSummary } from '../screens/RunScreen.js';
+
+// Mock useStdout to control terminal width in tests
+vi.mock('ink', async () => {
+  const actual = await vi.importActual<typeof import('ink')>('ink');
+  return {
+    ...actual,
+    useStdout: () => ({
+      stdout: {
+        columns: (process.stdout as any).columns || 100,
+      },
+      write: () => {},
+    }),
+  };
+});
 
 function makeSummary(overrides: Partial<RunSummary> = {}): RunSummary {
   return {
@@ -29,7 +43,7 @@ describe('RunCompletionSummary', () => {
 
     const frame = stripAnsi(lastFrame() ?? '');
     expect(frame).toContain('Complete');
-    expect(frame).toContain('completed successfully');
+    expect(frame).toContain('my-feature');
     unmount();
   });
 
@@ -40,7 +54,6 @@ describe('RunCompletionSummary', () => {
 
     const frame = stripAnsi(lastFrame() ?? '');
     expect(frame).toContain('Stopped');
-    expect(frame).toContain('interrupted');
     unmount();
   });
 
@@ -61,91 +74,382 @@ describe('RunCompletionSummary', () => {
 
     const frame = stripAnsi(lastFrame() ?? '');
     expect(frame).toContain('Failed');
-    expect(frame).toContain('exited with code 1');
     unmount();
   });
 
-  it('displays token counts', () => {
-    const { lastFrame, unmount } = render(
-      <RunCompletionSummary summary={makeSummary({ tokensInput: 12345, tokensOutput: 6789 })} />,
-    );
-
-    const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('Tokens:');
-    // formatNumber abbreviates: 12345 → "12.3K", 6789 → "6.8K"
-    expect(frame).toContain('in:12.3K');
-    expect(frame).toContain('out:6.8K');
-    unmount();
-  });
-
-  it('displays iteration count', () => {
+  it('displays iteration count with legacy data', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary summary={makeSummary({ iterations: 3, maxIterations: 5 })} />,
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('3/5');
+    expect(frame).toContain('Iterations: 3');
     unmount();
   });
 
-  it('displays task count', () => {
+  it('displays task count with legacy data', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary summary={makeSummary({ tasksDone: 4, tasksTotal: 6 })} />,
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('4/6');
+    expect(frame).toContain('Tasks: 4/6 completed');
     unmount();
   });
 
-  it('renders error tail when provided', () => {
+  it('displays enhanced iteration breakdown when available', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary
         summary={makeSummary({
-          exitCode: 1,
-          errorTail: 'Error: something broke\nat line 42',
+          iterationBreakdown: { total: 11, implementation: 10, resumes: 1 },
         })}
       />,
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('Last output:');
-    expect(frame).toContain('something broke');
+    expect(frame).toContain('Iterations: 11 (10 impl + 1 resume)');
     unmount();
   });
 
-  it('renders log path', () => {
+  it('displays duration when available', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary
-        summary={makeSummary({ logPath: '/tmp/ralph-loop-test.log' })}
+        summary={makeSummary({
+          totalDurationMs: 754000, // 12m 34s
+        })}
       />,
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('/tmp/ralph-loop-test.log');
+    expect(frame).toContain('Duration: 12m 34s');
     unmount();
   });
 
-  it('renders branch info', () => {
+  it('displays phases section when available', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary
-        summary={makeSummary({ branch: 'feat/cool-feature' })}
+        summary={makeSummary({
+          phases: [
+            { id: 'planning', label: 'Planning', status: 'success', durationMs: 135000 },
+            { id: 'implementation', label: 'Implementation', status: 'success', durationMs: 522000, iterations: 10 },
+            { id: 'e2e', label: 'E2E Testing', status: 'skipped' },
+          ],
+        })}
       />,
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('feat/cool-feature');
+    expect(frame).toContain('Phases');
+    expect(frame).toContain('Planning 2m 15s');
+    expect(frame).toContain('Implementation 8m 42s (10 iterations)');
+    expect(frame).toContain('E2E Testing');
+    expect(frame).toContain('skipped');
     unmount();
   });
 
-  it('shows what\'s next section', () => {
+  it('displays changes section when available', () => {
     const { lastFrame, unmount } = render(
-      <RunCompletionSummary summary={makeSummary()} />,
+      <RunCompletionSummary
+        summary={makeSummary({
+          changes: {
+            available: true,
+            totalFilesChanged: 2,
+            files: [
+              { path: 'src/index.ts', added: 10, removed: 5 },
+              { path: 'README.md', added: 3, removed: 1 },
+            ],
+          },
+        })}
+      />,
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain("What's next:");
-    expect(frame).toContain('Enter or Esc');
+    expect(frame).toContain('Changes');
+    expect(frame).toContain('2 files changed');
+    expect(frame).toContain('src/index.ts');
+    expect(frame).toContain('+10');
+    expect(frame).toContain('-5');
+    unmount();
+  });
+
+  it('displays "No changes" when available but empty', () => {
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          changes: {
+            available: true,
+            totalFilesChanged: 0,
+            files: [],
+          },
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('No changes');
+    unmount();
+  });
+
+  it('displays "Not available" when changes unavailable', () => {
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          changes: {
+            available: false,
+          },
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Changes: Not available');
+    unmount();
+  });
+
+  it('displays commit information when available', () => {
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          changes: {
+            available: true,
+            totalFilesChanged: 1,
+            files: [{ path: 'src/index.ts', added: 10, removed: 5 }],
+          },
+          commits: {
+            available: true,
+            fromHash: 'abc1234',
+            toHash: 'def5678',
+            mergeType: 'squash',
+          },
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Commit: abc1234 → def5678');
+    expect(frame).toContain('squash-merged');
+    unmount();
+  });
+
+  it('displays PR information when created', () => {
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          pr: {
+            available: true,
+            created: true,
+            number: 24,
+            url: 'https://github.com/user/repo/pull/24',
+          },
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('PR #24');
+    expect(frame).toContain('github.com/user/repo/pull/24');
+    unmount();
+  });
+
+  it('displays "Not created" when PR not created', () => {
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          pr: {
+            available: true,
+            created: false,
+          },
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('PR: Not created');
+    unmount();
+  });
+
+  it('displays issue information when linked', () => {
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          issue: {
+            available: true,
+            linked: true,
+            number: 22,
+            status: 'Closed',
+          },
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Issue #22: Closed');
+    unmount();
+  });
+
+  it('displays "Not linked" when issue not linked', () => {
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          issue: {
+            available: true,
+            linked: false,
+          },
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Issue: Not linked');
+    unmount();
+  });
+
+  it('renders all sections even when data is missing', () => {
+    const minimalSummary = makeSummary({
+      exitCode: 0,
+      // No enhanced fields at all - only legacy fields
+    });
+
+    const { lastFrame, unmount } = render(<RunCompletionSummary summary={minimalSummary} />);
+
+    const frame = stripAnsi(lastFrame() ?? '');
+
+    // All sections should still appear with "Not available" or similar labels
+    expect(frame).toContain('Duration: Not available');
+    expect(frame).toContain('Iterations:');
+    expect(frame).toContain('Tasks:');
+    expect(frame).toContain('Phases');
+    expect(frame).toContain('No phase information available');
+    expect(frame).toContain('Changes');
+    expect(frame).toContain('Changes: Not available');
+    expect(frame).toContain('Commit: Not available');
+    expect(frame).toContain('PR: Not available');
+    expect(frame).toContain('Issue: Not available');
+
+    unmount();
+  });
+
+  it('renders sections in stable order: header → timing → phases → changes → PR/issue', () => {
+    const summary = makeSummary({
+      exitCode: 0,
+      totalDurationMs: 754000,
+      phases: [
+        { id: 'planning', label: 'Planning', status: 'success', durationMs: 135000 },
+      ],
+      changes: {
+        available: true,
+        totalFilesChanged: 1,
+        files: [{ path: 'src/index.ts', added: 10, removed: 5 }],
+      },
+      pr: {
+        available: true,
+        created: true,
+        number: 24,
+        url: 'https://github.com/user/repo/pull/24',
+      },
+    });
+
+    const { lastFrame, unmount } = render(<RunCompletionSummary summary={summary} />);
+
+    const output = lastFrame() ?? '';
+    const frame = stripAnsi(output);
+
+    // Find the positions of each section to verify order
+    const headerPos = frame.indexOf('my-feature');
+    const durationPos = frame.indexOf('Duration:');
+    const phasesPos = frame.indexOf('Phases');
+    const changesPos = frame.indexOf('Changes');
+    const prPos = frame.indexOf('PR #24');
+
+    // Verify they appear in the correct order
+    expect(headerPos).toBeGreaterThan(-1);
+    expect(durationPos).toBeGreaterThan(headerPos);
+    expect(phasesPos).toBeGreaterThan(durationPos);
+    expect(changesPos).toBeGreaterThan(phasesPos);
+    expect(prPos).toBeGreaterThan(changesPos);
+
+    unmount();
+  });
+
+  it('renders correctly at 80 columns with full enhanced data', () => {
+    // Set terminal width to standard 80 columns
+    (process.stdout as any).columns = 80;
+
+    const fullSummary = makeSummary({
+      feature: 'bracketed-paste-fix',
+      exitCode: 0,
+      totalDurationMs: 754000, // 12m 34s
+      iterationBreakdown: { total: 11, implementation: 10, resumes: 1 },
+      tasks: { completed: 8, total: 8 },
+      phases: [
+        { id: 'planning', label: 'Planning', status: 'success', durationMs: 135000 },
+        { id: 'implementation', label: 'Implementation', status: 'success', durationMs: 522000, iterations: 10 },
+        { id: 'e2e', label: 'E2E Testing', status: 'skipped' },
+        { id: 'verification', label: 'Verification', status: 'success', durationMs: 62000 },
+        { id: 'pr', label: 'PR & Review', status: 'success', durationMs: 35000 },
+      ],
+      changes: {
+        available: true,
+        totalFilesChanged: 1,
+        files: [
+          { path: 'src/tui/components/ChatInput.tsx', added: 15, removed: 6 },
+        ],
+      },
+      commits: {
+        available: true,
+        fromHash: 'ee387b9',
+        toHash: 'fc9b18a',
+        mergeType: 'squash',
+      },
+      pr: {
+        available: true,
+        created: true,
+        number: 24,
+        url: 'https://github.com/user/repo/pull/24',
+      },
+      issue: {
+        available: true,
+        linked: true,
+        number: 22,
+        status: 'Closed',
+      },
+    });
+
+    const { lastFrame, unmount } = render(<RunCompletionSummary summary={fullSummary} />);
+
+    const output = lastFrame() ?? '';
+    const frame = stripAnsi(output);
+
+    // Verify box structure is intact
+    expect(output).toContain('┌');
+    expect(output).toContain('└');
+    expect(output).toContain('┐');
+    expect(output).toContain('┘');
+    expect(output).toContain('├');
+    expect(output).toContain('┤');
+
+    // Check that no line exceeds 80 columns
+    const lines = output.split('\n');
+    for (const line of lines) {
+      const cleanLine = stripAnsi(line);
+      expect(cleanLine.length).toBeLessThanOrEqual(80);
+    }
+
+    // Verify all major sections are present
+    expect(frame).toContain('bracketed-paste-fix');
+    expect(frame).toContain('Complete');
+    expect(frame).toContain('Duration: 12m 34s');
+    expect(frame).toContain('Iterations: 11 (10 impl + 1 resume)');
+    expect(frame).toContain('Tasks: 8/8 completed');
+    expect(frame).toContain('Phases');
+    expect(frame).toContain('Planning');
+    expect(frame).toContain('Implementation');
+    expect(frame).toContain('Changes');
+    expect(frame).toContain('1 file changed');
+    expect(frame).toContain('Commit: ee387b9 → fc9b18a');
+    expect(frame).toContain('PR #24');
+    expect(frame).toContain('Issue #22');
+
     unmount();
   });
 });

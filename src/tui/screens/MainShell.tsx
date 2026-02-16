@@ -180,8 +180,33 @@ export function MainShell({
       return;
     }
 
-    const featureName = args[0];
-    onNavigate('run', { featureName });
+    // Parse optional flags, separating them from positional args
+    let reviewMode: string | undefined;
+    const positional: string[] = [];
+
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--review-mode') {
+        if (i + 1 < args.length) {
+          reviewMode = args[i + 1];
+          i++; // skip the value
+        }
+        continue;
+      }
+      positional.push(args[i]!);
+    }
+
+    if (reviewMode !== undefined && reviewMode !== 'manual' && reviewMode !== 'auto') {
+      addSystemMessage(`Invalid --review-mode value '${reviewMode}'. Use 'manual' or 'auto'.`);
+      return;
+    }
+
+    const featureName = positional[0];
+    if (!featureName) {
+      addSystemMessage('Feature name required. Usage: /run <feature-name> [--review-mode auto|manual]');
+      return;
+    }
+
+    onNavigate('run', { featureName, reviewMode });
   }, [sessionState.initialized, addSystemMessage, onNavigate]);
 
   const handleMonitor = useCallback((args: string[]) => {

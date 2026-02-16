@@ -30,12 +30,111 @@ import {
   type LoopStatus,
   type TaskCounts,
 } from '../utils/loop-status.js';
+import { buildEnhancedRunSummary } from '../utils/build-run-summary.js';
+import { writeRunSummaryFile } from '../../utils/summary-file.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
 
+/**
+ * Phase execution status and timing
+ */
+export interface PhaseInfo {
+  /** Unique phase identifier (e.g., 'planning', 'implementation') */
+  id: string;
+  /** Human-readable phase label */
+  label: string;
+  /** Phase completion status */
+  status: 'success' | 'skipped' | 'failed';
+  /** Duration in milliseconds, if available */
+  durationMs?: number;
+  /** Number of iterations in this phase (e.g., for implementation) */
+  iterations?: number;
+}
+
+/**
+ * Iteration breakdown across different contexts
+ */
+export interface IterationBreakdown {
+  /** Total iterations across all runs */
+  total: number;
+  /** Iterations during implementation phase */
+  implementation?: number;
+  /** Iterations during resume operations */
+  resumes?: number;
+}
+
+/**
+ * File change statistics from git diff
+ */
+export interface FileChangeStat {
+  /** Relative path from project root */
+  path: string;
+  /** Lines added */
+  added: number;
+  /** Lines removed */
+  removed: number;
+}
+
+/**
+ * Changes summary with git diff stats
+ */
+export interface ChangesSummary {
+  /** Total number of files changed */
+  totalFilesChanged?: number;
+  /** Per-file diff statistics */
+  files?: FileChangeStat[];
+  /** Whether git diff information was available */
+  available: boolean;
+}
+
+/**
+ * Commit information from git
+ */
+export interface CommitsSummary {
+  /** Starting commit hash (short) */
+  fromHash?: string;
+  /** Ending commit hash (short) */
+  toHash?: string;
+  /** Merge type if applicable */
+  mergeType?: 'squash' | 'normal' | 'none';
+  /** Whether git commit information was available */
+  available: boolean;
+}
+
+/**
+ * Pull request metadata
+ */
+export interface PrSummary {
+  /** PR number if created */
+  number?: number;
+  /** PR URL if created */
+  url?: string;
+  /** Whether PR information was available to query */
+  available: boolean;
+  /** Whether a PR was created as part of this loop */
+  created: boolean;
+}
+
+/**
+ * Issue metadata
+ */
+export interface IssueSummary {
+  /** Issue number if linked */
+  number?: number;
+  /** Issue URL if available */
+  url?: string;
+  /** Issue status (e.g., 'Closed') */
+  status?: string;
+  /** Whether issue information was available to query */
+  available: boolean;
+  /** Whether an issue was linked/closed as part of this loop */
+  linked: boolean;
+}
+
 export interface RunSummary {
   feature: string;
+  /** Legacy field: total iterations (deprecated, use iterationBreakdown.total) */
   iterations: number;
   maxIterations: number;
   tasksDone: number;
@@ -48,6 +147,31 @@ export interface RunSummary {
   branch?: string;
   logPath?: string;
   errorTail?: string;
+
+  // Enhanced fields for detailed summary
+  /** Loop start timestamp (ISO 8601 or epoch ms) */
+  startedAt?: string | number;
+  /** Loop end timestamp (ISO 8601 or epoch ms) */
+  endedAt?: string | number;
+  /** Total duration across all runs/resumes in milliseconds */
+  totalDurationMs?: number;
+  /** Detailed iteration breakdown */
+  iterationBreakdown?: IterationBreakdown;
+  /** Task completion counts */
+  tasks?: {
+    completed: number | null;
+    total: number | null;
+  };
+  /** Phase execution details */
+  phases?: PhaseInfo[];
+  /** Git diff changes summary */
+  changes?: ChangesSummary;
+  /** Git commit information */
+  commits?: CommitsSummary;
+  /** Pull request metadata */
+  pr?: PrSummary;
+  /** Issue metadata */
+  issue?: IssueSummary;
 }
 
 export interface RunScreenProps {
@@ -58,6 +182,8 @@ export interface RunScreenProps {
   sessionState: SessionState;
   /** Monitor-only mode: don't spawn, just poll status */
   monitorOnly?: boolean;
+  /** Override review mode from CLI flags (takes precedence over config) */
+  reviewMode?: 'manual' | 'auto';
   onComplete: (summary: RunSummary) => void;
   /** Called when user presses Esc to background the run */
   onBackground?: (featureName: string) => void;
@@ -140,6 +266,7 @@ export function RunScreen({
   projectRoot,
   sessionState,
   monitorOnly = false,
+  reviewMode: reviewModeProp,
   onComplete,
   onBackground,
   onCancel,
@@ -223,7 +350,8 @@ export function RunScreen({
       const tasksDone = nextTasks.tasksDone + nextTasks.e2eDone;
       const tasksTotal = tasksDone + nextTasks.tasksPending + nextTasks.e2ePending;
       const errorTail = exitCode !== 0 ? readLogTail(logPath, ERROR_TAIL_LINES) || undefined : undefined;
-      setCompletionSummary({
+
+      const basicSummary: RunSummary = {
         feature: featureName,
         iterations: nextStatus.iteration,
         maxIterations: nextStatus.maxIterations,
@@ -236,6 +364,20 @@ export function RunScreen({
         branch: getGitBranch(projectRoot),
         logPath,
         errorTail,
+      };
+
+      let enhancedSummary: RunSummary;
+      try {
+        enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+      } catch (err) {
+        logger.error(`Failed to build enhanced summary for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+        enhancedSummary = basicSummary;
+      }
+      setCompletionSummary(enhancedSummary);
+
+      // Persist summary to JSON file (non-blocking)
+      writeRunSummaryFile(featureName, enhancedSummary).catch((err) => {
+        logger.error(`Failed to persist summary file for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
   }, [featureName, projectRoot, monitorOnly]);
@@ -339,7 +481,7 @@ export function RunScreen({
           return;
         }
 
-        const reviewMode = config.loop.reviewMode ?? 'manual';
+        const reviewMode = reviewModeProp ?? config.loop.reviewMode ?? 'manual';
         if (reviewMode !== 'manual' && reviewMode !== 'auto') {
           setError(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual' or 'auto'.`);
           setIsStarting(false);
@@ -416,7 +558,7 @@ export function RunScreen({
             const exitCode = typeof code === 'number' ? code : 1;
             const errorTail = exitCode === 0 ? undefined : readLogTail(logPath, ERROR_TAIL_LINES) || undefined;
 
-            const summary: RunSummary = {
+            const basicSummary: RunSummary = {
               feature: featureName,
               iterations: latestStatus.iteration,
               maxIterations: latestStatus.maxIterations || config.loop.maxIterations,
@@ -430,8 +572,22 @@ export function RunScreen({
               errorTail,
             };
 
+            // Build enhanced summary with phases, git stats, PR/issue metadata
+            let enhancedSummary: RunSummary;
+            try {
+              enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+            } catch (err) {
+              logger.error(`Failed to build enhanced summary for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+              enhancedSummary = basicSummary;
+            }
+
             // Show completion summary inline
-            setCompletionSummary(summary);
+            setCompletionSummary(enhancedSummary);
+
+            // Persist summary to JSON file (non-blocking)
+            writeRunSummaryFile(featureName, enhancedSummary).catch((err) => {
+              logger.error(`Failed to persist summary file for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
+            });
           });
         } catch (spawnErr) {
           if (!logFdClosed) { closeSync(logFd); logFdClosed = true; }

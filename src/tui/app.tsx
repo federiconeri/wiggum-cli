@@ -288,6 +288,8 @@ export function App({
         return null; // useEffect will redirect to shell
       }
 
+      const reviewMode = screenProps?.reviewMode as 'manual' | 'auto' | undefined;
+
       return (
         <RunScreen
           header={headerElement}
@@ -295,6 +297,7 @@ export function App({
           projectRoot={sessionState.projectRoot}
           sessionState={sessionState}
           monitorOnly={monitorOnly}
+          reviewMode={reviewMode}
           onComplete={handleRunComplete}
           onBackground={handleRunBackground}
           onCancel={() => navigate('shell')}
