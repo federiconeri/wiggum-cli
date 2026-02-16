@@ -262,9 +262,28 @@ When generating the spec, use this format:
  * @internal Exported for testing
  */
 export function parseInterviewResponse(response: string): InterviewQuestion | null {
-  // Look for the ```options fenced block
-  const optionsBlockRegex = /```options\s*\n([\s\S]*?)\n```/;
-  const match = response.match(optionsBlockRegex);
+  // Try multiple fenced block formats: ```options, ```json, or plain ```
+  const fencedPatterns = [
+    /```options\s*\n([\s\S]*?)\n```/,
+    /```json\s*\n(\[[\s\S]*?\])\n```/,
+    /```\s*\n(\[[\s\S]*?\])\n```/,
+  ];
+
+  let match: RegExpMatchArray | null = null;
+  for (const pattern of fencedPatterns) {
+    match = response.match(pattern);
+    if (match) break;
+  }
+
+  // Last resort: look for a bare JSON array containing "id" and "label" keys
+  if (!match) {
+    const bareArrayRegex = /(\[\s*\n\s*\{[^]*?"id"[^]*?"label"[^]*?\}\s*\n\s*\])/;
+    const bareMatch = response.match(bareArrayRegex);
+    if (bareMatch) {
+      // Synthesize a match-like result with index
+      match = bareMatch;
+    }
+  }
 
   if (!match) {
     return null;
@@ -706,7 +725,14 @@ Ask only ONE question. Be concise.`;
     } else {
       this.currentQuestion = null;
       this.onQuestion?.(null);
-      this.onMessage('assistant', response);
+      // Strip any JSON-like option blocks from the displayed message to avoid
+      // showing raw JSON when structured parsing fails
+      const cleaned = response
+        .replace(/```(?:options|json)?\s*\n[\s\S]*?\n```/g, '')
+        .replace(/\[\s*\n\s*\{[^]*?"id"[^]*?"label"[^]*?\}\s*\n\s*\]/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      this.onMessage('assistant', cleaned || response);
     }
   }
 

@@ -539,6 +539,58 @@ Choose based on your needs.`;
       expect(result).toBeNull();
     });
 
+    it('parses options in ```json fenced block', () => {
+      const response = `What database would you like?
+
+\`\`\`json
+[
+  {"id": "postgres", "label": "PostgreSQL"},
+  {"id": "mysql", "label": "MySQL"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe('What database would you like?');
+      expect(result?.options).toHaveLength(2);
+      expect(result?.options[0]).toEqual({ id: 'postgres', label: 'PostgreSQL' });
+    });
+
+    it('parses options in plain ``` fenced block', () => {
+      const response = `Which framework do you prefer?
+
+\`\`\`
+[
+  {"id": "react", "label": "React"},
+  {"id": "vue", "label": "Vue"}
+]
+\`\`\``;
+
+      const result = parseInterviewResponse(response);
+
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe('Which framework do you prefer?');
+      expect(result?.options).toHaveLength(2);
+    });
+
+    it('parses bare JSON array with id/label keys', () => {
+      const response = `What style do you want?
+
+[
+  {"id": "opt1", "label": "Tailwind CSS"},
+  {"id": "opt2", "label": "CSS Modules"},
+  {"id": "opt3", "label": "Styled Components"}
+]`;
+
+      const result = parseInterviewResponse(response);
+
+      expect(result).not.toBeNull();
+      expect(result?.text).toBe('What style do you want?');
+      expect(result?.options).toHaveLength(3);
+      expect(result?.options[0]).toEqual({ id: 'opt1', label: 'Tailwind CSS' });
+    });
+
     it('generates unique question IDs for multiple calls', () => {
       const response = `Test question
 
