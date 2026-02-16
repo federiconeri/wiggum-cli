@@ -26,11 +26,16 @@
   },
   "keywords": [
     "cli",
-    "ai",
-    "development",
-    "automation",
+    "ai-agent",
+    "autonomous-coding",
+    "ralph-loop",
+    "spec-generation",
+    "claude-code",
+    "codex",
+    "ai-coding",
     "feature-loop",
     "code-generation",
+    "developer-tools",
     "tech-stack-detection"
   ],
   "repository": {
