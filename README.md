@@ -21,13 +21,17 @@
   <a href="https://github.com/federiconeri/wiggum-cli/issues">Issues</a>
 </p>
 
+<p align="center">
+  <img src=".github/screenshot.png" alt="Wiggum TUI — spec generation and autonomous coding loop" width="800">
+</p>
+
 ---
 
 ## What is Wiggum?
 
 Wiggum is an **AI agent** that plugs into any codebase and makes it ready for autonomous feature development — no configuration, no boilerplate.
 
-It works in two phases. First, **Wiggum itself is the agent**: it scans your project, detects your stack, and runs an AI-guided interview to produce detailed specs, prompts, and scripts — all tailored to your codebase. Then it delegates the actual coding to [Claude Code](https://docs.anthropic.com/en/docs/claude-code), Codex, or any CLI-based coding agent, running an autonomous **implement → test → fix** loop until the feature ships.
+It works in two phases. First, **Wiggum itself is the agent**: it scans your project, detects your stack, and runs an AI-guided interview to produce detailed specs, prompts, and scripts — all tailored to your codebase. Then it delegates the actual coding to [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or any CLI-based coding agent, running an autonomous **implement → test → fix** loop until the feature ships.
 
 Plug & play. Point it at a repo. It figures out the rest.
 
@@ -41,7 +45,7 @@ Plug & play. Point it at a repo. It figures out the rest.
   │  plug&play   prompts     guides    until done        │
   │                            │    │                    │
   └────────────────────────────┘    └────────────────────┘
-       runs in your terminal          Claude Code / Codex
+       runs in your terminal          Claude Code / any agent
 ```
 
 ---
@@ -218,8 +222,9 @@ Run the autonomous development loop.
 | `--worktree` | Git worktree isolation (parallel features) |
 | `--resume` | Resume an interrupted loop |
 | `--model <model>` | Claude model (`opus`, `sonnet`) |
-| `--max-iterations <n>` | Max iterations (default: 50) |
-| `--max-e2e-attempts <n>` | Max E2E retries (default: 3) |
+| `--max-iterations <n>` | Max iterations (default: 10) |
+| `--max-e2e-attempts <n>` | Max E2E retries (default: 5) |
+| `--review-mode <mode>` | `manual` (stop at PR) or `auto` (review + merge). Default: `manual` |
 
 </details>
 
