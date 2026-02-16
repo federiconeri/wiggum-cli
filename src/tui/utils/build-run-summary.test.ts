@@ -250,6 +250,23 @@ describe('buildEnhancedRunSummary', () => {
     });
   });
 
+  describe('with gh CLI failure', () => {
+    beforeEach(() => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+      vi.mocked(gitSummary.getCurrentCommitHash).mockReturnValue(null);
+      vi.mocked(prSummary.getPrForBranch).mockImplementation(() => {
+        throw new Error('gh not available');
+      });
+    });
+
+    it('should mark PR and issue as not available', () => {
+      const result = buildEnhancedRunSummary(basicSummary, projectRoot, feature);
+
+      expect(result.pr).toEqual({ available: false, created: false });
+      expect(result.issue).toEqual({ available: false, linked: false });
+    });
+  });
+
   describe('with no branch info', () => {
     beforeEach(() => {
       vi.mocked(fs.existsSync).mockReturnValue(false);

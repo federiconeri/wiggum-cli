@@ -138,7 +138,7 @@ export function RunCompletionSummary({
             <Text>Changes: Not available</Text>
           ) : summary.changes.totalFilesChanged === 0 || (summary.changes.files && summary.changes.files.length === 0) ? (
             <Text>No changes</Text>
-          ) : (
+          ) : summary.changes.totalFilesChanged !== undefined || summary.changes.files ? (
             <>
               {summary.changes.totalFilesChanged !== undefined && (
                 <Text>{summary.changes.totalFilesChanged} file{summary.changes.totalFilesChanged !== 1 ? 's' : ''} changed</Text>
@@ -152,6 +152,8 @@ export function RunCompletionSummary({
                 </Box>
               ))}
             </>
+          ) : (
+            <Text>Changes: Could not compute diff</Text>
           )
         ) : (
           <Text>Changes: Not available</Text>

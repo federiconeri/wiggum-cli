@@ -231,31 +231,36 @@ export function buildEnhancedRunSummary(
   let issue: IssueSummary = { available: false, linked: false };
 
   if (basicSummary.branch) {
-    const prInfo = getPrForBranch(projectRoot, basicSummary.branch);
-    if (prInfo) {
-      pr = {
-        number: prInfo.number,
-        url: prInfo.url,
-        available: true,
-        created: true,
-      };
-
-      // Try to get linked issue, passing prInfo to avoid redundant gh call
-      const issueInfo = getLinkedIssue(projectRoot, basicSummary.branch, prInfo);
-      if (issueInfo) {
-        issue = {
-          number: issueInfo.number,
-          url: issueInfo.url,
-          status: issueInfo.state,
+    try {
+      const prInfo = getPrForBranch(projectRoot, basicSummary.branch);
+      if (prInfo) {
+        pr = {
+          number: prInfo.number,
+          url: prInfo.url,
           available: true,
-          linked: true,
+          created: true,
         };
+
+        // Try to get linked issue, passing prInfo to avoid redundant gh call
+        const issueInfo = getLinkedIssue(projectRoot, basicSummary.branch, prInfo);
+        if (issueInfo) {
+          issue = {
+            number: issueInfo.number,
+            url: issueInfo.url,
+            status: issueInfo.state,
+            available: true,
+            linked: true,
+          };
+        } else {
+          issue = { available: true, linked: false };
+        }
       } else {
+        pr = { available: true, created: false };
         issue = { available: true, linked: false };
       }
-    } else {
-      pr = { available: true, created: false };
-      issue = { available: true, linked: false };
+    } catch (err) {
+      logger.warn(`gh CLI query failed: ${err instanceof Error ? err.message : String(err)}`);
+      // pr and issue remain { available: false } from defaults above
     }
   }
 

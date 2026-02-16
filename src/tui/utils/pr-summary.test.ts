@@ -65,17 +65,12 @@ describe('getPrForBranch', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when gh command fails', () => {
+  it('throws when gh command fails', () => {
     vi.mocked(execFileSync).mockImplementation(() => {
       throw new Error('gh not installed');
     });
 
-    const result = getPrForBranch('/project/root', 'feat/new-feature');
-
-    expect(result).toBeNull();
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('getPrForBranch failed')
-    );
+    expect(() => getPrForBranch('/project/root', 'feat/new-feature')).toThrow('gh not installed');
   });
 
   it('returns null when output is empty', () => {
@@ -86,15 +81,10 @@ describe('getPrForBranch', () => {
     expect(result).toBeNull();
   });
 
-  it('returns null when output is not valid JSON', () => {
+  it('throws when output is not valid JSON', () => {
     vi.mocked(execFileSync).mockReturnValue('invalid json');
 
-    const result = getPrForBranch('/project/root', 'feat/new-feature');
-
-    expect(result).toBeNull();
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('getPrForBranch failed')
-    );
+    expect(() => getPrForBranch('/project/root', 'feat/new-feature')).toThrow();
   });
 
   it('handles merged PR state', () => {
@@ -321,9 +311,9 @@ describe('getLinkedIssue', () => {
     const result = getLinkedIssue('/project/root', 'feat/new-feature');
 
     expect(result).toBeNull();
-    // Error happens in getPrForBranch (called internally), not in getLinkedIssue
+    // getPrForBranch throws, caught by getLinkedIssue's own try/catch
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('getPrForBranch failed')
+      expect.stringContaining('getLinkedIssue failed')
     );
   });
 

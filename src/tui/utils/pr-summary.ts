@@ -24,44 +24,40 @@ export interface IssueInfo {
  *
  * @param projectRoot - Root directory of the git repository
  * @param branchName - Branch name to look up
- * @returns PR info object, or null if not found or gh not available
+ * @returns PR info object, or null if no PR exists for this branch
+ * @throws When gh CLI is unavailable or the command fails
  */
 export function getPrForBranch(
   projectRoot: string,
   branchName: string
 ): PrInfo | null {
-  try {
-    // Use gh pr list to find PR for this branch
-    const output = execFileSync(
-      'gh',
-      ['pr', 'list', '--head', branchName, '--state', 'all', '--json', 'number,url,state,title', '--limit', '1'],
-      {
-        cwd: projectRoot,
-        encoding: 'utf-8',
-        timeout: 10_000,
-      }
-    ).trim();
-
-    if (!output) {
-      return null;
+  // Use gh pr list to find PR for this branch
+  const output = execFileSync(
+    'gh',
+    ['pr', 'list', '--head', branchName, '--state', 'all', '--json', 'number,url,state,title', '--limit', '1'],
+    {
+      cwd: projectRoot,
+      encoding: 'utf-8',
+      timeout: 10_000,
     }
+  ).trim();
 
-    const prs = JSON.parse(output);
-    if (!Array.isArray(prs) || prs.length === 0) {
-      return null;
-    }
-
-    const pr = prs[0];
-    return {
-      number: pr.number,
-      url: pr.url,
-      state: pr.state,
-      title: pr.title,
-    };
-  } catch (err) {
-    logger.warn(`getPrForBranch failed: ${err instanceof Error ? err.message : String(err)}`);
+  if (!output) {
     return null;
   }
+
+  const prs = JSON.parse(output);
+  if (!Array.isArray(prs) || prs.length === 0) {
+    return null;
+  }
+
+  const pr = prs[0];
+  return {
+    number: pr.number,
+    url: pr.url,
+    state: pr.state,
+    title: pr.title,
+  };
 }
 
 /**
