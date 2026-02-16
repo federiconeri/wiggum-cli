@@ -181,7 +181,19 @@ export function MainShell({
     }
 
     const featureName = args[0];
-    onNavigate('run', { featureName });
+
+    // Parse optional flags
+    const reviewModeIdx = args.indexOf('--review-mode');
+    let reviewMode: string | undefined;
+    if (reviewModeIdx !== -1 && reviewModeIdx + 1 < args.length) {
+      reviewMode = args[reviewModeIdx + 1];
+      if (reviewMode !== 'manual' && reviewMode !== 'auto') {
+        addSystemMessage(`Invalid --review-mode value '${reviewMode}'. Use 'manual' or 'auto'.`);
+        return;
+      }
+    }
+
+    onNavigate('run', { featureName, reviewMode });
   }, [sessionState.initialized, addSystemMessage, onNavigate]);
 
   const handleMonitor = useCallback((args: string[]) => {

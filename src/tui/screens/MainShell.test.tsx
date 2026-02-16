@@ -132,6 +132,50 @@ describe('MainShell', () => {
     instance.unmount();
   });
 
+  it('/run feature --review-mode auto passes reviewMode in navigation', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/run my-feat --review-mode auto');
+    pressEnter(instance);
+    await wait(50);
+
+    expect(onNavigate).toHaveBeenCalledWith('run', { featureName: 'my-feat', reviewMode: 'auto' });
+    instance.unmount();
+  });
+
+  it('/run feature --review-mode invalid shows error', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/run my-feat --review-mode bad');
+    pressEnter(instance);
+    await wait(50);
+
+    const frame = stripAnsi(instance.lastFrame() ?? '');
+    expect(frame).toContain("Invalid --review-mode value 'bad'");
+    expect(onNavigate).not.toHaveBeenCalled();
+    instance.unmount();
+  });
+
+  it('/run feature without --review-mode passes undefined reviewMode', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/run my-feat');
+    pressEnter(instance);
+    await wait(50);
+
+    expect(onNavigate).toHaveBeenCalledWith('run', { featureName: 'my-feat', reviewMode: undefined });
+    instance.unmount();
+  });
+
   it('/q alias works for exit', async () => {
     const state = createTestSessionState();
     const instance = await renderAndWait(

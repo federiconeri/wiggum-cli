@@ -72,3 +72,10 @@ export function pressEnter(instance: Instance): void {
 export function pressEscape(instance: Instance): void {
   instance.stdin.write('\u001b');
 }
+
+/**
+ * Press Backspace (macOS sends \x7f).
+ */
+export function pressBackspace(instance: Instance): void {
+  instance.stdin.write('\x7f');
+}

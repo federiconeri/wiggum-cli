@@ -22,7 +22,7 @@ import {
   normalizePastedText,
   insertTextAtCursor,
   deleteCharBefore,
-  deleteCharAfter,
+  deleteWordBefore,
   moveCursorByWordLeft,
   moveCursorByWordRight,
 } from '../utils/input-utils.js';
@@ -161,24 +161,41 @@ export function ChatInput({
       return;
     }
 
-    const isBackspace =
-      key.backspace ||
-      input === '\x7f' ||
-      input === '\b' ||
-      (key.ctrl && input === 'h');
-    if (isBackspace) {
+    // Backspace: Ink v5 maps macOS Backspace (\x7f) to key.delete, not
+    // key.backspace.  Since there is no reliable way to distinguish it from
+    // forward-Delete (\u001b[3~] — also key.delete), treat both as backspace,
+    // matching ink-text-input's approach.
+    const isBackspaceOrDelete = key.backspace || key.delete;
+    if (isBackspaceOrDelete) {
       const { newValue, newCursorIndex } = deleteCharBefore(value, cursorOffset);
       updateValue(newValue, newCursorIndex);
       return;
     }
 
-    const isDelete = key.delete || input === '\u001b[3~';
-    if (isDelete) {
-      const { newValue, newCursorIndex } = deleteCharAfter(value, cursorOffset);
+    // Readline keybindings (before the blanket ctrl guard)
+    if (key.ctrl && input === 'a') {
+      updateValue(value, 0, true);
+      return;
+    }
+    if (key.ctrl && input === 'e') {
+      updateValue(value, value.length, true);
+      return;
+    }
+    if (key.ctrl && input === 'w') {
+      const { newValue, newCursorIndex } = deleteWordBefore(value, cursorOffset);
       updateValue(newValue, newCursorIndex);
       return;
     }
+    if (key.ctrl && input === 'u') {
+      updateValue(value.slice(cursorOffset), 0);
+      return;
+    }
+    if (key.ctrl && input === 'k') {
+      updateValue(value.slice(0, cursorOffset), cursorOffset, true);
+      return;
+    }
 
+    // Blanket guard for remaining unhandled ctrl combos
     if (key.ctrl) {
       return;
     }

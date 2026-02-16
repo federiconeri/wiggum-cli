@@ -169,6 +169,38 @@ export function deleteCharAfter(
  * moveCursorByWordLeft("test", 0) // => 0 (no-op at start)
  * ```
  */
+/**
+ * Deletes the word before the cursor (Ctrl+W behavior)
+ *
+ * Skips trailing whitespace, then deletes the preceding word.
+ * Uses moveCursorByWordLeft to find the word boundary.
+ *
+ * @param value - Current input value
+ * @param cursorIndex - Current cursor position
+ * @returns New value and cursor index after deletion
+ *
+ * @example
+ * ```ts
+ * deleteWordBefore("hello world", 11)
+ * // => { newValue: "hello ", newCursorIndex: 6 }
+ *
+ * deleteWordBefore("hello world", 0)
+ * // => { newValue: "hello world", newCursorIndex: 0 } (no-op at start)
+ * ```
+ */
+export function deleteWordBefore(
+  value: string,
+  cursorIndex: number
+): CursorManipulationResult {
+  if (cursorIndex <= 0) {
+    return { newValue: value, newCursorIndex: 0 };
+  }
+
+  const newCursorIndex = moveCursorByWordLeft(value, cursorIndex);
+  const newValue = value.slice(0, newCursorIndex) + value.slice(cursorIndex);
+  return { newValue, newCursorIndex };
+}
+
 export function moveCursorByWordLeft(value: string, cursorIndex: number): number {
   let idx = cursorIndex;
 

@@ -182,6 +182,8 @@ export interface RunScreenProps {
   sessionState: SessionState;
   /** Monitor-only mode: don't spawn, just poll status */
   monitorOnly?: boolean;
+  /** Override review mode from CLI flags (takes precedence over config) */
+  reviewMode?: 'manual' | 'auto';
   onComplete: (summary: RunSummary) => void;
   /** Called when user presses Esc to background the run */
   onBackground?: (featureName: string) => void;
@@ -264,6 +266,7 @@ export function RunScreen({
   projectRoot,
   sessionState,
   monitorOnly = false,
+  reviewMode: reviewModeProp,
   onComplete,
   onBackground,
   onCancel,
@@ -478,7 +481,7 @@ export function RunScreen({
           return;
         }
 
-        const reviewMode = config.loop.reviewMode ?? 'manual';
+        const reviewMode = reviewModeProp ?? config.loop.reviewMode ?? 'manual';
         if (reviewMode !== 'manual' && reviewMode !== 'auto') {
           setError(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual' or 'auto'.`);
           setIsStarting(false);
