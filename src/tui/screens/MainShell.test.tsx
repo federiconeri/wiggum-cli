@@ -162,6 +162,20 @@ describe('MainShell', () => {
     instance.unmount();
   });
 
+  it('/run --review-mode auto feature extracts feature from positional args', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/run --review-mode auto my-feat');
+    pressEnter(instance);
+    await wait(50);
+
+    expect(onNavigate).toHaveBeenCalledWith('run', { featureName: 'my-feat', reviewMode: 'auto' });
+    instance.unmount();
+  });
+
   it('/run feature without --review-mode passes undefined reviewMode', async () => {
     const state = createTestSessionState({ initialized: true });
     const instance = await renderAndWait(

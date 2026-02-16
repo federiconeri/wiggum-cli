@@ -180,17 +180,30 @@ export function MainShell({
       return;
     }
 
-    const featureName = args[0];
-
-    // Parse optional flags
-    const reviewModeIdx = args.indexOf('--review-mode');
+    // Parse optional flags, separating them from positional args
     let reviewMode: string | undefined;
-    if (reviewModeIdx !== -1 && reviewModeIdx + 1 < args.length) {
-      reviewMode = args[reviewModeIdx + 1];
-      if (reviewMode !== 'manual' && reviewMode !== 'auto') {
-        addSystemMessage(`Invalid --review-mode value '${reviewMode}'. Use 'manual' or 'auto'.`);
-        return;
+    const positional: string[] = [];
+
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--review-mode') {
+        if (i + 1 < args.length) {
+          reviewMode = args[i + 1];
+          i++; // skip the value
+        }
+        continue;
       }
+      positional.push(args[i]!);
+    }
+
+    if (reviewMode !== undefined && reviewMode !== 'manual' && reviewMode !== 'auto') {
+      addSystemMessage(`Invalid --review-mode value '${reviewMode}'. Use 'manual' or 'auto'.`);
+      return;
+    }
+
+    const featureName = positional[0];
+    if (!featureName) {
+      addSystemMessage('Feature name required. Usage: /run <feature-name> [--review-mode auto|manual]');
+      return;
     }
 
     onNavigate('run', { featureName, reviewMode });
