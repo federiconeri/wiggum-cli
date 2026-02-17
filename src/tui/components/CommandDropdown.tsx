@@ -9,6 +9,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { colors, theme, box } from '../theme.js';
+import { fuzzyMatch } from '../../utils/fuzzy-match.js';
 
 /**
  * Command definition
@@ -68,9 +69,9 @@ export function CommandDropdown({
 }: CommandDropdownProps): React.ReactElement {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Filter commands based on input
+  // Filter commands based on input using fuzzy matching
   const filteredCommands = commands.filter((cmd) =>
-    cmd.name.toLowerCase().includes(filter.toLowerCase())
+    fuzzyMatch(filter, cmd.name)
   );
 
   // Calculate column widths for alignment

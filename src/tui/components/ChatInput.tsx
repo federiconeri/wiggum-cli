@@ -43,6 +43,8 @@ export interface ChatInputProps {
   commands?: Command[];
   /** Called when a slash command is selected */
   onCommand?: (command: string) => void;
+  /** Spec suggestions for /run argument autocomplete */
+  specSuggestions?: Command[];
 }
 
 /**
@@ -82,6 +84,7 @@ export function ChatInput({
   allowEmpty = false,
   commands = DEFAULT_COMMANDS,
   onCommand,
+  specSuggestions,
 }: ChatInputProps): React.ReactElement {
   const [value, setValue] = useState('');
   const [cursorOffset, setCursorOffset] = useState(0);
@@ -96,6 +99,15 @@ export function ChatInput({
   const hasSpace = value.includes(' ');
   // Only filter on the command name part (before the first space)
   const commandFilter = isSlashCommand ? value.slice(1).split(' ')[0] : '';
+
+  // Detect "/run " argument autocomplete mode
+  const RUN_PREFIX = '/run ';
+  const isRunArgMode =
+    specSuggestions !== undefined &&
+    specSuggestions.length > 0 &&
+    value.startsWith(RUN_PREFIX);
+  // The text the user has typed after "/run "
+  const runArgFilter = isRunArgMode ? value.slice(RUN_PREFIX.length) : '';
 
   // Store draft input when starting history navigation
   const draftRef = useRef<string>('');
@@ -116,7 +128,12 @@ export function ChatInput({
         resetNavigation();
       }
 
-      if (nextValue.startsWith('/') && !nextValue.includes(' ')) {
+      const isCommandMode = nextValue.startsWith('/') && !nextValue.includes(' ');
+      const isRunArgModeNext =
+        specSuggestions !== undefined &&
+        specSuggestions.length > 0 &&
+        nextValue.startsWith('/run ');
+      if (isCommandMode || isRunArgModeNext) {
         setShowDropdown(true);
       } else {
         setShowDropdown(false);
@@ -323,6 +340,19 @@ export function ChatInput({
   );
 
   /**
+   * Handle spec selection from /run argument dropdown
+   */
+  const handleSpecSelect = useCallback(
+    (specName: string) => {
+      const newValue = `/run ${specName}`;
+      addToHistory(newValue);
+      updateValue(newValue, newValue.length, true);
+      setShowDropdown(false);
+    },
+    [addToHistory, updateValue]
+  );
+
+  /**
    * Handle dropdown cancel
    */
   const handleDropdownCancel = useCallback(() => {
@@ -366,8 +396,18 @@ export function ChatInput({
         )}
       </Box>
 
+      {/* Spec argument dropdown for /run <spec> */}
+      {showDropdown && isRunArgMode && specSuggestions && (
+        <CommandDropdown
+          commands={specSuggestions}
+          filter={runArgFilter}
+          onSelect={handleSpecSelect}
+          onCancel={handleDropdownCancel}
+        />
+      )}
+
       {/* Command dropdown below input - only show while typing command name, not arguments */}
-      {showDropdown && isSlashCommand && !hasSpace && (
+      {showDropdown && isSlashCommand && !hasSpace && !isRunArgMode && (
         <CommandDropdown
           commands={commands}
           filter={commandFilter}

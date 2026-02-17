@@ -10,6 +10,7 @@ import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { MessageList, type Message } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
+import type { Command } from '../components/CommandDropdown.js';
 import { ActionOutput } from '../components/ActionOutput.js';
 import { AppShell } from '../components/AppShell.js';
 import { colors, theme, phase } from '../theme.js';
@@ -351,12 +352,17 @@ export function MainShell({
     ? 'Tip: /new <feature> to create spec, /help for commands'
     : 'Tip: /init to set up, /help for commands';
 
+  const specSuggestions: Command[] | undefined = sessionState.specNames
+    ? sessionState.specNames.map((name) => ({ name, description: '' }))
+    : undefined;
+
   const inputElement = (
     <ChatInput
       onSubmit={handleSubmit}
       disabled={false}
       placeholder="Enter command or type /help..."
       onCommand={(cmd) => handleSubmit(`/${cmd}`)}
+      specSuggestions={specSuggestions}
     />
   );
 

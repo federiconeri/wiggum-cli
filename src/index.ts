@@ -1,5 +1,6 @@
 import { createSessionState } from './repl/session-state.js';
 import { hasConfig, loadConfigWithDefaults } from './utils/config.js';
+import { listSpecNames } from './utils/spec-names.js';
 import { AVAILABLE_MODELS, getAvailableProvider, isAnthropicAlias } from './ai/providers.js';
 import type { AIProvider } from './ai/providers.js';
 import { notifyIfUpdateAvailable } from './utils/update-check.js';
@@ -61,7 +62,12 @@ async function startInkTui(initialScreen: AppScreen = 'shell', interviewFeature?
       }
     }
 
-    return createSessionState(
+    const specsDir = config
+      ? join(projectRoot, config.paths.specs)
+      : join(projectRoot, '.ralph/specs');
+    const specNames = await listSpecNames(specsDir);
+
+    const state = createSessionState(
       projectRoot,
       provider, // May be null if no API key
       model,
@@ -69,6 +75,7 @@ async function startInkTui(initialScreen: AppScreen = 'shell', interviewFeature?
       config,
       isInitialized
     );
+    return { ...state, specNames };
   }
 
   const initialState = await createCurrentSessionState();

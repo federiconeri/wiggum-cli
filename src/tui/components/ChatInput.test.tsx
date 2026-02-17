@@ -163,4 +163,95 @@ describe('ChatInput', () => {
     expect(frame).toContain('help');
     instance.unmount();
   });
+
+  describe('spec autocomplete (/run argument mode)', () => {
+    const SPEC_SUGGESTIONS = [
+      { name: 'auth-system', description: '' },
+      { name: 'user-profile', description: '' },
+      { name: 'payment-flow', description: '' },
+    ];
+
+    it('shows spec dropdown when typing /run followed by space', async () => {
+      const onSubmit = vi.fn();
+      const instance = await renderAndWait(
+        () => render(<ChatInput onSubmit={onSubmit} specSuggestions={SPEC_SUGGESTIONS} />),
+      );
+
+      await typeText(instance, '/run ');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      expect(frame).toContain('auth-system');
+      expect(frame).toContain('user-profile');
+      instance.unmount();
+    });
+
+    it('does not show spec dropdown without trailing space', async () => {
+      const onSubmit = vi.fn();
+      const instance = await renderAndWait(
+        () => render(<ChatInput onSubmit={onSubmit} specSuggestions={SPEC_SUGGESTIONS} />),
+      );
+
+      await typeText(instance, '/run');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      // Should show command dropdown for /run command, not spec dropdown
+      expect(frame).toContain('run');
+      // auth-system should not be visible (it's a spec name)
+      expect(frame).not.toContain('auth-system');
+      instance.unmount();
+    });
+
+    it('does not show spec dropdown for non-/run commands with space', async () => {
+      const onSubmit = vi.fn();
+      const instance = await renderAndWait(
+        () => render(<ChatInput onSubmit={onSubmit} specSuggestions={SPEC_SUGGESTIONS} />),
+      );
+
+      await typeText(instance, '/new ');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      expect(frame).not.toContain('auth-system');
+      instance.unmount();
+    });
+
+    it('filters spec suggestions as user types after /run ', async () => {
+      const onSubmit = vi.fn();
+      const instance = await renderAndWait(
+        () => render(<ChatInput onSubmit={onSubmit} specSuggestions={SPEC_SUGGESTIONS} />),
+      );
+
+      await typeText(instance, '/run auth');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      expect(frame).toContain('auth-system');
+      expect(frame).not.toContain('payment-flow');
+      instance.unmount();
+    });
+
+    it('does not show spec dropdown when specSuggestions is empty', async () => {
+      const onSubmit = vi.fn();
+      const instance = await renderAndWait(
+        () => render(<ChatInput onSubmit={onSubmit} specSuggestions={[]} />),
+      );
+
+      await typeText(instance, '/run ');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      expect(frame).not.toContain('auth-system');
+      instance.unmount();
+    });
+
+    it('does not show spec dropdown when specSuggestions is undefined', async () => {
+      const onSubmit = vi.fn();
+      const instance = await renderAndWait(
+        () => render(<ChatInput onSubmit={onSubmit} />),
+      );
+
+      await typeText(instance, '/run ');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      expect(frame).not.toContain('auth-system');
+      instance.unmount();
+    });
+  });
 });
