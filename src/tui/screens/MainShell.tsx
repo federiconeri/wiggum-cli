@@ -352,9 +352,10 @@ export function MainShell({
     ? 'Tip: /new <feature> to create spec, /help for commands'
     : 'Tip: /init to set up, /help for commands';
 
-  const specSuggestions: Command[] | undefined = sessionState.specNames
-    ? sessionState.specNames.map((name) => ({ name, description: '' }))
-    : undefined;
+  const specSuggestions: Command[] | undefined = useMemo(
+    () => sessionState.specNames?.map((name) => ({ name, description: '' })),
+    [sessionState.specNames],
+  );
 
   const inputElement = (
     <ChatInput

@@ -1,4 +1,5 @@
 import { readdir } from 'node:fs/promises';
+import { logger } from './logger.js';
 
 /**
  * Reads top-level .md files from the given directory and returns their names
@@ -11,9 +12,7 @@ export async function listSpecNames(specsDir: string): Promise<string[]> {
     entries = await readdir(specsDir, { withFileTypes: true });
   } catch (err: unknown) {
     if (err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      // Log non-ENOENT errors for debugging (ENOENT is expected when no specs dir exists)
-      // eslint-disable-next-line no-console
-      console.debug(`Failed to list spec names from ${specsDir}: ${err.message}`);
+      logger.debug(`Failed to list spec names from ${specsDir}: ${err.message}`);
     }
     return [];
   }

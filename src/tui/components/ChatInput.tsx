@@ -27,6 +27,8 @@ import {
   moveCursorByWordRight,
 } from '../utils/input-utils.js';
 
+const RUN_PREFIX = '/run ';
+
 /**
  * Props for the ChatInput component
  */
@@ -101,7 +103,6 @@ export function ChatInput({
   const commandFilter = isSlashCommand ? value.slice(1).split(' ')[0] : '';
 
   // Detect "/run " argument autocomplete mode
-  const RUN_PREFIX = '/run ';
   const isRunArgMode =
     specSuggestions !== undefined &&
     specSuggestions.length > 0 &&
@@ -402,6 +403,7 @@ export function ChatInput({
           filter={runArgFilter}
           onSelect={handleSpecSelect}
           onCancel={handleDropdownCancel}
+          itemPrefix=""
         />
       )}
 

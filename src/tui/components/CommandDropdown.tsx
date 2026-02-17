@@ -33,14 +33,16 @@ export interface CommandDropdownProps {
   onSelect: (command: string) => void;
   /** Called when dropdown is dismissed (Escape) */
   onCancel: () => void;
+  /** Prefix displayed before each item name (default: '/') */
+  itemPrefix?: string;
 }
 
 /**
  * Calculate the max width needed for command names
  */
-function getMaxCommandWidth(commands: Command[]): number {
+function getMaxCommandWidth(commands: Command[], prefix: string): number {
   if (commands.length === 0) return 0;
-  return Math.max(...commands.map((cmd) => cmd.name.length + 1)); // +1 for the /
+  return Math.max(...commands.map((cmd) => cmd.name.length + prefix.length));
 }
 
 /**
@@ -67,6 +69,7 @@ export function CommandDropdown({
   filter,
   onSelect,
   onCancel,
+  itemPrefix = '/',
 }: CommandDropdownProps): React.ReactElement {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -76,7 +79,7 @@ export function CommandDropdown({
   );
 
   // Calculate column widths for alignment
-  const maxCmdWidth = getMaxCommandWidth(filteredCommands);
+  const maxCmdWidth = getMaxCommandWidth(filteredCommands, itemPrefix);
 
   // Handle keyboard input
   useInput((input, key) => {
@@ -127,7 +130,7 @@ export function CommandDropdown({
       {/* Command list */}
       {filteredCommands.map((cmd, index) => {
         const isSelected = index === selectedIndex;
-        const cmdText = `/${cmd.name}`;
+        const cmdText = `${itemPrefix}${cmd.name}`;
         const padding = ' '.repeat(Math.max(0, maxCmdWidth - cmdText.length + 2));
 
         return (
