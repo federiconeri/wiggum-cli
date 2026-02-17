@@ -2,7 +2,10 @@ import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import { CommandDropdown } from './CommandDropdown.js';
-import { stripAnsi } from '../../__test-utils__/ink-helpers.js';
+import { stripAnsi, renderAndWait, wait } from '../../__test-utils__/ink-helpers.js';
+
+const DOWN_ARROW = '\u001b[B';
+const UP_ARROW = '\u001b[A';
 
 const COMMANDS = [
   { name: 'init', description: 'Initialize project' },
@@ -117,5 +120,122 @@ describe('CommandDropdown', () => {
     const frame = stripAnsi(lastFrame() ?? '');
     expect(frame).toContain('auth-system');
     unmount();
+  });
+
+  describe('keyboard navigation', () => {
+    const SPEC_SUGGESTIONS = [
+      { name: 'auth-system', description: '' },
+      { name: 'user-profile', description: '' },
+      { name: 'payment-flow', description: '' },
+    ];
+
+    it('Enter selects the first item by default', async () => {
+      const onSelect = vi.fn();
+      const instance = await renderAndWait(
+        () => render(
+          <CommandDropdown
+            commands={SPEC_SUGGESTIONS}
+            filter=""
+            onSelect={onSelect}
+            onCancel={vi.fn()}
+          />
+        ),
+      );
+
+      instance.stdin.write('\r');
+      await wait(30);
+
+      expect(onSelect).toHaveBeenCalledWith('auth-system');
+      instance.unmount();
+    });
+
+    it('Down arrow moves selection to next item, Enter selects it', async () => {
+      const onSelect = vi.fn();
+      const instance = await renderAndWait(
+        () => render(
+          <CommandDropdown
+            commands={SPEC_SUGGESTIONS}
+            filter=""
+            onSelect={onSelect}
+            onCancel={vi.fn()}
+          />
+        ),
+      );
+
+      instance.stdin.write(DOWN_ARROW);
+      await wait(30);
+      instance.stdin.write('\r');
+      await wait(30);
+
+      expect(onSelect).toHaveBeenCalledWith('user-profile');
+      instance.unmount();
+    });
+
+    it('Down then Up returns selection to first item', async () => {
+      const onSelect = vi.fn();
+      const instance = await renderAndWait(
+        () => render(
+          <CommandDropdown
+            commands={SPEC_SUGGESTIONS}
+            filter=""
+            onSelect={onSelect}
+            onCancel={vi.fn()}
+          />
+        ),
+      );
+
+      instance.stdin.write(DOWN_ARROW);
+      await wait(30);
+      instance.stdin.write(UP_ARROW);
+      await wait(30);
+      instance.stdin.write('\r');
+      await wait(30);
+
+      expect(onSelect).toHaveBeenCalledWith('auth-system');
+      instance.unmount();
+    });
+
+    it('Up arrow does not go below index 0', async () => {
+      const onSelect = vi.fn();
+      const instance = await renderAndWait(
+        () => render(
+          <CommandDropdown
+            commands={SPEC_SUGGESTIONS}
+            filter=""
+            onSelect={onSelect}
+            onCancel={vi.fn()}
+          />
+        ),
+      );
+
+      // Press up when already at top — should stay on first item
+      instance.stdin.write(UP_ARROW);
+      await wait(30);
+      instance.stdin.write('\r');
+      await wait(30);
+
+      expect(onSelect).toHaveBeenCalledWith('auth-system');
+      instance.unmount();
+    });
+
+    it('Escape calls onCancel', async () => {
+      const onCancel = vi.fn();
+      const instance = await renderAndWait(
+        () => render(
+          <CommandDropdown
+            commands={SPEC_SUGGESTIONS}
+            filter=""
+            onSelect={vi.fn()}
+            onCancel={onCancel}
+          />
+        ),
+      );
+
+      instance.stdin.write('\u001b');
+      await wait(30);
+
+      expect(onCancel).toHaveBeenCalled();
+      instance.unmount();
+    });
   });
 });

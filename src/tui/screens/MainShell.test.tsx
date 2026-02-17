@@ -190,6 +190,70 @@ describe('MainShell', () => {
     instance.unmount();
   });
 
+  describe('spec autocomplete integration', () => {
+    it('shows spec dropdown from sessionState.specNames when typing /run ', async () => {
+      const state = createTestSessionState({
+        initialized: true,
+        specNames: ['auth-system', 'user-profile', 'payment-flow'],
+      });
+      const instance = await renderAndWait(
+        () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+      );
+
+      await typeText(instance, '/run ');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      expect(frame).toContain('auth-system');
+      expect(frame).toContain('user-profile');
+      instance.unmount();
+    });
+
+    it('filters spec suggestions as user types after /run ', async () => {
+      const state = createTestSessionState({
+        initialized: true,
+        specNames: ['auth-system', 'user-profile', 'payment-flow'],
+      });
+      const instance = await renderAndWait(
+        () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+      );
+
+      await typeText(instance, '/run auth');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      expect(frame).toContain('auth-system');
+      expect(frame).not.toContain('payment-flow');
+      instance.unmount();
+    });
+
+    it('shows no spec dropdown when sessionState.specNames is undefined', async () => {
+      const state = createTestSessionState({ initialized: true });
+      // specNames is not set → no suggestions
+      const instance = await renderAndWait(
+        () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+      );
+
+      await typeText(instance, '/run ');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      // Should not show any spec names in dropdown
+      expect(frame).not.toContain('auth-system');
+      instance.unmount();
+    });
+
+    it('shows no spec dropdown when sessionState.specNames is empty', async () => {
+      const state = createTestSessionState({ initialized: true, specNames: [] });
+      const instance = await renderAndWait(
+        () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+      );
+
+      await typeText(instance, '/run ');
+
+      const frame = stripAnsi(instance.lastFrame() ?? '');
+      expect(frame).not.toContain('auth-system');
+      instance.unmount();
+    });
+  });
+
   it('/q alias works for exit', async () => {
     const state = createTestSessionState();
     const instance = await renderAndWait(
