@@ -36,7 +36,7 @@ import { writeRunSummaryFile } from '../../utils/summary-file.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
-import { readActionRequest, writeActionReply, type ActionRequest } from '../utils/action-inbox.js';
+import { readActionRequest, writeActionReply, cleanupActionFiles, type ActionRequest } from '../utils/action-inbox.js';
 
 /**
  * Phase execution status and timing
@@ -304,6 +304,7 @@ export function RunScreen({
   const scriptsDirRef = useRef<string>('.ralph/scripts');
   const maxIterationsRef = useRef<number>(0);
   const maxE2eAttemptsRef = useRef<number>(0);
+  const handledActionIdRef = useRef<string | null>(null);
 
   useInput((input, key) => {
     // If showing completion summary, Enter or Esc dismisses
@@ -347,7 +348,16 @@ export function RunScreen({
     const request = readActionRequest(featureName);
     if (!isMountedRef.current) return;
     if (request) {
-      setActionRequest(request);
+      // Only show if we haven't already handled this action
+      if (request.id !== handledActionIdRef.current) {
+        setActionRequest(request);
+      }
+    } else {
+      // File cleaned up by shell — reset tracking so future requests work
+      handledActionIdRef.current = null;
+      if (actionRequest) {
+        setActionRequest(null);
+      }
     }
 
     // In monitor mode, detect completion (only fire once)
@@ -392,7 +402,7 @@ export function RunScreen({
         logger.error(`Failed to persist summary file for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
-  }, [featureName, projectRoot, monitorOnly]);
+  }, [featureName, projectRoot, monitorOnly, actionRequest]);
 
   const stopLoop = useCallback(() => {
     stopRequestedRef.current = true;
@@ -499,6 +509,11 @@ export function RunScreen({
           setIsStarting(false);
           return;
         }
+
+        // Clean up stale action files from previous runs
+        await cleanupActionFiles(featureName).catch((err) => {
+          logger.warn(`Failed to clean up stale action files: ${err instanceof Error ? err.message : String(err)}`);
+        });
 
         const logPath = getLoopLogPath(featureName);
         const logFd = openSync(logPath, 'a');
@@ -642,22 +657,30 @@ export function RunScreen({
         ? 'Ctrl+C stop, Esc back'
         : 'Ctrl+C stop, Esc background';
 
-  // Action select handler
-  const handleActionSelect = useCallback((choiceId: string) => {
+  // Action select handler — awaits write before clearing prompt
+  const handleActionSelect = useCallback(async (choiceId: string) => {
     if (!actionRequest) return;
-    writeActionReply(featureName, { id: actionRequest.id, choice: choiceId }).catch((err) => {
+    try {
+      await writeActionReply(featureName, { id: actionRequest.id, choice: choiceId });
+      handledActionIdRef.current = actionRequest.id;
+      setActionRequest(null);
+    } catch (err) {
       logger.error(`Failed to write action reply: ${err instanceof Error ? err.message : String(err)}`);
-    });
-    setActionRequest(null);
+      setError(`Failed to send action reply. The loop may time out to the default.`);
+    }
   }, [actionRequest, featureName]);
 
-  // Action cancel handler (Esc = use default)
-  const handleActionCancel = useCallback(() => {
+  // Action cancel handler (Esc = use default) — awaits write before clearing
+  const handleActionCancel = useCallback(async () => {
     if (!actionRequest) return;
-    writeActionReply(featureName, { id: actionRequest.id, choice: actionRequest.default }).catch((err) => {
+    try {
+      await writeActionReply(featureName, { id: actionRequest.id, choice: actionRequest.default });
+      handledActionIdRef.current = actionRequest.id;
+      setActionRequest(null);
+    } catch (err) {
       logger.error(`Failed to write action reply (default): ${err instanceof Error ? err.message : String(err)}`);
-    });
-    setActionRequest(null);
+      setError(`Failed to send action reply. The loop may time out to the default.`);
+    }
   }, [actionRequest, featureName]);
 
   // Input element: completionSummary > showConfirm > actionRequest > null

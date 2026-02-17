@@ -172,7 +172,7 @@ poll_action_reply() {
     # Read default from action file if present
     if [ -f "$action_file" ]; then
         local parsed_default
-        parsed_default=$(node -e "try { const d=require('fs').readFileSync('$action_file','utf8'); console.log(JSON.parse(d).default||'keep_branch'); } catch(e) { console.log('keep_branch'); }" 2>/dev/null || echo "keep_branch")
+        parsed_default=$(node -e "try { const d=require('fs').readFileSync(process.argv[1],'utf8'); console.log(JSON.parse(d).default||'keep_branch'); } catch(e) { console.log('keep_branch'); }" "$action_file" 2>/dev/null || echo "keep_branch")
         if [ -n "$parsed_default" ]; then
             default_choice="$parsed_default"
         fi
@@ -181,7 +181,7 @@ poll_action_reply() {
     while [ $elapsed -lt $timeout ]; do
         if [ -f "$reply_file" ]; then
             local choice
-            choice=$(node -e "try { const d=require('fs').readFileSync('$reply_file','utf8'); console.log(JSON.parse(d).choice||''); } catch(e) { console.log(''); }" 2>/dev/null || echo "")
+            choice=$(node -e "try { const d=require('fs').readFileSync(process.argv[1],'utf8'); console.log(JSON.parse(d).choice||''); } catch(e) { console.log(''); }" "$reply_file" 2>/dev/null || echo "")
             if [ -n "$choice" ]; then
                 echo "User selected: $choice" >&2
                 # Cleanup both files
@@ -405,20 +405,69 @@ echo "======================== PR & REVIEW PHASE ========================"
 write_phase_start "pr_review"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 PR_STATUS="success"
+MAX_REVIEW_ATTEMPTS=3
+
 if [ "$REVIEW_MODE" = "manual" ]; then
     if ! cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
         PR_STATUS="failed"
     fi
+    parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+
 elif [ "$REVIEW_MODE" = "merge" ]; then
-    if ! cat "$PROMPTS_DIR/PROMPT_review_merge.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
+    # Merge mode: create PR, iterate review+fixes until approved, then merge
+    REVIEW_ATTEMPT=0
+    REVIEW_APPROVED=false
+    while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
+        REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
+        echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
+        cat "$PROMPTS_DIR/PROMPT_review_merge.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
+        parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+
+        # Check if output contains APPROVED
+        if grep -qi "APPROVED" "$CLAUDE_OUTPUT" 2>/dev/null; then
+            echo "Review approved!"
+            REVIEW_APPROVED=true
+            break
+        fi
+
+        if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
+            echo "Review found issues. Running fix iteration..."
+            cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
+            parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+        fi
+    done
+    if [ "$REVIEW_APPROVED" != true ]; then
+        echo "Review not approved after $MAX_REVIEW_ATTEMPTS attempts."
         PR_STATUS="failed"
     fi
+
 else
-    if ! cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
-        PR_STATUS="failed"
+    # Auto mode: create PR, iterate review+fixes until approved (no merge)
+    REVIEW_ATTEMPT=0
+    REVIEW_APPROVED=false
+    while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
+        REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
+        echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
+        cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
+        parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+
+        # Check if output contains APPROVED
+        if grep -qi "APPROVED" "$CLAUDE_OUTPUT" 2>/dev/null; then
+            echo "Review approved!"
+            REVIEW_APPROVED=true
+            break
+        fi
+
+        if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
+            echo "Review found issues. Running fix iteration..."
+            cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
+            parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+        fi
+    done
+    if [ "$REVIEW_APPROVED" != true ]; then
+        echo "Review not approved after $MAX_REVIEW_ATTEMPTS attempts. PR ready for manual review."
     fi
 fi
-parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
 write_phase_end "pr_review" "$PR_STATUS"
 
 # Phase 7.5: Post-completion action request
@@ -426,6 +475,27 @@ echo "======================== ACTION REQUEST PHASE ========================"
 write_action_request
 CHOSEN_ACTION=$(poll_action_reply)
 echo "User chose: $CHOSEN_ACTION"
+
+# Dispatch based on user choice
+case "$CHOSEN_ACTION" in
+    merge_local)
+        echo "Merging back to main locally..."
+        git checkout main 2>/dev/null || git checkout master
+        git merge --squash "$BRANCH" && git commit -m "feat($FEATURE): squash merge from $BRANCH"
+        echo "Merged. You can delete the branch with: git branch -D $BRANCH"
+        ;;
+    push_pr)
+        echo "Branch and PR already created during review phase."
+        ;;
+    discard)
+        echo "Discarding work on branch $BRANCH..."
+        git checkout main 2>/dev/null || git checkout master
+        git branch -D "$BRANCH" 2>/dev/null || echo "Branch $BRANCH not found locally."
+        ;;
+    keep_branch|*)
+        echo "Keeping branch $BRANCH as-is."
+        ;;
+esac
 
 # Persist final status for TUI summaries
 if ! echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE"; then

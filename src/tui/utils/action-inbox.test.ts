@@ -140,6 +140,16 @@ describe('readActionRequest', () => {
     expect(result).toBeNull();
   });
 
+  it('returns null when choices array is empty', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(true);
+    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ ...VALID_REQUEST, choices: [] }));
+
+    const result = readActionRequest(FEATURE);
+
+    expect(result).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('missing required fields'));
+  });
+
   it('returns null when a choice is missing its label', () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     const withBadChoice = {
@@ -250,6 +260,12 @@ describe('cleanupActionFiles', () => {
     vi.mocked(fsPromises.unlink).mockRejectedValue(Object.assign(new Error('ENOENT'), { code: 'ENOENT' }));
 
     await expect(cleanupActionFiles(FEATURE)).resolves.toBeUndefined();
+  });
+
+  it('propagates non-ENOENT errors (e.g. permission denied)', async () => {
+    vi.mocked(fsPromises.unlink).mockRejectedValue(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+
+    await expect(cleanupActionFiles(FEATURE)).rejects.toThrow('EPERM');
   });
 
   it('throws for invalid feature names', async () => {

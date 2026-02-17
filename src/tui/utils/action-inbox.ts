@@ -89,9 +89,10 @@ export function readActionRequest(feature: string): ActionRequest | null {
     typeof (parsed as Record<string, unknown>).id !== 'string' ||
     typeof (parsed as Record<string, unknown>).prompt !== 'string' ||
     !Array.isArray((parsed as Record<string, unknown>).choices) ||
+    ((parsed as Record<string, unknown>).choices as unknown[]).length === 0 ||
     typeof (parsed as Record<string, unknown>).default !== 'string'
   ) {
-    logger.warn('Action request file is missing required fields (id, prompt, choices, default)');
+    logger.warn('Action request file is missing required fields (id, prompt, choices, default) or choices is empty');
     return null;
   }
 
@@ -133,7 +134,7 @@ export async function writeActionReply(feature: string, reply: ActionReply): Pro
 }
 
 /**
- * Remove both action request and reply files. Tolerant to missing files.
+ * Remove both action request and reply files. Only suppresses ENOENT (file not found).
  */
 export async function cleanupActionFiles(feature: string): Promise<void> {
   validateFeature(feature);
@@ -141,8 +142,10 @@ export async function cleanupActionFiles(feature: string): Promise<void> {
   const requestPath = getActionRequestPath(feature);
   const replyPath = getActionReplyPath(feature);
 
-  await Promise.all([
-    unlink(requestPath).catch(() => undefined),
-    unlink(replyPath).catch(() => undefined),
-  ]);
+  const safeUnlink = (path: string) =>
+    unlink(path).catch((err: NodeJS.ErrnoException) => {
+      if (err.code !== 'ENOENT') throw err;
+    });
+
+  await Promise.all([safeUnlink(requestPath), safeUnlink(replyPath)]);
 }

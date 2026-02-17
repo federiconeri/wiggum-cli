@@ -34,12 +34,9 @@ function extractActionRequestJson(): unknown {
 }
 
 describe('feature-loop.sh.tmpl — action request JSON schema', () => {
-  let actionRequest: Record<string, unknown>;
-
   it('parses the embedded JSON without errors', () => {
     const parsed = extractActionRequestJson();
     expect(parsed).toBeDefined();
-    actionRequest = parsed as Record<string, unknown>;
   });
 
   it('has a non-empty string id field', () => {
