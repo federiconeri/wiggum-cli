@@ -124,10 +124,16 @@ describe('polishGoalSentence', () => {
     expect(result).toBe('Refactor the auth module.');
   });
 
-  it('prepends "Implement" when no imperative verb is found after stripping framing', () => {
+  it('passes through common action verbs after stripping framing (no double-verb)', () => {
     const result = polishGoalSentence('I want to achieve a faster build pipeline.');
-    // Strips "I want to", leaving "achieve …" — not in allowed verbs list
-    expect(result).toBe('Implement achieve a faster build pipeline.');
+    // Strips "I want to", leaving "achieve …" — now in allowed verbs list
+    expect(result).toBe('Achieve a faster build pipeline.');
+  });
+
+  it('prepends "Implement" when no imperative verb is found after stripping framing', () => {
+    const result = polishGoalSentence('I want to revamp the entire codebase.');
+    // Strips "I want to", leaving "revamp …" — not in allowed verbs list
+    expect(result).toBe('Implement revamp the entire codebase.');
   });
 
   it('passes through text already starting with an allowed imperative verb', () => {
