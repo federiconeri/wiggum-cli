@@ -30,13 +30,23 @@ export interface SpecCompletionSummaryProps {
 
 const MAX_RECAP_SOURCE_LENGTH = 1200;
 
-/** Strip filler prefixes ('you want', 'understood', 'got it') from AI recap text and capitalize. */
+/** Strip filler prefixes from AI recap text and capitalize. */
 export function normalizeRecap(text: string): string {
   let result = text.trim();
   result = result.replace(/^[^a-z0-9]+/i, '');
   result = result.replace(/^you want\s*/i, '');
+  result = result.replace(/^you're\s+\w+ing\s+to\s*/i, '');
+  result = result.replace(/^you'd like to\s*/i, '');
+  result = result.replace(/^you need to\s*/i, '');
+  result = result.replace(/^you would like to\s*/i, '');
   result = result.replace(/^understood[:,]?\s*/i, '');
   result = result.replace(/^got it[-\u2014:]*\s*/i, '');
+  result = result.replace(/^i understand\s*(that\s*)?/i, '');
+  result = result.replace(/^so you\s*/i, '');
+  result = result.replace(/^to summarize[:,]?\s*/i, '');
+  result = result.replace(/^in summary[:,]?\s*/i, '');
+  result = result.replace(/^here'?s what I understand[:,]?\s*/i, '');
+  if (!result) return text.trim();
   return result.charAt(0).toUpperCase() + result.slice(1);
 }
 
@@ -96,7 +106,9 @@ export function extractRecap(messages: Message[], featureName: string) {
 
   const recapCandidates = assistantParagraphs
     .map((para) => para.replace(/^[^a-z0-9]+/i, '').trim())
-    .filter((para) => /^(you want|understood|got it)/i.test(para))
+    .filter((para) =>
+      /^(you want|you're\s+\w+ing\s+to|you'd like|you need|you would like|understood|got it|i understand|so you|to summarize|in summary|here'?s what)/i.test(para)
+    )
     .map((para) => para.split(/next question:/i)[0]!.trim())
     .filter((para) => para.length > 0);
 

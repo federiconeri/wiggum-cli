@@ -42,6 +42,26 @@ describe('normalizeRecap', () => {
     expect(normalizeRecap('got it— using React for the frontend')).toBe('Using React for the frontend');
   });
 
+  it('strips "you\'re aiming to" prefix', () => {
+    expect(normalizeRecap("you're aiming to unblock loops with an action inbox")).toBe('Unblock loops with an action inbox');
+  });
+
+  it('strips "you\'re looking to" prefix', () => {
+    expect(normalizeRecap("you're looking to add dark mode support")).toBe('Add dark mode support');
+  });
+
+  it('strips "I understand" prefix', () => {
+    expect(normalizeRecap('I understand that you need a login page')).toBe('You need a login page');
+  });
+
+  it('strips "so you" prefix', () => {
+    expect(normalizeRecap('so you want to build a REST API')).toBe('Want to build a REST API');
+  });
+
+  it('strips "to summarize" prefix', () => {
+    expect(normalizeRecap('to summarize, the feature needs auth and roles')).toBe('The feature needs auth and roles');
+  });
+
   it('capitalizes the first character', () => {
     expect(normalizeRecap('  hello')).toBe('Hello');
   });
@@ -159,6 +179,30 @@ describe('extractRecap', () => {
       msg('assistant', 'Got it - Express with PostgreSQL for the backend API.'),
     ];
     const result = extractRecap(messages, 'task-app');
+    expect(result.decisions.length).toBeGreaterThan(0);
+  });
+
+  it('extracts goal from "you\'re aiming to" recap pattern', () => {
+    const messages = [
+      msg('user', 'I need to unblock loops waiting for user input'),
+      msg('assistant', "You're aiming to unblock loops by adding a file-based action inbox so the TUI can capture user decisions without extra terminals."),
+    ];
+    const result = extractRecap(messages, 'unblock-loops');
+    // Should detect the AI recap and produce a clean goal, not "Implement you're aiming to..."
+    expect(result.goalCandidate).not.toContain("you're");
+    expect(result.goalCandidate).toContain('unblock');
+  });
+
+  it('extracts decisions from varied AI recap phrasings', () => {
+    const messages = [
+      msg('user', 'Build a notification system'),
+      msg('assistant', "You're looking to build a real-time notification system with push support."),
+      msg('user', 'Use WebSockets for real-time'),
+      msg('assistant', "I understand that you want WebSocket-based delivery with fallback to polling."),
+      msg('user', 'Store in PostgreSQL'),
+      msg('assistant', "So you need PostgreSQL storage with a read/unread status per user."),
+    ];
+    const result = extractRecap(messages, 'notifications');
     expect(result.decisions.length).toBeGreaterThan(0);
   });
 

@@ -55,10 +55,14 @@ const FRAMING_PATTERNS: Array<[RegExp, string]> = [
   [/^i would like to\s*/i, ''],
   [/^we will\s*/i, ''],
   [/^we want to\s*/i, ''],
+  [/^we need to\s*/i, ''],
+  [/^you're\s+\w+ing\s+to\s*/i, ''],
+  [/^you'd like to\s*/i, ''],
+  [/^you want to\s*/i, ''],
+  [/^you need to\s*/i, ''],
   [/^this spec covers\s*/i, ''],
   [/^this spec describes\s*/i, ''],
   [/^the goal is to\s*/i, ''],
-  [/^we need to\s*/i, ''],
   // Handles normalizeRecap output like "To build …" (stripped "you want" prefix)
   [/^to\s+/i, ''],
 ];

@@ -124,6 +124,26 @@ describe('polishGoalSentence', () => {
     expect(result).toBe('Refactor the auth module.');
   });
 
+  it('rewrites "You\'re aiming to …" to imperative form', () => {
+    const result = polishGoalSentence("You're aiming to unblock loops by adding an action inbox.");
+    expect(result).toBe('Implement unblock loops by adding an action inbox.');
+  });
+
+  it('rewrites "You\'d like to …" to imperative form', () => {
+    const result = polishGoalSentence("You'd like to add dark mode support.");
+    expect(result).toBe('Add dark mode support.');
+  });
+
+  it('rewrites "You want to …" to imperative form', () => {
+    const result = polishGoalSentence('You want to build a notification system.');
+    expect(result).toBe('Build a notification system.');
+  });
+
+  it('rewrites "You need to …" to imperative form', () => {
+    const result = polishGoalSentence('You need to fix the auth flow.');
+    expect(result).toBe('Fix the auth flow.');
+  });
+
   it('passes through common action verbs after stripping framing (no double-verb)', () => {
     const result = polishGoalSentence('I want to achieve a faster build pipeline.');
     // Strips "I want to", leaving "achieve …" — now in allowed verbs list
