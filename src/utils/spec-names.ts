@@ -1,5 +1,4 @@
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
 
 /**
  * Reads top-level .md files from the given directory and returns their names

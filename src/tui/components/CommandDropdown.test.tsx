@@ -60,8 +60,7 @@ describe('CommandDropdown', () => {
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    // 'in' matches 'init' and 'sync' (s-y-n-c: i not present)...
-    // Actually 'in' fuzzy in 'init': i→i, n→n ✓; in 'sync': i not in sync → false
+    // 'in' fuzzy-matches 'init' (i→i, n→n) but not 'sync' (no 'i')
     expect(frame).toContain('init');
     unmount();
   });

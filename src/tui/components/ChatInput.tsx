@@ -345,11 +345,10 @@ export function ChatInput({
   const handleSpecSelect = useCallback(
     (specName: string) => {
       const newValue = `/run ${specName}`;
-      addToHistory(newValue);
       updateValue(newValue, newValue.length, true);
       setShowDropdown(false);
     },
-    [addToHistory, updateValue]
+    [updateValue]
   );
 
   /**

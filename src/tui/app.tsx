@@ -136,6 +136,15 @@ export function App({
 
           savedPath = join(specsDir, `${featureName}.md`);
           writeFileSync(savedPath, spec, 'utf-8');
+
+          // Refresh spec name cache so the new spec shows in /run autocomplete
+          try {
+            const updatedSpecNames = await listSpecNames(specsDir);
+            setSessionState((prev) => ({ ...prev, specNames: updatedSpecNames }));
+          } catch {
+            // Non-critical: autocomplete will update on next restart
+          }
+
           onComplete?.(savedPath);
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
