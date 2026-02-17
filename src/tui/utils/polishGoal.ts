@@ -169,6 +169,11 @@ export function polishGoalSentence(text: string): string {
     }
   }
 
+  // Guard: if stripping left nothing (e.g. "I want to" with no continuation)
+  if (result.length === 0) {
+    return 'Implement the requested feature.';
+  }
+
   // 4. Single-sentence enforcement
   result = toOneSentence(result);
 

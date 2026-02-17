@@ -136,6 +136,11 @@ describe('polishGoalSentence', () => {
     expect(result).toBe('Implement revamp the entire codebase.');
   });
 
+  it('falls back gracefully when framing strip leaves empty text', () => {
+    const result = polishGoalSentence('I want to');
+    expect(result).toBe('Implement the requested feature.');
+  });
+
   it('passes through text already starting with an allowed imperative verb', () => {
     const result = polishGoalSentence('Add a user authentication system.');
     expect(result).toBe('Add a user authentication system.');
