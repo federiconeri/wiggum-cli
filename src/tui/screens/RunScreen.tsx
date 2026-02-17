@@ -675,7 +675,7 @@ export function RunScreen({
       onCancel={() => setShowConfirm(false)}
       initialValue={false}
     />
-  ) : actionRequest && actionSelectOptions ? (
+  ) : !completionSummary && actionRequest && actionSelectOptions ? (
     <Select<string>
       message={actionRequest.prompt}
       options={actionSelectOptions}
