@@ -355,9 +355,7 @@ export function RunScreen({
     } else {
       // File cleaned up by shell — reset tracking so future requests work
       handledActionIdRef.current = null;
-      if (actionRequest) {
-        setActionRequest(null);
-      }
+      setActionRequest((prev) => prev ? null : prev);
     }
 
     // In monitor mode, detect completion (only fire once)
@@ -402,7 +400,12 @@ export function RunScreen({
         logger.error(`Failed to persist summary file for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
-  }, [featureName, projectRoot, monitorOnly, actionRequest]);
+  }, [featureName, projectRoot, monitorOnly]);
+
+  // Keep a stable ref to the latest refreshStatus so the spawn effect
+  // can schedule polls without re-running when refreshStatus changes.
+  const refreshStatusRef = useRef(refreshStatus);
+  useEffect(() => { refreshStatusRef.current = refreshStatus; }, [refreshStatus]);
 
   const stopLoop = useCallback(() => {
     stopRequestedRef.current = true;
@@ -455,11 +458,11 @@ export function RunScreen({
         }
         if (cancelled) return;
         setIsStarting(false);
-        refreshStatus().catch((err) => {
+        refreshStatusRef.current().catch((err: unknown) => {
           logger.warn(`Status refresh failed: ${err instanceof Error ? err.message : String(err)}`);
         });
         pollTimer = setInterval(() => {
-          refreshStatus().catch((err) => {
+          refreshStatusRef.current().catch((err: unknown) => {
             logger.warn(`Status refresh failed: ${err instanceof Error ? err.message : String(err)}`);
           });
         }, POLL_INTERVAL_MS);
@@ -548,12 +551,12 @@ export function RunScreen({
           }
 
           pollTimer = setInterval(() => {
-            refreshStatus().catch((err) => {
+            refreshStatusRef.current().catch((err: unknown) => {
               logger.warn(`Status refresh failed: ${err instanceof Error ? err.message : String(err)}`);
             });
           }, POLL_INTERVAL_MS);
 
-          refreshStatus().catch((err) => {
+          refreshStatusRef.current().catch((err: unknown) => {
             logger.warn(`Status refresh failed: ${err instanceof Error ? err.message : String(err)}`);
           });
 
@@ -634,7 +637,10 @@ export function RunScreen({
       isMountedRef.current = false;
       if (pollTimer) clearInterval(pollTimer);
     };
-  }, [featureName, projectRoot, refreshStatus, monitorOnly, sessionState.config]);
+  // Note: refreshStatusRef (not refreshStatus) is used inside to avoid re-spawning
+  // the child process when the callback identity changes due to actionRequest updates.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [featureName, projectRoot, monitorOnly, sessionState.config]);
 
   const totalTasks = tasks.tasksDone + tasks.tasksPending;
   const totalE2e = tasks.e2eDone + tasks.e2ePending;

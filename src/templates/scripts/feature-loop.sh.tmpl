@@ -148,14 +148,14 @@ write_action_request() {
     cat > "$action_file" << 'EOF'
 {
   "id": "post_pr_choice",
-  "prompt": "Implementation complete. What would you like to do?",
+  "prompt": "Loop complete. What would you like to do?",
   "choices": [
+    {"id": "done", "label": "Done — end loop"},
     {"id": "merge_local", "label": "Merge back to main locally"},
-    {"id": "push_pr", "label": "Push and create PR"},
     {"id": "keep_branch", "label": "Keep branch as-is"},
     {"id": "discard", "label": "Discard this work"}
   ],
-  "default": "keep_branch"
+  "default": "done"
 }
 EOF
     echo "Action request written: $action_file"
@@ -432,7 +432,11 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
+            echo "Fix the issues found in the code review above. Run git diff main to see the current changes, then:
+1. Fix each issue referenced in the review
+2. Run tests: npm test
+3. Commit and push the fixes
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
             parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
         fi
     done
@@ -460,7 +464,11 @@ else
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
+            echo "Fix the issues found in the code review above. Run git diff main to see the current changes, then:
+1. Fix each issue referenced in the review
+2. Run tests: npm test
+3. Commit and push the fixes
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
             parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
         fi
     done
@@ -478,14 +486,14 @@ echo "User chose: $CHOSEN_ACTION"
 
 # Dispatch based on user choice
 case "$CHOSEN_ACTION" in
+    done)
+        echo "Loop complete. Exiting."
+        ;;
     merge_local)
         echo "Merging back to main locally..."
         git checkout main 2>/dev/null || git checkout master
         git merge --squash "$BRANCH" && git commit -m "feat($FEATURE): squash merge from $BRANCH"
         echo "Merged. You can delete the branch with: git branch -D $BRANCH"
-        ;;
-    push_pr)
-        echo "Branch and PR already created during review phase."
         ;;
     discard)
         echo "Discarding work on branch $BRANCH..."
