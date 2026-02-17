@@ -638,7 +638,14 @@ Respond with a VERY brief (1-2 sentence) summary of what you found relevant to t
       const interviewPrompt = `Based on what you learned about the project, briefly acknowledge the user's goals for "${this.featureName}" and ask your FIRST clarifying question.
 Ask only ONE question. Be concise.`;
 
-      const response = await this.conversation.chat(interviewPrompt);
+      let response = await this.conversation.chat(interviewPrompt);
+
+      // If the AI responded with only tool calls and no question text, retry once
+      if (!response || !response.trim() || !parseInterviewResponse(response)) {
+        const retryPrompt = `You explored the project but didn't ask a question yet. Please ask your FIRST clarifying question about "${this.featureName}" now. Ask only ONE question. Include an options block.`;
+        response = await this.conversation.chat(retryPrompt);
+      }
+
       this.emitParsedResponse(response);
 
       // Transition to interview phase
