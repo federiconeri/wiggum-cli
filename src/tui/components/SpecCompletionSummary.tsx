@@ -12,6 +12,7 @@ import { StatusLine } from './StatusLine.js';
 import { colors, theme } from '../theme.js';
 import { PHASE_CONFIGS } from '../hooks/useSpecGenerator.js';
 import type { Message } from './MessageList.js';
+import { selectGoalSource, polishGoalSentence } from '../utils/polishGoal.js';
 
 /**
  * Props for the SpecCompletionSummary component
@@ -29,13 +30,23 @@ export interface SpecCompletionSummaryProps {
 
 const MAX_RECAP_SOURCE_LENGTH = 1200;
 
-/** Strip filler prefixes ('you want', 'understood', 'got it') from AI recap text and capitalize. */
+/** Strip filler prefixes from AI recap text and capitalize. */
 export function normalizeRecap(text: string): string {
   let result = text.trim();
   result = result.replace(/^[^a-z0-9]+/i, '');
   result = result.replace(/^you want\s*/i, '');
+  result = result.replace(/^you're\s+\w+ing\s+to\s*/i, '');
+  result = result.replace(/^you'd like to\s*/i, '');
+  result = result.replace(/^you need to\s*/i, '');
+  result = result.replace(/^you would like to\s*/i, '');
   result = result.replace(/^understood[:,]?\s*/i, '');
   result = result.replace(/^got it[-\u2014:]*\s*/i, '');
+  result = result.replace(/^i understand\s*(that\s*)?/i, '');
+  result = result.replace(/^so you\s*/i, '');
+  result = result.replace(/^to summarize[:,]?\s*/i, '');
+  result = result.replace(/^in summary[:,]?\s*/i, '');
+  result = result.replace(/^here'?s what I understand[:,]?\s*/i, '');
+  if (!result) return text.trim();
   return result.charAt(0).toUpperCase() + result.slice(1);
 }
 
@@ -73,7 +84,8 @@ export function isUsefulDecision(entry: string): boolean {
 /**
  * Extract goal and key decisions from conversation messages.
  *
- * @returns `goalCandidate` — a one-line summary of the feature goal, and
+ * @returns `goalCandidate` — a one-line summary of the feature goal (polished
+ *          via selectGoalSource + polishGoalSentence), and
  *          `decisions` — up to 4 key decisions extracted from the conversation.
  */
 export function extractRecap(messages: Message[], featureName: string) {
@@ -94,15 +106,23 @@ export function extractRecap(messages: Message[], featureName: string) {
 
   const recapCandidates = assistantParagraphs
     .map((para) => para.replace(/^[^a-z0-9]+/i, '').trim())
-    .filter((para) => /^(you want|understood|got it)/i.test(para))
+    .filter((para) =>
+      /^(you want|you're\s+\w+ing\s+to|you'd like|you need|you would like|understood|got it|i understand|so you|to summarize|in summary|here'?s what)/i.test(para)
+    )
     .map((para) => para.split(/next question:/i)[0]!.trim())
     .filter((para) => para.length > 0);
 
-  const goalCandidate = recapCandidates.length > 0
-    ? normalizeRecap(recapCandidates[0]!)
-    : (nonUrlUserMessages.find((content) => content.length > 20)
-      ? normalizeUserDecision(nonUrlUserMessages.find((content) => content.length > 20)!)
-      : (nonUrlUserMessages[0] ? normalizeUserDecision(nonUrlUserMessages[0]) : `Define "${featureName}"`));
+  // Build structured inputs for the goal-source selector
+  const aiRecap = recapCandidates.length > 0 ? normalizeRecap(recapCandidates[0]!) : '';
+  const keyDecisions = recapCandidates.length > 1
+    ? recapCandidates.slice(1).map((c) => normalizeRecap(c)).filter(isUsefulDecision)
+    : [];
+  const firstSubstantialUserMessage =
+    nonUrlUserMessages.find((content) => content.length > 20) ?? nonUrlUserMessages[0] ?? `Define "${featureName}"`;
+  const userRequest = normalizeUserDecision(firstSubstantialUserMessage);
+
+  const { text: goalSourceText } = selectGoalSource({ aiRecap, keyDecisions, userRequest });
+  const goalCandidate = polishGoalSentence(goalSourceText);
 
   const decisions: string[] = [];
   const seen = new Set<string>();
@@ -162,7 +182,7 @@ export function SpecCompletionSummary({
       />
       <Box marginTop={1} flexDirection="column">
         <Text bold>Summary</Text>
-        <Text>- Goal: {summarizeText(goalCandidate)}</Text>
+        <Text>- Goal: {goalCandidate}</Text>
         <Text>- Outcome: Spec written to {specPath || `${featureName}.md`} ({totalLines} lines)</Text>
       </Box>
 
