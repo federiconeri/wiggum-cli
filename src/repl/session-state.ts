@@ -27,6 +27,8 @@ export interface SessionState {
   conversationContext?: string;
   /** Whether /init has been run in this session */
   initialized: boolean;
+  /** Cached spec names from the configured specs directory */
+  specNames?: string[];
 }
 
 /**

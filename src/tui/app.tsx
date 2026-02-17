@@ -17,6 +17,7 @@ import type { AIProvider } from '../ai/providers.js';
 import type { ScanResult } from '../scanner/types.js';
 import type { SessionState } from '../repl/session-state.js';
 import { loadConfigWithDefaults } from '../utils/config.js';
+import { listSpecNames } from '../utils/spec-names.js';
 import { logger } from '../utils/logger.js';
 import { InterviewScreen } from './screens/InterviewScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
@@ -135,6 +136,15 @@ export function App({
 
           savedPath = join(specsDir, `${featureName}.md`);
           writeFileSync(savedPath, spec, 'utf-8');
+
+          // Refresh spec name cache so the new spec shows in /run autocomplete
+          try {
+            const updatedSpecNames = await listSpecNames(specsDir);
+            setSessionState((prev) => ({ ...prev, specNames: updatedSpecNames }));
+          } catch {
+            // Non-critical: autocomplete will update on next restart
+          }
+
           onComplete?.(savedPath);
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -185,8 +195,19 @@ export function App({
   /**
    * Handle init completion - update state and navigate to shell
    */
-  const handleInitComplete = useCallback((newState: SessionState, generatedFiles?: string[]) => {
-    setSessionState(newState);
+  const handleInitComplete = useCallback(async (newState: SessionState, generatedFiles?: string[]) => {
+    // Refresh spec names after init (config may have changed)
+    let specNames: string[] = [];
+    try {
+      const specsDir = join(
+        newState.projectRoot,
+        newState.config?.paths.specs ?? '.ralph/specs'
+      );
+      specNames = await listSpecNames(specsDir);
+    } catch {
+      // Non-critical: autocomplete will work without spec names
+    }
+    setSessionState({ ...newState, specNames });
     const fileCount = generatedFiles?.length ?? 0;
     const msg = fileCount > 0
       ? `\u2713 Initialization complete. Generated ${fileCount} configuration file${fileCount === 1 ? '' : 's'}.`
