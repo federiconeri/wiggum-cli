@@ -138,6 +138,68 @@ parse_and_accumulate_tokens() {
     echo "${new_input}|${new_output}" > "$TOKENS_FILE"
 }
 
+# Action inbox: write request file if not already present
+write_action_request() {
+    local action_file="/tmp/ralph-loop-${FEATURE}.action.json"
+    if [ -f "$action_file" ]; then
+        echo "WARNING: Action request file already exists, skipping write: $action_file" >&2
+        return 0
+    fi
+    cat > "$action_file" << 'EOF'
+{
+  "id": "post_pr_choice",
+  "prompt": "Implementation complete. What would you like to do?",
+  "choices": [
+    {"id": "merge_local", "label": "Merge back to main locally"},
+    {"id": "push_pr", "label": "Push and create PR"},
+    {"id": "keep_branch", "label": "Keep branch as-is"},
+    {"id": "discard", "label": "Discard this work"}
+  ],
+  "default": "keep_branch"
+}
+EOF
+    echo "Action request written: $action_file"
+}
+
+# Action inbox: poll for reply file, fallback to default after 15 minutes
+poll_action_reply() {
+    local action_file="/tmp/ralph-loop-${FEATURE}.action.json"
+    local reply_file="/tmp/ralph-loop-${FEATURE}.action.reply.json"
+    local default_choice="keep_branch"
+    local timeout=900  # 15 minutes in seconds
+    local elapsed=0
+
+    # Read default from action file if present
+    if [ -f "$action_file" ]; then
+        local parsed_default
+        parsed_default=$(node -e "try { const d=require('fs').readFileSync('$action_file','utf8'); console.log(JSON.parse(d).default||'keep_branch'); } catch(e) { console.log('keep_branch'); }" 2>/dev/null || echo "keep_branch")
+        if [ -n "$parsed_default" ]; then
+            default_choice="$parsed_default"
+        fi
+    fi
+
+    while [ $elapsed -lt $timeout ]; do
+        if [ -f "$reply_file" ]; then
+            local choice
+            choice=$(node -e "try { const d=require('fs').readFileSync('$reply_file','utf8'); console.log(JSON.parse(d).choice||''); } catch(e) { console.log(''); }" 2>/dev/null || echo "")
+            if [ -n "$choice" ]; then
+                echo "User selected: $choice" >&2
+                # Cleanup both files
+                rm -f "$action_file" "$reply_file" 2>/dev/null || true
+                echo "$choice"
+                return 0
+            fi
+        fi
+        sleep 1
+        elapsed=$((elapsed + 1))
+    done
+
+    # Timeout: use default
+    echo "Action reply timeout after ${timeout}s, using default: $default_choice" >&2
+    rm -f "$action_file" "$reply_file" 2>/dev/null || true
+    echo "$default_choice"
+}
+
 # Initialize tokens
 init_tokens
 
@@ -358,6 +420,12 @@ else
 fi
 parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
 write_phase_end "pr_review" "$PR_STATUS"
+
+# Phase 7.5: Post-completion action request
+echo "======================== ACTION REQUEST PHASE ========================"
+write_action_request
+CHOSEN_ACTION=$(poll_action_reply)
+echo "User chose: $CHOSEN_ACTION"
 
 # Persist final status for TUI summaries
 if ! echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE"; then

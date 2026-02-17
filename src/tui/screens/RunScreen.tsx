@@ -18,6 +18,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Confirm } from '../components/Confirm.js';
+import { Select, type SelectOption } from '../components/Select.js';
 import { AppShell } from '../components/AppShell.js';
 import { RunCompletionSummary } from '../components/RunCompletionSummary.js';
 import { colors, theme } from '../theme.js';
@@ -35,6 +36,7 @@ import { writeRunSummaryFile } from '../../utils/summary-file.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
+import { readActionRequest, writeActionReply, type ActionRequest } from '../utils/action-inbox.js';
 
 /**
  * Phase execution status and timing
@@ -290,6 +292,7 @@ export function RunScreen({
   const [isStarting, setIsStarting] = useState(!monitorOnly);
   const [showConfirm, setShowConfirm] = useState(false);
   const [completionSummary, setCompletionSummary] = useState<RunSummary | null>(null);
+  const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
 
   const childRef = useRef<ChildProcess | null>(null);
   const stopRequestedRef = useRef(false);
@@ -312,6 +315,8 @@ export function RunScreen({
     }
 
     if (showConfirm) return;
+    // Action prompt handles its own input (Select component)
+    if (actionRequest) return;
     if (key.ctrl && input === 'c') {
       setShowConfirm(true);
       return;
@@ -337,6 +342,13 @@ export function RunScreen({
 
     if (!isMountedRef.current) return;
     setBranch(getGitBranch(projectRoot));
+
+    // Check for pending action request (loop waiting for user input)
+    const request = readActionRequest(featureName);
+    if (!isMountedRef.current) return;
+    if (request) {
+      setActionRequest(request);
+    }
 
     // In monitor mode, detect completion (only fire once)
     if (monitorOnly && !nextStatus.running && !completionSentRef.current) {
@@ -624,17 +636,52 @@ export function RunScreen({
   // Tips text
   const tips = completionSummary
     ? 'Enter to return to shell'
-    : monitorOnly
-      ? 'Ctrl+C stop, Esc back'
-      : 'Ctrl+C stop, Esc background';
+    : actionRequest
+      ? 'Select an option, Esc for default'
+      : monitorOnly
+        ? 'Ctrl+C stop, Esc back'
+        : 'Ctrl+C stop, Esc background';
 
-  // Input element (only show Confirm when stopping)
+  // Action select handler
+  const handleActionSelect = useCallback((choiceId: string) => {
+    if (!actionRequest) return;
+    writeActionReply(featureName, { id: actionRequest.id, choice: choiceId }).catch((err) => {
+      logger.error(`Failed to write action reply: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    setActionRequest(null);
+  }, [actionRequest, featureName]);
+
+  // Action cancel handler (Esc = use default)
+  const handleActionCancel = useCallback(() => {
+    if (!actionRequest) return;
+    writeActionReply(featureName, { id: actionRequest.id, choice: actionRequest.default }).catch((err) => {
+      logger.error(`Failed to write action reply (default): ${err instanceof Error ? err.message : String(err)}`);
+    });
+    setActionRequest(null);
+  }, [actionRequest, featureName]);
+
+  // Input element: completionSummary > showConfirm > actionRequest > null
+  const actionSelectOptions: SelectOption<string>[] | null = actionRequest
+    ? actionRequest.choices.map((c) => ({ value: c.id, label: c.label }))
+    : null;
+  const actionInitialIndex = actionRequest
+    ? Math.max(0, actionRequest.choices.findIndex((c) => c.id === actionRequest.default))
+    : 0;
+
   const inputElement = showConfirm ? (
     <Confirm
       message={stopRequestedRef.current ? 'Stopping loop...' : 'Stop the feature loop?'}
       onConfirm={handleConfirm}
       onCancel={() => setShowConfirm(false)}
       initialValue={false}
+    />
+  ) : actionRequest && actionSelectOptions ? (
+    <Select<string>
+      message={actionRequest.prompt}
+      options={actionSelectOptions}
+      onSelect={handleActionSelect}
+      onCancel={handleActionCancel}
+      initialIndex={actionInitialIndex}
     />
   ) : null;
 
