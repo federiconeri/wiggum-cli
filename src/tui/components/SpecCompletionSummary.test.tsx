@@ -127,7 +127,8 @@ describe('extractRecap', () => {
 
   it('falls back to feature name when no messages', () => {
     const result = extractRecap([], 'my-feature');
-    expect(result.goalCandidate).toBe('Define "my-feature"');
+    // polishGoalSentence normalises to an imperative sentence with trailing period
+    expect(result.goalCandidate).toContain('my-feature');
     expect(result.decisions).toEqual([]);
   });
 
@@ -213,6 +214,72 @@ describe('SpecCompletionSummary component', () => {
 
     const frame = stripAnsi(lastFrame() ?? '');
     expect(frame).toContain('3 lines');
+    unmount();
+  });
+
+  it('renders full Goal text without truncation for long goals', () => {
+    // Construct a long user message (> 160 chars)
+    const longGoal = 'Add a comprehensive user authentication system with JWT tokens, refresh token rotation, role-based access control, and a secure password reset flow via email with expiring links.';
+    expect(longGoal.length).toBeGreaterThan(160);
+
+    const messages = [
+      { id: 'msg-1', role: 'user' as const, content: longGoal },
+    ];
+
+    const { lastFrame, unmount } = render(
+      <SpecCompletionSummary
+        featureName="auth-system"
+        spec="# Auth Spec\n\nContent here."
+        specPath="specs/auth-system.md"
+        messages={messages}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    // The key distinguishing words from the long goal should all be present
+    expect(frame).toContain('authentication');
+    expect(frame).toContain('JWT');
+    // Should NOT be truncated with ellipsis mid-sentence
+    expect(frame).not.toMatch(/\u2026\s*$/m);
+    unmount();
+  });
+
+  it('Goal line starts with an imperative verb', () => {
+    const messages = [
+      { id: 'msg-1', role: 'user' as const, content: 'I want to build a dashboard for tracking metrics' },
+    ];
+
+    const { lastFrame, unmount } = render(
+      <SpecCompletionSummary
+        featureName="dashboard"
+        spec="# Dashboard Spec"
+        specPath="specs/dashboard.md"
+        messages={messages}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    const goalLineMatch = frame.match(/- Goal: (.+)/);
+    expect(goalLineMatch).not.toBeNull();
+    const goalText = goalLineMatch![1]!;
+    const imperativeVerbs = /^(Implement|Add|Improve|Fix|Refactor|Support|Enable|Create|Update|Build|Extend|Migrate|Remove|Replace|Integrate|Define)\b/i;
+    expect(goalText).toMatch(imperativeVerbs);
+    unmount();
+  });
+
+  it('renders without errors when messages are empty (graceful degradation)', () => {
+    const { lastFrame, unmount } = render(
+      <SpecCompletionSummary
+        featureName="empty-feature"
+        spec="# Spec"
+        specPath="specs/empty-feature.md"
+        messages={[]}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Goal:');
+    expect(frame).toContain('empty-feature');
     unmount();
   });
 });

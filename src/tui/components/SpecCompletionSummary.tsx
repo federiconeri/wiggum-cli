@@ -12,6 +12,7 @@ import { StatusLine } from './StatusLine.js';
 import { colors, theme } from '../theme.js';
 import { PHASE_CONFIGS } from '../hooks/useSpecGenerator.js';
 import type { Message } from './MessageList.js';
+import { selectGoalSource, polishGoalSentence } from '../utils/polishGoal.js';
 
 /**
  * Props for the SpecCompletionSummary component
@@ -73,7 +74,8 @@ export function isUsefulDecision(entry: string): boolean {
 /**
  * Extract goal and key decisions from conversation messages.
  *
- * @returns `goalCandidate` — a one-line summary of the feature goal, and
+ * @returns `goalCandidate` — a one-line summary of the feature goal (polished
+ *          via selectGoalSource + polishGoalSentence), and
  *          `decisions` — up to 4 key decisions extracted from the conversation.
  */
 export function extractRecap(messages: Message[], featureName: string) {
@@ -98,11 +100,17 @@ export function extractRecap(messages: Message[], featureName: string) {
     .map((para) => para.split(/next question:/i)[0]!.trim())
     .filter((para) => para.length > 0);
 
-  const goalCandidate = recapCandidates.length > 0
-    ? normalizeRecap(recapCandidates[0]!)
-    : (nonUrlUserMessages.find((content) => content.length > 20)
-      ? normalizeUserDecision(nonUrlUserMessages.find((content) => content.length > 20)!)
-      : (nonUrlUserMessages[0] ? normalizeUserDecision(nonUrlUserMessages[0]) : `Define "${featureName}"`));
+  // Build structured inputs for the goal-source selector
+  const aiRecap = recapCandidates.length > 0 ? normalizeRecap(recapCandidates[0]!) : '';
+  const keyDecisions = recapCandidates.length > 1
+    ? recapCandidates.slice(1).map((c) => normalizeRecap(c)).filter(isUsefulDecision)
+    : [];
+  const firstSubstantialUserMessage =
+    nonUrlUserMessages.find((content) => content.length > 20) ?? nonUrlUserMessages[0] ?? `Define "${featureName}"`;
+  const userRequest = normalizeUserDecision(firstSubstantialUserMessage);
+
+  const { text: goalSourceText } = selectGoalSource({ aiRecap, keyDecisions, userRequest });
+  const goalCandidate = polishGoalSentence(goalSourceText);
 
   const decisions: string[] = [];
   const seen = new Set<string>();
@@ -162,7 +170,7 @@ export function SpecCompletionSummary({
       />
       <Box marginTop={1} flexDirection="column">
         <Text bold>Summary</Text>
-        <Text>- Goal: {summarizeText(goalCandidate)}</Text>
+        <Text>- Goal: {goalCandidate}</Text>
         <Text>- Outcome: Spec written to {specPath || `${featureName}.md`} ({totalLines} lines)</Text>
       </Box>
 
