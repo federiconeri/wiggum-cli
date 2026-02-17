@@ -39,6 +39,7 @@ export interface CommandDropdownProps {
  * Calculate the max width needed for command names
  */
 function getMaxCommandWidth(commands: Command[]): number {
+  if (commands.length === 0) return 0;
   return Math.max(...commands.map((cmd) => cmd.name.length + 1)); // +1 for the /
 }
 

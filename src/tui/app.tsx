@@ -188,11 +188,16 @@ export function App({
    */
   const handleInitComplete = useCallback(async (newState: SessionState, generatedFiles?: string[]) => {
     // Refresh spec names after init (config may have changed)
-    const specsDir = join(
-      newState.projectRoot,
-      newState.config?.paths.specs ?? '.ralph/specs'
-    );
-    const specNames = await listSpecNames(specsDir);
+    let specNames: string[] = [];
+    try {
+      const specsDir = join(
+        newState.projectRoot,
+        newState.config?.paths.specs ?? '.ralph/specs'
+      );
+      specNames = await listSpecNames(specsDir);
+    } catch {
+      // Non-critical: autocomplete will work without spec names
+    }
     setSessionState({ ...newState, specNames });
     const fileCount = generatedFiles?.length ?? 0;
     const msg = fileCount > 0

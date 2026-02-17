@@ -139,7 +139,7 @@ export function ChatInput({
         setShowDropdown(false);
       }
     },
-    [clampCursor, resetNavigation]
+    [clampCursor, resetNavigation, specSuggestions]
   );
 
 
