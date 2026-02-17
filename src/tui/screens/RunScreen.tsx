@@ -18,6 +18,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { closeSync, existsSync, openSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { Confirm } from '../components/Confirm.js';
+import { Select, type SelectOption } from '../components/Select.js';
 import { AppShell } from '../components/AppShell.js';
 import { RunCompletionSummary } from '../components/RunCompletionSummary.js';
 import { colors, theme } from '../theme.js';
@@ -35,6 +36,7 @@ import { writeRunSummaryFile } from '../../utils/summary-file.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
+import { readActionRequest, writeActionReply, cleanupActionFiles, type ActionRequest } from '../utils/action-inbox.js';
 
 /**
  * Phase execution status and timing
@@ -290,6 +292,7 @@ export function RunScreen({
   const [isStarting, setIsStarting] = useState(!monitorOnly);
   const [showConfirm, setShowConfirm] = useState(false);
   const [completionSummary, setCompletionSummary] = useState<RunSummary | null>(null);
+  const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
 
   const childRef = useRef<ChildProcess | null>(null);
   const stopRequestedRef = useRef(false);
@@ -301,6 +304,7 @@ export function RunScreen({
   const scriptsDirRef = useRef<string>('.ralph/scripts');
   const maxIterationsRef = useRef<number>(0);
   const maxE2eAttemptsRef = useRef<number>(0);
+  const handledActionIdRef = useRef<string | null>(null);
 
   useInput((input, key) => {
     // If showing completion summary, Enter or Esc dismisses
@@ -312,6 +316,8 @@ export function RunScreen({
     }
 
     if (showConfirm) return;
+    // Action prompt handles its own input (Select component)
+    if (actionRequest) return;
     if (key.ctrl && input === 'c') {
       setShowConfirm(true);
       return;
@@ -337,6 +343,22 @@ export function RunScreen({
 
     if (!isMountedRef.current) return;
     setBranch(getGitBranch(projectRoot));
+
+    // Check for pending action request (loop waiting for user input)
+    const request = readActionRequest(featureName);
+    if (!isMountedRef.current) return;
+    if (request) {
+      // Only show if we haven't already handled this action
+      if (request.id !== handledActionIdRef.current) {
+        setActionRequest(request);
+      }
+    } else {
+      // File cleaned up by shell — reset tracking so future requests work
+      handledActionIdRef.current = null;
+      if (actionRequest) {
+        setActionRequest(null);
+      }
+    }
 
     // In monitor mode, detect completion (only fire once)
     if (monitorOnly && !nextStatus.running && !completionSentRef.current) {
@@ -380,7 +402,7 @@ export function RunScreen({
         logger.error(`Failed to persist summary file for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
-  }, [featureName, projectRoot, monitorOnly]);
+  }, [featureName, projectRoot, monitorOnly, actionRequest]);
 
   const stopLoop = useCallback(() => {
     stopRequestedRef.current = true;
@@ -487,6 +509,11 @@ export function RunScreen({
           setIsStarting(false);
           return;
         }
+
+        // Clean up stale action files from previous runs
+        await cleanupActionFiles(featureName).catch((err) => {
+          logger.warn(`Failed to clean up stale action files: ${err instanceof Error ? err.message : String(err)}`);
+        });
 
         const logPath = getLoopLogPath(featureName);
         const logFd = openSync(logPath, 'a');
@@ -624,17 +651,60 @@ export function RunScreen({
   // Tips text
   const tips = completionSummary
     ? 'Enter to return to shell'
-    : monitorOnly
-      ? 'Ctrl+C stop, Esc back'
-      : 'Ctrl+C stop, Esc background';
+    : actionRequest
+      ? 'Select an option, Esc for default'
+      : monitorOnly
+        ? 'Ctrl+C stop, Esc back'
+        : 'Ctrl+C stop, Esc background';
 
-  // Input element (only show Confirm when stopping)
+  // Action select handler — awaits write before clearing prompt
+  const handleActionSelect = useCallback(async (choiceId: string) => {
+    if (!actionRequest) return;
+    try {
+      await writeActionReply(featureName, { id: actionRequest.id, choice: choiceId });
+      handledActionIdRef.current = actionRequest.id;
+      setActionRequest(null);
+    } catch (err) {
+      logger.error(`Failed to write action reply: ${err instanceof Error ? err.message : String(err)}`);
+      setError(`Failed to send action reply. The loop may time out to the default.`);
+    }
+  }, [actionRequest, featureName]);
+
+  // Action cancel handler (Esc = use default) — awaits write before clearing
+  const handleActionCancel = useCallback(async () => {
+    if (!actionRequest) return;
+    try {
+      await writeActionReply(featureName, { id: actionRequest.id, choice: actionRequest.default });
+      handledActionIdRef.current = actionRequest.id;
+      setActionRequest(null);
+    } catch (err) {
+      logger.error(`Failed to write action reply (default): ${err instanceof Error ? err.message : String(err)}`);
+      setError(`Failed to send action reply. The loop may time out to the default.`);
+    }
+  }, [actionRequest, featureName]);
+
+  // Input element: completionSummary > showConfirm > actionRequest > null
+  const actionSelectOptions: SelectOption<string>[] | null = actionRequest
+    ? actionRequest.choices.map((c) => ({ value: c.id, label: c.label }))
+    : null;
+  const actionInitialIndex = actionRequest
+    ? Math.max(0, actionRequest.choices.findIndex((c) => c.id === actionRequest.default))
+    : 0;
+
   const inputElement = showConfirm ? (
     <Confirm
       message={stopRequestedRef.current ? 'Stopping loop...' : 'Stop the feature loop?'}
       onConfirm={handleConfirm}
       onCancel={() => setShowConfirm(false)}
       initialValue={false}
+    />
+  ) : !completionSummary && actionRequest && actionSelectOptions ? (
+    <Select<string>
+      message={actionRequest.prompt}
+      options={actionSelectOptions}
+      onSelect={handleActionSelect}
+      onCancel={handleActionCancel}
+      initialIndex={actionInitialIndex}
     />
   ) : null;
 
