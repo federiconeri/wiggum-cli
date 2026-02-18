@@ -407,6 +407,31 @@ export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 PR_STATUS="success"
 MAX_REVIEW_ATTEMPTS=3
 
+# Check for review approval in stdout or latest PR comment.
+# Returns 0 (true) if approved, 1 (false) otherwise.
+check_review_approved() {
+    local output_file="$1"
+
+    # Primary: check stdout for explicit verdict line
+    if grep -qi "VERDICT:.*APPROVED" "$output_file" 2>/dev/null; then
+        # Make sure it's not "NOT APPROVED"
+        if ! grep -qi "VERDICT:.*NOT APPROVED" "$output_file" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    # Fallback: check the latest PR comment for approval signal
+    local latest_comment
+    latest_comment=$(gh pr view "$BRANCH" --json comments --jq '.comments[-1].body' 2>/dev/null || echo "")
+    if echo "$latest_comment" | grep -qi "VERDICT:.*APPROVED\|Verdict:.*APPROVED" 2>/dev/null; then
+        if ! echo "$latest_comment" | grep -qi "NOT APPROVED" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
 if [ "$REVIEW_MODE" = "manual" ]; then
     if ! cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
         PR_STATUS="failed"
@@ -423,8 +448,8 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
         cat "$PROMPTS_DIR/PROMPT_review_merge.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
         parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
 
-        # Check if output contains APPROVED
-        if grep -qi "APPROVED" "$CLAUDE_OUTPUT" 2>/dev/null; then
+        # Check stdout and PR comment for approval
+        if check_review_approved "$CLAUDE_OUTPUT"; then
             echo "Review approved!"
             REVIEW_APPROVED=true
             break
@@ -455,8 +480,8 @@ else
         cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
         parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
 
-        # Check if output contains APPROVED
-        if grep -qi "APPROVED" "$CLAUDE_OUTPUT" 2>/dev/null; then
+        # Check stdout and PR comment for approval
+        if check_review_approved "$CLAUDE_OUTPUT"; then
             echo "Review approved!"
             REVIEW_APPROVED=true
             break
