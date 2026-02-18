@@ -18,7 +18,14 @@ export async function listSpecNames(specsDir: string): Promise<string[]> {
   }
 
   return entries
-    .filter((e) => e.isFile() && e.name.endsWith('.md'))
+    .filter(
+      (e) =>
+        e.isFile() &&
+        e.name.endsWith('.md') &&
+        !e.name.startsWith('_') &&
+        e.name !== 'README.md' &&
+        !e.name.endsWith('-implementation-plan.md')
+    )
     .map((e) => e.name.slice(0, -3))
     .sort();
 }

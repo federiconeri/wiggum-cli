@@ -90,12 +90,17 @@ Run: git diff main
 
 Respond with:
 - APPROVED if everything looks good
-- Or list specific issues with file:line references that need to be fixed"
+- Or list specific issues with file:line references that need to be fixed
+
+IMPORTANT: After posting any PR review comment, you MUST print your final verdict as the LAST line of your output. Print exactly one of:
+  VERDICT: APPROVED
+  VERDICT: NOT APPROVED
+This line is parsed by the automation — do not omit it."
 fi
 ```
 
 **Handle review feedback:**
-- If Claude outputs "APPROVED" -> Done. The PR is ready for manual merge by the user.
+- If Claude outputs "VERDICT: APPROVED" -> Done. The PR is ready for manual merge by the user.
 - If Claude lists issues:
   1. Address each issue with code fixes
   2. Commit: `git -C {{appDir}} add -A && git -C {{appDir}} commit -m "fix($FEATURE): address review feedback"`

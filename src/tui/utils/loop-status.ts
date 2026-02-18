@@ -3,7 +3,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
@@ -22,6 +22,23 @@ export interface TaskCounts {
   tasksPending: number;
   e2eDone: number;
   e2ePending: number;
+}
+
+/**
+ * Phase execution status and timing.
+ * Shared between RunScreen and loop-status utilities.
+ */
+export interface PhaseInfo {
+  /** Unique phase identifier (e.g., 'planning', 'implementation') */
+  id: string;
+  /** Human-readable phase label */
+  label: string;
+  /** Phase completion status */
+  status: 'success' | 'skipped' | 'failed';
+  /** Duration in milliseconds, if available */
+  durationMs?: number;
+  /** Number of iterations in this phase (e.g., for implementation) */
+  iterations?: number;
 }
 
 /**
@@ -220,4 +237,165 @@ export function formatNumber(num: number): string {
     return (num / 1000).toFixed(1) + 'K';
   }
   return String(num);
+}
+
+/**
+ * Format epoch milliseconds as a relative time string (e.g., "30s ago", "2m ago", "1h ago").
+ */
+export function formatRelativeTime(timestampMs: number): string {
+  const diffMs = Date.now() - timestampMs;
+  const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
+  if (diffSeconds < 60) return `${diffSeconds}s ago`;
+  const diffMinutes = Math.floor(diffSeconds / 60);
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  return `${diffHours}h ago`;
+}
+
+/**
+ * A structured activity event derived from loop log or phase changes.
+ */
+export interface ActivityEvent {
+  /** Epoch milliseconds when the event occurred */
+  timestamp: number;
+  /** Human-readable description of the event */
+  message: string;
+  /** Inferred status based on event content */
+  status: 'success' | 'error' | 'in-progress';
+}
+
+const SUCCESS_KEYWORDS = /completed|passed|success|approved|all implementation tasks completed/i;
+const ERROR_KEYWORDS = /error|failed|failure/i;
+
+function inferStatus(message: string): ActivityEvent['status'] {
+  if (SUCCESS_KEYWORDS.test(message)) return 'success';
+  if (ERROR_KEYWORDS.test(message)) return 'error';
+  return 'in-progress';
+}
+
+/**
+ * Parse the loop log file into structured activity events.
+ *
+ * Each non-empty line becomes an event. Timestamp is extracted from common
+ * log prefixes if present, otherwise the file's mtime is used as fallback.
+ *
+ * @param logPath - Absolute path to the loop log file.
+ * @param since - Optional epoch ms cutoff; only return events at or after this time.
+ */
+export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
+  let content: string;
+  try {
+    content = readFileSync(logPath, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn(`parseLoopLog: failed to read ${logPath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return [];
+  }
+
+  let fileMtimeMs: number;
+  try {
+    fileMtimeMs = statSync(logPath).mtimeMs;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.debug(`parseLoopLog: statSync failed for ${logPath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    fileMtimeMs = Date.now();
+  }
+
+  const lines = content.split('\n').filter((l) => l.trim().length > 0);
+  const events: ActivityEvent[] = [];
+
+  for (const line of lines) {
+    // Try to extract a timestamp from common prefixes like "[2024-01-15 10:30:45]" or "2024-01-15T10:30:45"
+    let timestamp = fileMtimeMs;
+    const isoMatch = line.match(/^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})/);
+    if (isoMatch) {
+      const parsed = Date.parse(isoMatch[1]);
+      if (!Number.isNaN(parsed)) timestamp = parsed;
+    }
+
+    const message = line.replace(/^\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]\s*/, '').trim();
+    if (!message) continue;
+
+    if (since !== undefined && timestamp < since) continue;
+
+    events.push({ timestamp, message, status: inferStatus(message) });
+  }
+
+  return events;
+}
+
+/**
+ * Detect phase changes by comparing current phases file to a known previous state,
+ * and emit activity events for newly completed or started phases.
+ *
+ * @param feature - Feature name (used to locate the phases file).
+ * @param lastKnownPhases - Phase array from the previous poll cycle.
+ */
+export function parsePhaseChanges(
+  feature: string,
+  lastKnownPhases?: PhaseInfo[]
+): { events: ActivityEvent[]; currentPhases?: PhaseInfo[] } {
+  const phasesFile = `/tmp/ralph-loop-${feature}.phases`;
+
+  let rawContent: string;
+  try {
+    rawContent = readFileSync(phasesFile, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn(`parsePhaseChanges: failed to read ${phasesFile}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return { events: [] };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawContent);
+    if (!Array.isArray(parsed)) {
+      logger.debug(`parsePhaseChanges: expected array in ${phasesFile}, got ${typeof parsed}`);
+      return { events: [], currentPhases: lastKnownPhases };
+    }
+  } catch (err) {
+    logger.debug(`parsePhaseChanges: invalid JSON in ${phasesFile}: ${err instanceof Error ? err.message : String(err)}`);
+    return { events: [], currentPhases: lastKnownPhases };
+  }
+
+  // Validate each phase has required fields
+  const currentPhases: PhaseInfo[] = [];
+  for (const item of parsed as unknown[]) {
+    if (
+      typeof item === 'object' && item !== null &&
+      'id' in item && typeof (item as PhaseInfo).id === 'string' &&
+      'label' in item && typeof (item as PhaseInfo).label === 'string' &&
+      'status' in item && typeof (item as PhaseInfo).status === 'string'
+    ) {
+      currentPhases.push(item as PhaseInfo);
+    }
+  }
+
+  const events: ActivityEvent[] = [];
+  const now = Date.now();
+
+  for (const current of currentPhases) {
+    const prev = lastKnownPhases?.find((p) => p.id === current.id);
+
+    if (!prev) {
+      // New phase appeared — emit "started" event
+      events.push({
+        timestamp: now,
+        message: `${current.label} phase started`,
+        status: 'in-progress',
+      });
+    } else if (prev.status !== current.status && (current.status === 'success' || current.status === 'failed')) {
+      // Phase transitioned to a terminal state
+      events.push({
+        timestamp: now,
+        message: `${current.label} phase ${current.status === 'success' ? 'completed' : 'failed'}`,
+        status: current.status === 'success' ? 'success' : 'error',
+      });
+    }
+  }
+
+  return { events, currentPhases };
 }

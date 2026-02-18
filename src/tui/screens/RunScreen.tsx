@@ -21,6 +21,7 @@ import { Confirm } from '../components/Confirm.js';
 import { Select, type SelectOption } from '../components/Select.js';
 import { AppShell } from '../components/AppShell.js';
 import { RunCompletionSummary } from '../components/RunCompletionSummary.js';
+import { ActivityFeed } from '../components/ActivityFeed.js';
 import { colors, theme } from '../theme.js';
 import {
   readLoopStatus,
@@ -28,8 +29,12 @@ import {
   getGitBranch,
   formatNumber,
   getLoopLogPath,
+  parseLoopLog,
+  parsePhaseChanges,
   type LoopStatus,
   type TaskCounts,
+  type ActivityEvent,
+  type PhaseInfo,
 } from '../utils/loop-status.js';
 import { buildEnhancedRunSummary } from '../utils/build-run-summary.js';
 import { writeRunSummaryFile } from '../../utils/summary-file.js';
@@ -38,21 +43,8 @@ import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
 import { readActionRequest, writeActionReply, cleanupActionFiles, type ActionRequest } from '../utils/action-inbox.js';
 
-/**
- * Phase execution status and timing
- */
-export interface PhaseInfo {
-  /** Unique phase identifier (e.g., 'planning', 'implementation') */
-  id: string;
-  /** Human-readable phase label */
-  label: string;
-  /** Phase completion status */
-  status: 'success' | 'skipped' | 'failed';
-  /** Duration in milliseconds, if available */
-  durationMs?: number;
-  /** Number of iterations in this phase (e.g., for implementation) */
-  iterations?: number;
-}
+// PhaseInfo is defined in loop-status.ts and re-exported here for backward compatibility
+export type { PhaseInfo } from '../utils/loop-status.js';
 
 /**
  * Iteration breakdown across different contexts
@@ -293,6 +285,7 @@ export function RunScreen({
   const [showConfirm, setShowConfirm] = useState(false);
   const [completionSummary, setCompletionSummary] = useState<RunSummary | null>(null);
   const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
 
   const childRef = useRef<ChildProcess | null>(null);
   const stopRequestedRef = useRef(false);
@@ -305,6 +298,8 @@ export function RunScreen({
   const maxIterationsRef = useRef<number>(0);
   const maxE2eAttemptsRef = useRef<number>(0);
   const handledActionIdRef = useRef<string | null>(null);
+  const lastLogLineCountRef = useRef<number>(0);
+  const lastKnownPhasesRef = useRef<PhaseInfo[] | undefined>(undefined);
 
   useInput((input, key) => {
     // If showing completion summary, Enter or Esc dismisses
@@ -343,6 +338,27 @@ export function RunScreen({
 
     if (!isMountedRef.current) return;
     setBranch(getGitBranch(projectRoot));
+
+    // Collect new activity events from log and phase changes
+    const logPath = getLoopLogPath(featureName);
+    const allLogEvents = parseLoopLog(logPath);
+    // Detect log file truncation/rotation and reset tracking
+    if (allLogEvents.length < lastLogLineCountRef.current) {
+      lastLogLineCountRef.current = 0;
+    }
+    const newLogEvents = allLogEvents.slice(lastLogLineCountRef.current);
+    lastLogLineCountRef.current = allLogEvents.length;
+
+    const { events: phaseEvents, currentPhases } = parsePhaseChanges(featureName, lastKnownPhasesRef.current);
+    if (currentPhases) {
+      lastKnownPhasesRef.current = currentPhases;
+    }
+
+    const MAX_STORED_EVENTS = 100;
+    const newEvents = [...newLogEvents, ...phaseEvents];
+    if (newEvents.length > 0 && isMountedRef.current) {
+      setActivityEvents((prev) => [...prev, ...newEvents].slice(-MAX_STORED_EVENTS));
+    }
 
     // Check for pending action request (loop waiting for user input)
     const request = readActionRequest(featureName);
@@ -780,6 +796,11 @@ export function RunScreen({
                 <Text color={colors.green}>{'\u2713'} {doneAll}</Text>
                 <Text color={colors.yellow}>{'\u25cb'} {totalAll - doneAll}</Text>
               </Box>
+            </Box>
+
+            <Box marginTop={1} flexDirection="column">
+              <Text bold>Activity</Text>
+              <ActivityFeed events={activityEvents} />
             </Box>
           </>
         )
