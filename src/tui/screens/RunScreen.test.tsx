@@ -15,7 +15,7 @@ import { render } from 'ink-testing-library';
 import { stripAnsi, wait } from '../../__test-utils__/ink-helpers.js';
 import { createTestSessionState } from '../../__test-utils__/fixtures.js';
 import type { ActionRequest } from '../utils/action-inbox.js';
-import type { LoopStatus } from '../utils/loop-status.js';
+import type { ActivityEvent, LoopStatus } from '../utils/loop-status.js';
 import type { RunSummary } from './RunScreen.js';
 
 // ── Hoisted mock state ────────────────────────────────────────────────────────
@@ -30,6 +30,8 @@ const {
   mockBuildEnhancedRunSummary,
   mockWriteRunSummaryFile,
   mockLoadConfigWithDefaults,
+  mockParseLoopLog,
+  mockParsePhaseChanges,
 } = vi.hoisted(() => ({
   mockReadActionRequest: vi.fn<(feature: string) => ActionRequest | null>(),
   mockWriteActionReply: vi.fn<() => Promise<void>>(),
@@ -40,6 +42,8 @@ const {
   mockBuildEnhancedRunSummary: vi.fn<(summary: RunSummary) => RunSummary>(),
   mockWriteRunSummaryFile: vi.fn<() => Promise<void>>(),
   mockLoadConfigWithDefaults: vi.fn<() => Promise<unknown>>(),
+  mockParseLoopLog: vi.fn(),
+  mockParsePhaseChanges: vi.fn(),
 }));
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
@@ -56,9 +60,9 @@ vi.mock('../utils/loop-status.js', () => ({
   getGitBranch: mockGetGitBranch,
   getLoopLogPath: (feature: string) => `/tmp/ralph-loop-${feature}.log`,
   formatNumber: (n: number) => String(n),
-  parseLoopLog: vi.fn().mockReturnValue([]),
-  parsePhaseChanges: vi.fn().mockReturnValue([]),
-  formatRelativeTime: vi.fn().mockReturnValue('0s ago'),
+  parseLoopLog: mockParseLoopLog,
+  parsePhaseChanges: mockParsePhaseChanges,
+  formatRelativeTime: (ts: number) => `${Math.floor((Date.now() - ts) / 1000)}s ago`,
 }));
 
 vi.mock('../utils/build-run-summary.js', () => ({
@@ -139,6 +143,8 @@ describe('RunScreen — action prompt', () => {
     mockBuildEnhancedRunSummary.mockImplementation((s) => s);
     mockWriteRunSummaryFile.mockResolvedValue(undefined);
     mockLoadConfigWithDefaults.mockResolvedValue(testConfig);
+    mockParseLoopLog.mockReturnValue([]);
+    mockParsePhaseChanges.mockReturnValue([]);
   });
 
   afterEach(() => {
@@ -254,6 +260,111 @@ describe('RunScreen — action prompt', () => {
     const frame = stripAnsi(lastFrame() ?? '');
     // Completion summary takes priority — action prompt should not appear
     expect(frame).not.toContain('Implementation complete. What would you like to do?');
+    unmount();
+  });
+});
+
+describe('RunScreen — activity feed', () => {
+  const testEvents: ActivityEvent[] = [
+    { timestamp: Date.now() - 60_000, message: 'Planning phase started', status: 'in-progress' },
+    { timestamp: Date.now() - 30_000, message: 'Implementation completed', status: 'success' },
+    { timestamp: Date.now() - 5_000, message: 'Tests failed', status: 'error' },
+  ];
+
+  beforeEach(() => {
+    mockReadLoopStatus.mockReturnValue(defaultStatus);
+    mockParseImplementationPlan.mockResolvedValue(defaultTasks);
+    mockGetGitBranch.mockReturnValue('feat/my-feature');
+    mockReadActionRequest.mockReturnValue(null);
+    mockWriteActionReply.mockResolvedValue(undefined);
+    mockCleanupActionFiles.mockResolvedValue(undefined);
+    mockBuildEnhancedRunSummary.mockImplementation((s) => s);
+    mockWriteRunSummaryFile.mockResolvedValue(undefined);
+    mockLoadConfigWithDefaults.mockResolvedValue(testConfig);
+    mockParseLoopLog.mockReturnValue([]);
+    mockParsePhaseChanges.mockReturnValue([]);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows Activity section and events during an active run', async () => {
+    mockParseLoopLog.mockReturnValue(testEvents);
+
+    const { lastFrame, unmount } = render(
+      React.createElement(RunScreen, makeProps()),
+    );
+    await wait(200);
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Activity');
+    expect(frame).toContain('Planning phase started');
+    expect(frame).toContain('Implementation completed');
+    expect(frame).toContain('Tests failed');
+    unmount();
+  });
+
+  it('shows "No activity yet" when no events are available', async () => {
+    mockParseLoopLog.mockReturnValue([]);
+    mockParsePhaseChanges.mockReturnValue([]);
+
+    const { lastFrame, unmount } = render(
+      React.createElement(RunScreen, makeProps()),
+    );
+    await wait(200);
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Activity');
+    expect(frame).toContain('No activity yet');
+    unmount();
+  });
+
+  it('does not show Activity section when completionSummary is showing', async () => {
+    mockReadLoopStatus.mockReturnValue(stoppedStatus);
+    mockParseLoopLog.mockReturnValue(testEvents);
+
+    const basicSummary: RunSummary = {
+      feature: 'my-feature',
+      iterations: 1,
+      maxIterations: 10,
+      tasksDone: 3,
+      tasksTotal: 3,
+      tokensInput: 100,
+      tokensOutput: 50,
+      exitCode: 0,
+    };
+    mockBuildEnhancedRunSummary.mockReturnValue(basicSummary);
+
+    const { lastFrame, unmount } = render(
+      React.createElement(RunScreen, makeProps()),
+    );
+    await wait(300);
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    // Completion summary replaces the main run layout (including Activity)
+    expect(frame).not.toContain('Activity');
+    unmount();
+  });
+
+  it('merges events from parseLoopLog and parsePhaseChanges', async () => {
+    const logEvents: ActivityEvent[] = [
+      { timestamp: Date.now() - 60_000, message: 'Iteration 1 started', status: 'in-progress' },
+    ];
+    const phaseEvents: ActivityEvent[] = [
+      { timestamp: Date.now() - 30_000, message: 'Planning phase completed', status: 'success' },
+    ];
+    mockParseLoopLog.mockReturnValue(logEvents);
+    mockParsePhaseChanges.mockReturnValue(phaseEvents);
+
+    const { lastFrame, unmount } = render(
+      React.createElement(RunScreen, makeProps()),
+    );
+    await wait(200);
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Iteration 1 started');
+    expect(frame).toContain('Planning phase completed');
     unmount();
   });
 });
