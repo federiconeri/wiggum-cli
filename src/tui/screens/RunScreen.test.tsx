@@ -144,7 +144,7 @@ describe('RunScreen — action prompt', () => {
     mockWriteRunSummaryFile.mockResolvedValue(undefined);
     mockLoadConfigWithDefaults.mockResolvedValue(testConfig);
     mockParseLoopLog.mockReturnValue([]);
-    mockParsePhaseChanges.mockReturnValue([]);
+    mockParsePhaseChanges.mockReturnValue({ events: [] });
   });
 
   afterEach(() => {
@@ -282,7 +282,7 @@ describe('RunScreen — activity feed', () => {
     mockWriteRunSummaryFile.mockResolvedValue(undefined);
     mockLoadConfigWithDefaults.mockResolvedValue(testConfig);
     mockParseLoopLog.mockReturnValue([]);
-    mockParsePhaseChanges.mockReturnValue([]);
+    mockParsePhaseChanges.mockReturnValue({ events: [] });
   });
 
   afterEach(() => {
@@ -307,7 +307,7 @@ describe('RunScreen — activity feed', () => {
 
   it('shows "No activity yet" when no events are available', async () => {
     mockParseLoopLog.mockReturnValue([]);
-    mockParsePhaseChanges.mockReturnValue([]);
+    mockParsePhaseChanges.mockReturnValue({ events: [] });
 
     const { lastFrame, unmount } = render(
       React.createElement(RunScreen, makeProps()),
@@ -355,7 +355,7 @@ describe('RunScreen — activity feed', () => {
       { timestamp: Date.now() - 30_000, message: 'Planning phase completed', status: 'success' },
     ];
     mockParseLoopLog.mockReturnValue(logEvents);
-    mockParsePhaseChanges.mockReturnValue(phaseEvents);
+    mockParsePhaseChanges.mockReturnValue({ events: phaseEvents });
 
     const { lastFrame, unmount } = render(
       React.createElement(RunScreen, makeProps()),

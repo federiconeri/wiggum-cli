@@ -53,19 +53,17 @@ describe('parseLoopLog', () => {
   });
 
   it('returns empty array when log file does not exist', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); });
     expect(parseLoopLog(logPath)).toEqual([]);
   });
 
   it('returns empty array when log file is empty', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.readFileSync).mockReturnValue('');
     vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1705318800000 } as fs.Stats);
     expect(parseLoopLog(logPath)).toEqual([]);
   });
 
   it('parses log lines into structured events', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1705318800000 } as fs.Stats);
     vi.mocked(fs.readFileSync).mockReturnValue(
       'Starting implementation\nRunning tests\n'
@@ -79,7 +77,6 @@ describe('parseLoopLog', () => {
   });
 
   it('infers success status from success keywords', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1705318800000 } as fs.Stats);
     vi.mocked(fs.readFileSync).mockReturnValue(
       'All tests passed\nBuild completed successfully\n'
@@ -91,7 +88,6 @@ describe('parseLoopLog', () => {
   });
 
   it('infers error status from error keywords', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1705318800000 } as fs.Stats);
     vi.mocked(fs.readFileSync).mockReturnValue(
       'ERROR: TypeScript compilation failed\nBuild FAILED\n'
@@ -104,7 +100,6 @@ describe('parseLoopLog', () => {
 
   it('uses file mtime as timestamp fallback when no timestamp prefix found', () => {
     const mtimeMs = 1705318800000;
-    vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.statSync).mockReturnValue({ mtimeMs } as fs.Stats);
     vi.mocked(fs.readFileSync).mockReturnValue('some log line\n');
 
@@ -113,7 +108,6 @@ describe('parseLoopLog', () => {
   });
 
   it('skips blank lines', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1705318800000 } as fs.Stats);
     vi.mocked(fs.readFileSync).mockReturnValue(
       'line one\n\n   \nline two\n'
@@ -125,7 +119,6 @@ describe('parseLoopLog', () => {
 
   it('filters events by the since cutoff', () => {
     const earlyMtime = 1000;
-    vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: earlyMtime } as fs.Stats);
     vi.mocked(fs.readFileSync).mockReturnValue('early line\n');
 
@@ -136,75 +129,69 @@ describe('parseLoopLog', () => {
 
 describe('parsePhaseChanges', () => {
   const feature = 'test-feature';
-  const phasesFile = `/tmp/ralph-loop-${feature}.phases`;
 
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns empty array when phases file does not exist', () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-    expect(parsePhaseChanges(feature)).toEqual([]);
+  it('returns empty events when phases file does not exist', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' }); });
+    expect(parsePhaseChanges(feature)).toEqual({ events: [] });
   });
 
-  it('returns empty array when phases file contains invalid JSON', () => {
-    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === phasesFile);
+  it('returns empty events when phases file contains invalid JSON', () => {
     vi.mocked(fs.readFileSync).mockReturnValue('not valid json');
-    expect(parsePhaseChanges(feature)).toEqual([]);
+    expect(parsePhaseChanges(feature)).toEqual({ events: [] });
   });
 
   it('emits "started" events for new phases not in lastKnownPhases', () => {
-    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === phasesFile);
     vi.mocked(fs.readFileSync).mockReturnValue(
       JSON.stringify([{ id: 'planning', label: 'Planning', status: 'success' }])
     );
 
-    const events = parsePhaseChanges(feature, []);
+    const { events, currentPhases } = parsePhaseChanges(feature, []);
     expect(events).toHaveLength(1);
     expect(events[0].message).toBe('Planning phase started');
     expect(events[0].status).toBe('in-progress');
+    expect(currentPhases).toEqual([{ id: 'planning', label: 'Planning', status: 'success' }]);
   });
 
   it('emits "completed" event when a phase transitions to success', () => {
-    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === phasesFile);
     vi.mocked(fs.readFileSync).mockReturnValue(
       JSON.stringify([{ id: 'planning', label: 'Planning', status: 'success' }])
     );
 
     const prev = [{ id: 'planning', label: 'Planning', status: 'skipped' as const }];
-    const events = parsePhaseChanges(feature, prev);
+    const { events } = parsePhaseChanges(feature, prev);
     expect(events).toHaveLength(1);
     expect(events[0].message).toBe('Planning phase completed');
     expect(events[0].status).toBe('success');
   });
 
   it('emits "failed" event when a phase transitions to failed', () => {
-    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === phasesFile);
     vi.mocked(fs.readFileSync).mockReturnValue(
       JSON.stringify([{ id: 'implementation', label: 'Implementation', status: 'failed' }])
     );
 
     const prev = [{ id: 'implementation', label: 'Implementation', status: 'skipped' as const }];
-    const events = parsePhaseChanges(feature, prev);
+    const { events } = parsePhaseChanges(feature, prev);
     expect(events).toHaveLength(1);
     expect(events[0].message).toBe('Implementation phase failed');
     expect(events[0].status).toBe('error');
   });
 
   it('returns no events when phases have not changed', () => {
-    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === phasesFile);
     vi.mocked(fs.readFileSync).mockReturnValue(
       JSON.stringify([{ id: 'planning', label: 'Planning', status: 'success' }])
     );
 
     const prev = [{ id: 'planning', label: 'Planning', status: 'success' as const }];
-    const events = parsePhaseChanges(feature, prev);
+    const { events } = parsePhaseChanges(feature, prev);
     expect(events).toHaveLength(0);
   });
 
   it('handles non-array JSON gracefully', () => {
-    vi.mocked(fs.existsSync).mockImplementation((p) => String(p) === phasesFile);
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ not: 'array' }));
-    expect(parsePhaseChanges(feature)).toEqual([]);
+    expect(parsePhaseChanges(feature)).toEqual({ events: [] });
   });
 });

@@ -248,7 +248,7 @@ export interface ActivityEvent {
 }
 
 const SUCCESS_KEYWORDS = /completed|passed|success|approved|all implementation tasks completed/i;
-const ERROR_KEYWORDS = /ERROR|failed|FAILED|failure/;
+const ERROR_KEYWORDS = /error|failed|failure/i;
 
 function inferStatus(message: string): ActivityEvent['status'] {
   if (SUCCESS_KEYWORDS.test(message)) return 'success';
@@ -266,18 +266,21 @@ function inferStatus(message: string): ActivityEvent['status'] {
  * @param since - Optional epoch ms cutoff; only return events at or after this time.
  */
 export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
-  if (!existsSync(logPath)) return [];
-
   let content: string;
-  let fileMtimeMs: number;
   try {
     content = readFileSync(logPath, 'utf-8');
-    fileMtimeMs = statSync(logPath).mtimeMs;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       logger.debug(`parseLoopLog: failed to read ${logPath}: ${err instanceof Error ? err.message : String(err)}`);
     }
     return [];
+  }
+
+  let fileMtimeMs: number;
+  try {
+    fileMtimeMs = statSync(logPath).mtimeMs;
+  } catch {
+    fileMtimeMs = Date.now();
   }
 
   const lines = content.split('\n').filter((l) => l.trim().length > 0);
@@ -313,9 +316,8 @@ export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
 export function parsePhaseChanges(
   feature: string,
   lastKnownPhases?: import('../screens/RunScreen.js').PhaseInfo[]
-): ActivityEvent[] {
+): { events: ActivityEvent[]; currentPhases?: import('../screens/RunScreen.js').PhaseInfo[] } {
   const phasesFile = `/tmp/ralph-loop-${feature}.phases`;
-  if (!existsSync(phasesFile)) return [];
 
   let rawContent: string;
   try {
@@ -324,15 +326,16 @@ export function parsePhaseChanges(
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       logger.debug(`parsePhaseChanges: failed to read ${phasesFile}: ${err instanceof Error ? err.message : String(err)}`);
     }
-    return [];
+    return { events: [] };
   }
 
   let currentPhases: import('../screens/RunScreen.js').PhaseInfo[];
   try {
     currentPhases = JSON.parse(rawContent) as import('../screens/RunScreen.js').PhaseInfo[];
-    if (!Array.isArray(currentPhases)) return [];
-  } catch {
-    return [];
+    if (!Array.isArray(currentPhases)) return { events: [] };
+  } catch (err) {
+    logger.debug(`parsePhaseChanges: invalid JSON in ${phasesFile}: ${err instanceof Error ? err.message : String(err)}`);
+    return { events: [] };
   }
 
   const events: ActivityEvent[] = [];
@@ -358,5 +361,5 @@ export function parsePhaseChanges(
     }
   }
 
-  return events;
+  return { events, currentPhases };
 }

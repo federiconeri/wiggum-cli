@@ -357,20 +357,15 @@ export function RunScreen({
     const newLogEvents = allLogEvents.slice(lastLogLineCountRef.current);
     lastLogLineCountRef.current = allLogEvents.length;
 
-    const phaseEvents = parsePhaseChanges(featureName, lastKnownPhasesRef.current);
-    // Keep lastKnownPhasesRef in sync for the next diff
-    const phasesFile = `/tmp/ralph-loop-${featureName}.phases`;
-    if (existsSync(phasesFile)) {
-      try {
-        lastKnownPhasesRef.current = JSON.parse(readFileSync(phasesFile, 'utf-8')) as PhaseInfo[];
-      } catch {
-        // Non-critical: skip phase tracking update
-      }
+    const { events: phaseEvents, currentPhases } = parsePhaseChanges(featureName, lastKnownPhasesRef.current);
+    if (currentPhases) {
+      lastKnownPhasesRef.current = currentPhases;
     }
 
+    const MAX_STORED_EVENTS = 100;
     const newEvents = [...newLogEvents, ...phaseEvents];
     if (newEvents.length > 0 && isMountedRef.current) {
-      setActivityEvents((prev) => [...prev, ...newEvents]);
+      setActivityEvents((prev) => [...prev, ...newEvents].slice(-MAX_STORED_EVENTS));
     }
 
     // Check for pending action request (loop waiting for user input)
