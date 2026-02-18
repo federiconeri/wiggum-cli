@@ -56,6 +56,9 @@ vi.mock('../utils/loop-status.js', () => ({
   getGitBranch: mockGetGitBranch,
   getLoopLogPath: (feature: string) => `/tmp/ralph-loop-${feature}.log`,
   formatNumber: (n: number) => String(n),
+  parseLoopLog: vi.fn().mockReturnValue([]),
+  parsePhaseChanges: vi.fn().mockReturnValue([]),
+  formatRelativeTime: vi.fn().mockReturnValue('0s ago'),
 }));
 
 vi.mock('../utils/build-run-summary.js', () => ({

@@ -21,6 +21,7 @@ import { Confirm } from '../components/Confirm.js';
 import { Select, type SelectOption } from '../components/Select.js';
 import { AppShell } from '../components/AppShell.js';
 import { RunCompletionSummary } from '../components/RunCompletionSummary.js';
+import { ActivityFeed } from '../components/ActivityFeed.js';
 import { colors, theme } from '../theme.js';
 import {
   readLoopStatus,
@@ -28,8 +29,11 @@ import {
   getGitBranch,
   formatNumber,
   getLoopLogPath,
+  parseLoopLog,
+  parsePhaseChanges,
   type LoopStatus,
   type TaskCounts,
+  type ActivityEvent,
 } from '../utils/loop-status.js';
 import { buildEnhancedRunSummary } from '../utils/build-run-summary.js';
 import { writeRunSummaryFile } from '../../utils/summary-file.js';
@@ -293,6 +297,7 @@ export function RunScreen({
   const [showConfirm, setShowConfirm] = useState(false);
   const [completionSummary, setCompletionSummary] = useState<RunSummary | null>(null);
   const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
+  const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
 
   const childRef = useRef<ChildProcess | null>(null);
   const stopRequestedRef = useRef(false);
@@ -305,6 +310,8 @@ export function RunScreen({
   const maxIterationsRef = useRef<number>(0);
   const maxE2eAttemptsRef = useRef<number>(0);
   const handledActionIdRef = useRef<string | null>(null);
+  const lastLogLineCountRef = useRef<number>(0);
+  const lastKnownPhasesRef = useRef<PhaseInfo[] | undefined>(undefined);
 
   useInput((input, key) => {
     // If showing completion summary, Enter or Esc dismisses
@@ -343,6 +350,28 @@ export function RunScreen({
 
     if (!isMountedRef.current) return;
     setBranch(getGitBranch(projectRoot));
+
+    // Collect new activity events from log and phase changes
+    const logPath = getLoopLogPath(featureName);
+    const allLogEvents = parseLoopLog(logPath);
+    const newLogEvents = allLogEvents.slice(lastLogLineCountRef.current);
+    lastLogLineCountRef.current = allLogEvents.length;
+
+    const phaseEvents = parsePhaseChanges(featureName, lastKnownPhasesRef.current);
+    // Keep lastKnownPhasesRef in sync for the next diff
+    const phasesFile = `/tmp/ralph-loop-${featureName}.phases`;
+    if (existsSync(phasesFile)) {
+      try {
+        lastKnownPhasesRef.current = JSON.parse(readFileSync(phasesFile, 'utf-8')) as PhaseInfo[];
+      } catch {
+        // Non-critical: skip phase tracking update
+      }
+    }
+
+    const newEvents = [...newLogEvents, ...phaseEvents];
+    if (newEvents.length > 0 && isMountedRef.current) {
+      setActivityEvents((prev) => [...prev, ...newEvents]);
+    }
 
     // Check for pending action request (loop waiting for user input)
     const request = readActionRequest(featureName);
@@ -780,6 +809,11 @@ export function RunScreen({
                 <Text color={colors.green}>{'\u2713'} {doneAll}</Text>
                 <Text color={colors.yellow}>{'\u25cb'} {totalAll - doneAll}</Text>
               </Box>
+            </Box>
+
+            <Box marginTop={1} flexDirection="column">
+              <Text bold>Activity</Text>
+              <ActivityFeed events={activityEvents} />
             </Box>
           </>
         )
