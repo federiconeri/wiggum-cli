@@ -25,6 +25,23 @@ export interface TaskCounts {
 }
 
 /**
+ * Phase execution status and timing.
+ * Shared between RunScreen and loop-status utilities.
+ */
+export interface PhaseInfo {
+  /** Unique phase identifier (e.g., 'planning', 'implementation') */
+  id: string;
+  /** Human-readable phase label */
+  label: string;
+  /** Phase completion status */
+  status: 'success' | 'skipped' | 'failed';
+  /** Duration in milliseconds, if available */
+  durationMs?: number;
+  /** Number of iterations in this phase (e.g., for implementation) */
+  iterations?: number;
+}
+
+/**
  * Track whether pgrep is available to avoid repeated failed calls.
  * null = untested, true = available, false = unavailable
  */
@@ -271,7 +288,7 @@ export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
     content = readFileSync(logPath, 'utf-8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      logger.debug(`parseLoopLog: failed to read ${logPath}: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`parseLoopLog: failed to read ${logPath}: ${err instanceof Error ? err.message : String(err)}`);
     }
     return [];
   }
@@ -279,7 +296,10 @@ export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
   let fileMtimeMs: number;
   try {
     fileMtimeMs = statSync(logPath).mtimeMs;
-  } catch {
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.debug(`parseLoopLog: statSync failed for ${logPath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
     fileMtimeMs = Date.now();
   }
 
@@ -315,8 +335,8 @@ export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
  */
 export function parsePhaseChanges(
   feature: string,
-  lastKnownPhases?: import('../screens/RunScreen.js').PhaseInfo[]
-): { events: ActivityEvent[]; currentPhases?: import('../screens/RunScreen.js').PhaseInfo[] } {
+  lastKnownPhases?: PhaseInfo[]
+): { events: ActivityEvent[]; currentPhases?: PhaseInfo[] } {
   const phasesFile = `/tmp/ralph-loop-${feature}.phases`;
 
   let rawContent: string;
@@ -324,18 +344,34 @@ export function parsePhaseChanges(
     rawContent = readFileSync(phasesFile, 'utf-8');
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      logger.debug(`parsePhaseChanges: failed to read ${phasesFile}: ${err instanceof Error ? err.message : String(err)}`);
+      logger.warn(`parsePhaseChanges: failed to read ${phasesFile}: ${err instanceof Error ? err.message : String(err)}`);
     }
     return { events: [] };
   }
 
-  let currentPhases: import('../screens/RunScreen.js').PhaseInfo[];
+  let parsed: unknown;
   try {
-    currentPhases = JSON.parse(rawContent) as import('../screens/RunScreen.js').PhaseInfo[];
-    if (!Array.isArray(currentPhases)) return { events: [] };
+    parsed = JSON.parse(rawContent);
+    if (!Array.isArray(parsed)) {
+      logger.debug(`parsePhaseChanges: expected array in ${phasesFile}, got ${typeof parsed}`);
+      return { events: [], currentPhases: lastKnownPhases };
+    }
   } catch (err) {
     logger.debug(`parsePhaseChanges: invalid JSON in ${phasesFile}: ${err instanceof Error ? err.message : String(err)}`);
-    return { events: [] };
+    return { events: [], currentPhases: lastKnownPhases };
+  }
+
+  // Validate each phase has required fields
+  const currentPhases: PhaseInfo[] = [];
+  for (const item of parsed as unknown[]) {
+    if (
+      typeof item === 'object' && item !== null &&
+      'id' in item && typeof (item as PhaseInfo).id === 'string' &&
+      'label' in item && typeof (item as PhaseInfo).label === 'string' &&
+      'status' in item && typeof (item as PhaseInfo).status === 'string'
+    ) {
+      currentPhases.push(item as PhaseInfo);
+    }
   }
 
   const events: ActivityEvent[] = [];

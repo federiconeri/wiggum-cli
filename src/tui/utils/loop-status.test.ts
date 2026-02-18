@@ -125,6 +125,57 @@ describe('parseLoopLog', () => {
     const events = parseLoopLog(logPath, earlyMtime + 1);
     expect(events).toHaveLength(0);
   });
+
+  it('includes events at exactly the since boundary', () => {
+    const mtimeMs = 1000;
+    vi.mocked(fs.statSync).mockReturnValue({ mtimeMs } as fs.Stats);
+    vi.mocked(fs.readFileSync).mockReturnValue('line at boundary\n');
+
+    const events = parseLoopLog(logPath, mtimeMs);
+    expect(events).toHaveLength(1);
+    expect(events[0].message).toBe('line at boundary');
+  });
+
+  it('extracts timestamp from ISO-prefixed log lines', () => {
+    vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 0 } as fs.Stats);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      '2024-01-15T10:30:45 Build started\n'
+    );
+
+    const events = parseLoopLog(logPath);
+    expect(events).toHaveLength(1);
+    expect(events[0].timestamp).toBe(Date.parse('2024-01-15T10:30:45'));
+    expect(events[0].message).toBe('2024-01-15T10:30:45 Build started');
+  });
+
+  it('strips bracket-wrapped timestamp prefix from message', () => {
+    vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 0 } as fs.Stats);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      '[2024-01-15 10:30:45] Tests passed\n'
+    );
+
+    const events = parseLoopLog(logPath);
+    expect(events[0].message).toBe('Tests passed');
+  });
+
+  it('returns empty array and does not throw on non-ENOENT read error', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => {
+      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    });
+
+    const events = parseLoopLog(logPath);
+    expect(events).toEqual([]);
+  });
+
+  it('prioritizes success over error when both keywords appear', () => {
+    vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1000 } as fs.Stats);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      'error recovery completed successfully\n'
+    );
+
+    const events = parseLoopLog(logPath);
+    expect(events[0].status).toBe('success');
+  });
 });
 
 describe('parsePhaseChanges', () => {
@@ -139,9 +190,12 @@ describe('parsePhaseChanges', () => {
     expect(parsePhaseChanges(feature)).toEqual({ events: [] });
   });
 
-  it('returns empty events when phases file contains invalid JSON', () => {
+  it('returns empty events and preserves lastKnownPhases on invalid JSON', () => {
     vi.mocked(fs.readFileSync).mockReturnValue('not valid json');
-    expect(parsePhaseChanges(feature)).toEqual({ events: [] });
+    const prev = [{ id: 'planning', label: 'Planning', status: 'success' as const }];
+    const result = parsePhaseChanges(feature, prev);
+    expect(result.events).toEqual([]);
+    expect(result.currentPhases).toBe(prev);
   });
 
   it('emits "started" events for new phases not in lastKnownPhases', () => {
@@ -190,8 +244,46 @@ describe('parsePhaseChanges', () => {
     expect(events).toHaveLength(0);
   });
 
-  it('handles non-array JSON gracefully', () => {
+  it('handles non-array JSON gracefully and preserves lastKnownPhases', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ not: 'array' }));
-    expect(parsePhaseChanges(feature)).toEqual({ events: [] });
+    const prev = [{ id: 'planning', label: 'Planning', status: 'success' as const }];
+    const result = parsePhaseChanges(feature, prev);
+    expect(result.events).toEqual([]);
+    expect(result.currentPhases).toBe(prev);
+  });
+
+  it('skips malformed phase entries missing required fields', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify([
+        { id: 'planning', label: 'Planning', status: 'success' },
+        { id: 'bad-entry' }, // missing label and status
+        { notAPhase: true },
+      ])
+    );
+
+    const { events, currentPhases } = parsePhaseChanges(feature, []);
+    // Only the valid phase should produce an event
+    expect(events).toHaveLength(1);
+    expect(events[0].message).toBe('Planning phase started');
+    expect(currentPhases).toHaveLength(1);
+  });
+
+  it('does not emit events for non-terminal status transitions', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      JSON.stringify([{ id: 'planning', label: 'Planning', status: 'skipped' }])
+    );
+
+    const prev = [{ id: 'planning', label: 'Planning', status: 'skipped' as const }];
+    const { events } = parsePhaseChanges(feature, prev);
+    expect(events).toHaveLength(0);
+  });
+
+  it('returns empty array and does not throw on non-ENOENT read error', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => {
+      throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
+    });
+
+    const result = parsePhaseChanges(feature);
+    expect(result.events).toEqual([]);
   });
 });

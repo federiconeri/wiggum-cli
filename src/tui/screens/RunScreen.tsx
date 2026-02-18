@@ -34,6 +34,7 @@ import {
   type LoopStatus,
   type TaskCounts,
   type ActivityEvent,
+  type PhaseInfo,
 } from '../utils/loop-status.js';
 import { buildEnhancedRunSummary } from '../utils/build-run-summary.js';
 import { writeRunSummaryFile } from '../../utils/summary-file.js';
@@ -42,21 +43,8 @@ import { logger } from '../../utils/logger.js';
 import type { SessionState } from '../../repl/session-state.js';
 import { readActionRequest, writeActionReply, cleanupActionFiles, type ActionRequest } from '../utils/action-inbox.js';
 
-/**
- * Phase execution status and timing
- */
-export interface PhaseInfo {
-  /** Unique phase identifier (e.g., 'planning', 'implementation') */
-  id: string;
-  /** Human-readable phase label */
-  label: string;
-  /** Phase completion status */
-  status: 'success' | 'skipped' | 'failed';
-  /** Duration in milliseconds, if available */
-  durationMs?: number;
-  /** Number of iterations in this phase (e.g., for implementation) */
-  iterations?: number;
-}
+// PhaseInfo is defined in loop-status.ts and re-exported here for backward compatibility
+export type { PhaseInfo } from '../utils/loop-status.js';
 
 /**
  * Iteration breakdown across different contexts
@@ -354,6 +342,10 @@ export function RunScreen({
     // Collect new activity events from log and phase changes
     const logPath = getLoopLogPath(featureName);
     const allLogEvents = parseLoopLog(logPath);
+    // Detect log file truncation/rotation and reset tracking
+    if (allLogEvents.length < lastLogLineCountRef.current) {
+      lastLogLineCountRef.current = 0;
+    }
     const newLogEvents = allLogEvents.slice(lastLogLineCountRef.current);
     lastLogLineCountRef.current = allLogEvents.length;
 
