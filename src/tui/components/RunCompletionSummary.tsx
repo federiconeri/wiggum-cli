@@ -7,12 +7,11 @@
 
 import React from 'react';
 import { Box, Text, useStdout } from 'ink';
-import { SummaryBox, SummaryBoxSection } from './SummaryBox.js';
+import { SummaryBox, SummaryBoxSection, MAX_BOX_WIDTH, BOX_BORDER_OVERHEAD } from './SummaryBox.js';
 import { colors, phase } from '../theme.js';
 import type { RunSummary, FileChangeStat } from '../screens/RunScreen.js';
 
 const MIN_BOX_WIDTH = 60;
-const MAX_BOX_WIDTH = 80;
 
 /**
  * Formatted file change row for aligned display in the Changes section.
@@ -98,7 +97,7 @@ export function RunCompletionSummary({
   const { stdout } = useStdout();
   const terminalWidth = stdout?.columns ?? 80;
   const boxWidth = Math.min(Math.max(MIN_BOX_WIDTH, terminalWidth), MAX_BOX_WIDTH);
-  const contentWidth = boxWidth - 4;
+  const contentWidth = boxWidth - BOX_BORDER_OVERHEAD;
 
   // Determine final status and color
   const exitStatus = summary.exitCode === 0
@@ -199,15 +198,19 @@ export function RunCompletionSummary({
           <Text>Changes: Could not compute diff</Text>
         ) : null}
         {/* File rows - each as a direct SummaryBoxSection child so SummaryBox gives each its own border row */}
-        {summary.changes?.available && summary.changes.files && summary.changes.files.length > 0 && formatChangesFiles(summary.changes.files, contentWidth).map((fmt, i) => (
-          <Box key={summary.changes!.files![i].path} flexDirection="row">
-            <Text>{fmt.displayPath}</Text>
-            <Text>{'  '}</Text>
-            <Text color={colors.green}>{fmt.addedStr}</Text>
-            <Text> </Text>
-            <Text color={colors.pink}>{fmt.removedStr}</Text>
-          </Box>
-        ))}
+        {(() => {
+          const files = summary.changes?.available ? summary.changes.files : undefined;
+          if (!files || files.length === 0) return null;
+          return formatChangesFiles(files, contentWidth).map((fmt, i) => (
+            <Box key={files[i].path} flexDirection="row">
+              <Text>{fmt.displayPath}</Text>
+              <Text>{'  '}</Text>
+              <Text color={colors.green}>{fmt.addedStr}</Text>
+              <Text> </Text>
+              <Text color={colors.pink}>{fmt.removedStr}</Text>
+            </Box>
+          ));
+        })()}
 
         {summary.commits ? (
           !summary.commits.available ? (

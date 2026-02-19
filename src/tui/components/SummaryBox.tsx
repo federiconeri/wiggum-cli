@@ -10,7 +10,9 @@ import { Box, Text, useStdout } from 'ink';
 import { box, colors } from '../theme.js';
 
 /** Maximum box width to prevent layout conflicts with other components */
-const MAX_BOX_WIDTH = 80;
+export const MAX_BOX_WIDTH = 80;
+/** Border overhead: left border + padding + padding + right border = 4 chars */
+export const BOX_BORDER_OVERHEAD = 4;
 
 export interface SummaryBoxProps {
   /** Child content to render inside the box */
@@ -51,7 +53,7 @@ export function SummaryBox({
   const terminalWidth = stdout?.columns ?? 80;
   // Use terminal width, clamped between minWidth and MAX_BOX_WIDTH
   const boxWidth = Math.min(Math.max(minWidth, terminalWidth), MAX_BOX_WIDTH);
-  const contentWidth = boxWidth - 4; // Account for borders and padding
+  const contentWidth = boxWidth - BOX_BORDER_OVERHEAD; // Account for borders and padding
 
   // Top border: ┌─────┐
   const topBorder = box.topLeft + box.horizontal.repeat(boxWidth - 2) + box.topRight;
