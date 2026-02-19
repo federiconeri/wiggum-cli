@@ -44,6 +44,28 @@ Study @.ralph/specs/$FEATURE.md for feature specification.
 - [ ] Task N (additional polish)
 
 ### Phase 5: E2E Testing
+{{#if isTui}}
+TUI E2E tests executed via xterm.js bridge + agent-browser.
+Fixture projects in `e2e/fixtures/`. Bridge at `http://localhost:3999`.
+
+- [ ] E2E: [Scenario name] - [brief description]
+  - **Command:** [wiggum command, e.g., init, new auth-flow]
+  - **CWD:** [working directory, e.g., e2e/fixtures/bare-project]
+  - **Steps:**
+    1. [Action] -> [expected terminal output]
+    2. [Action] -> [expected terminal output]
+  - **Verify:** [text that should appear in terminal]
+
+Example TUI E2E scenario:
+- [ ] E2E: Init in bare project - happy path
+  - **Command:** init
+  - **CWD:** e2e/fixtures/bare-project
+  - **Steps:**
+    1. Open bridge with init command -> Welcome screen renders
+    2. Arrow down to select option -> Option highlighted
+    3. Press Enter -> Next screen appears
+  - **Verify:** "initialized" text visible in terminal
+{{else}}
 Browser-based tests executed via Playwright MCP tools.
 
 - [ ] E2E: [Scenario name] - [brief description]
@@ -67,6 +89,7 @@ Example E2E scenario:
     5. Wait for "Thank You!" -> Success card displays
   - **Verify:** "successfully submitted" text visible
   - **Database check:** SELECT * FROM survey_responses WHERE survey_id = '{surveyId}'
+{{/if}}
 
 ## Done
 - [x] Completed task - [commit hash]

@@ -87,3 +87,51 @@ describe('extractVariables - appDir resolution', () => {
     expect(result.appDir).toBe('.');
   });
 });
+
+describe('extractVariables - isTui detection', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = join(
+      tmpdir(),
+      `wiggum-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    );
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it('sets isTui to "true" when ink is in dependencies', () => {
+    writeFileSync(join(testDir, 'package.json'), JSON.stringify({
+      name: 'tui-app',
+      dependencies: { ink: '^5.0.0', react: '^18.0.0' },
+    }));
+    const result = extractVariables(makeScanResult({ projectRoot: testDir }));
+    expect(result.isTui).toBe('true');
+  });
+
+  it('sets isTui to "true" when ink is in devDependencies', () => {
+    writeFileSync(join(testDir, 'package.json'), JSON.stringify({
+      name: 'tui-app',
+      devDependencies: { ink: '^5.0.0' },
+    }));
+    const result = extractVariables(makeScanResult({ projectRoot: testDir }));
+    expect(result.isTui).toBe('true');
+  });
+
+  it('sets isTui to "" when ink is not present', () => {
+    writeFileSync(join(testDir, 'package.json'), JSON.stringify({
+      name: 'web-app',
+      dependencies: { react: '^18.0.0', next: '^14.0.0' },
+    }));
+    const result = extractVariables(makeScanResult({ projectRoot: testDir }));
+    expect(result.isTui).toBe('');
+  });
+
+  it('sets isTui to "" when no package.json exists', () => {
+    const result = extractVariables(makeScanResult({ projectRoot: testDir }));
+    expect(result.isTui).toBe('');
+  });
+});
