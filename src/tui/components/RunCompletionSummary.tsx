@@ -6,10 +6,61 @@
  */
 
 import React from 'react';
-import { Box, Text } from 'ink';
+import { Box, Text, useStdout } from 'ink';
 import { SummaryBox, SummaryBoxSection } from './SummaryBox.js';
 import { colors, phase } from '../theme.js';
-import type { RunSummary } from '../screens/RunScreen.js';
+import type { RunSummary, FileChangeStat } from '../screens/RunScreen.js';
+
+const MIN_BOX_WIDTH = 60;
+const MAX_BOX_WIDTH = 80;
+
+/**
+ * Formatted file change row for aligned display in the Changes section.
+ */
+export interface FormattedFileChange {
+  /** Path, possibly truncated with prefix ellipsis, padded to path column width */
+  displayPath: string;
+  /** Insertions string, e.g. "+10" or "+ 3", right-aligned within fixed width */
+  addedStr: string;
+  /** Deletions string, e.g. "-5" or "-18", right-aligned within fixed width */
+  removedStr: string;
+}
+
+/**
+ * Truncate a file path to fit within maxWidth characters.
+ * If the path exceeds maxWidth, truncates from the start and prefixes with '…'.
+ */
+export function truncatePath(path: string, maxWidth: number): string {
+  if (path.length <= maxWidth) return path;
+  if (maxWidth <= 1) return '…';
+  return '…' + path.slice(-(maxWidth - 1));
+}
+
+/**
+ * Format a list of file change stats into fixed-width, aligned display rows.
+ * Stats columns are always fully visible; the path column shrinks to fill remaining space.
+ */
+export function formatChangesFiles(
+  files: FileChangeStat[],
+  contentWidth: number,
+): FormattedFileChange[] {
+  if (files.length === 0) return [];
+
+  const GAP = 2;
+
+  const maxAddedDigits = Math.max(...files.map((f) => String(f.added).length));
+  const maxRemovedDigits = Math.max(...files.map((f) => String(f.removed).length));
+  // statsBlockWidth: "+NNN -NNN"
+  const statsBlockWidth = (1 + maxAddedDigits) + 1 + (1 + maxRemovedDigits);
+
+  const pathColWidth = Math.max(1, contentWidth - GAP - statsBlockWidth);
+
+  return files.map((file) => ({
+    displayPath: truncatePath(file.path, pathColWidth).padEnd(pathColWidth),
+    addedStr: '+' + String(file.added).padStart(maxAddedDigits),
+    removedStr: '-' + String(file.removed).padStart(maxRemovedDigits),
+  }));
+}
 
 /**
  * Props for RunCompletionSummary component
@@ -44,6 +95,10 @@ const stoppedCodes = new Set([130, 143]);
 export function RunCompletionSummary({
   summary,
 }: RunCompletionSummaryProps): React.ReactElement {
+  const { stdout } = useStdout();
+  const terminalWidth = stdout?.columns ?? 80;
+  const boxWidth = Math.min(Math.max(MIN_BOX_WIDTH, terminalWidth), MAX_BOX_WIDTH);
+  const contentWidth = boxWidth - 4;
 
   // Determine final status and color
   const exitStatus = summary.exitCode === 0
@@ -133,31 +188,26 @@ export function RunCompletionSummary({
       <SummaryBoxSection>
         {/* Changes section - always shown */}
         <Text bold>Changes</Text>
-        {summary.changes ? (
-          !summary.changes.available ? (
-            <Text>Changes: Not available</Text>
-          ) : summary.changes.totalFilesChanged === 0 || (summary.changes.files && summary.changes.files.length === 0) ? (
-            <Text>No changes</Text>
-          ) : summary.changes.totalFilesChanged !== undefined || summary.changes.files ? (
-            <>
-              {summary.changes.totalFilesChanged !== undefined && (
-                <Text>{summary.changes.totalFilesChanged} file{summary.changes.totalFilesChanged !== 1 ? 's' : ''} changed</Text>
-              )}
-              {summary.changes.files && summary.changes.files.map((file) => (
-                <Box key={file.path} flexDirection="row">
-                  <Text>{file.path}  </Text>
-                  <Text color={colors.green}>+{file.added} </Text>
-                  <Text color={colors.pink}>-{file.removed}</Text>
-                  <Text> lines</Text>
-                </Box>
-              ))}
-            </>
-          ) : (
-            <Text>Changes: Could not compute diff</Text>
-          )
-        ) : (
+        {/* Summary line: availability / count / fallback */}
+        {!summary.changes || !summary.changes.available ? (
           <Text>Changes: Not available</Text>
-        )}
+        ) : summary.changes.totalFilesChanged === 0 || (summary.changes.files && summary.changes.files.length === 0) ? (
+          <Text>No changes</Text>
+        ) : summary.changes.totalFilesChanged !== undefined ? (
+          <Text>{summary.changes.totalFilesChanged} file{summary.changes.totalFilesChanged !== 1 ? 's' : ''} changed</Text>
+        ) : !summary.changes.files ? (
+          <Text>Changes: Could not compute diff</Text>
+        ) : null}
+        {/* File rows - each as a direct SummaryBoxSection child so SummaryBox gives each its own border row */}
+        {summary.changes?.available && summary.changes.files && summary.changes.files.length > 0 && formatChangesFiles(summary.changes.files, contentWidth).map((fmt, i) => (
+          <Box key={summary.changes!.files![i].path} flexDirection="row">
+            <Text>{fmt.displayPath}</Text>
+            <Text>{'  '}</Text>
+            <Text color={colors.green}>{fmt.addedStr}</Text>
+            <Text> </Text>
+            <Text color={colors.pink}>{fmt.removedStr}</Text>
+          </Box>
+        ))}
 
         {summary.commits ? (
           !summary.commits.available ? (
