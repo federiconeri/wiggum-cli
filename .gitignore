@@ -25,3 +25,7 @@ ralph.config.js
 .env
 .env.*
 .env.local
+
+# E2E test fixtures
+e2e/fixtures/*/node_modules/
+e2e/fixtures/*/.ralph/

@@ -12,10 +12,160 @@ Pay special attention to "E2E Pitfalls" section to avoid known issues.
 Before E2E testing, verify:
 1. Build passes: `cd {{appDir}} && {{buildCommand}}`
 2. All unit tests pass: `cd {{appDir}} && {{testCommand}}`
+{{#unless isTui}}
 3. Clear cache if issues: `rm -rf {{appDir}}/.next`
+{{/unless}}
 
 If either fails, fix issues before proceeding with E2E tests.
 
+{{#if isTui}}
+## Task
+Execute automated E2E tests for the completed TUI feature using the xterm.js bridge and agent-browser.
+
+### Step 1: Start Bridge
+Check the bridge is running:
+```bash
+curl -s http://localhost:3999/health || (cd {{projectRoot}} && npm run e2e:bridge &)
+sleep 3
+```
+
+### Step 2: Parse E2E Test Scenarios
+Read E2E test scenarios from @.ralph/specs/$FEATURE-implementation-plan.md.
+Each scenario is marked with `- [ ] E2E:` prefix and follows this format:
+
+```
+- [ ] E2E: [Scenario name]
+  - **Command:** [wiggum command, e.g., init, new auth-flow]
+  - **CWD:** [working directory, e.g., e2e/fixtures/bare-project]
+  - **Steps:**
+    1. [Action] -> [expected terminal output]
+  - **Verify:** [text that should appear in terminal]
+```
+
+### Step 3: Execute Each Scenario
+
+For each scenario:
+
+1. **Open the TUI in the bridge:**
+```bash
+agent-browser open "http://localhost:3999?cmd=<command>&cwd=<path>"
+```
+
+2. **Wait for terminal ready:**
+```bash
+agent-browser wait --text "Ready" --source title --timeout 10000
+```
+
+3. **Read terminal content:**
+```bash
+agent-browser eval "document.getElementById('terminal-mirror').textContent"
+```
+
+4. **Interact with TUI:**
+```bash
+# Click to focus terminal
+agent-browser snapshot -i
+agent-browser click @<terminal-ref>
+
+# Type text (Enter = press Enter after)
+agent-browser type @<terminal-ref> "/help"
+agent-browser key Enter
+
+# Arrow navigation
+agent-browser key ArrowDown
+agent-browser key ArrowDown
+agent-browser key Enter
+
+# Escape
+agent-browser key Escape
+```
+
+5. **Assert expected output:**
+```bash
+# Read terminal and check for expected text
+CONTENT=$(agent-browser eval "document.getElementById('terminal-mirror').textContent")
+# Verify CONTENT contains expected strings
+```
+
+6. **Reset between scenarios:**
+```bash
+agent-browser close
+```
+
+### TUI Interaction Cheatsheet
+
+| Action | Command |
+|--------|---------|
+| Open TUI | `agent-browser open "http://localhost:3999?cmd=init&cwd=/path"` |
+| Read screen | `agent-browser eval "document.getElementById('terminal-mirror').textContent"` |
+| Take snapshot | `agent-browser snapshot -i` |
+| Click element | `agent-browser click @ref` |
+| Type text | `agent-browser type @ref "text"` |
+| Press Enter | `agent-browser key Enter` |
+| Arrow down | `agent-browser key ArrowDown` |
+| Escape | `agent-browser key Escape` |
+| Screenshot | `agent-browser screenshot e2e-failure.png` |
+| Wait for text | `agent-browser wait --text "expected" --timeout 10000` |
+| Close session | `agent-browser close` |
+
+### Key Rules
+- Always wait for expected text before asserting (TUI renders async via React)
+- Use `agent-browser eval` with `terminal-mirror` for reliable text reading
+- Take screenshots on failures for debugging
+- Each scenario navigates to a fresh URL (clean state)
+- Wait 500ms after key presses before reading (Ink re-render delay)
+
+### Step 4: Report Results
+Update @.ralph/specs/$FEATURE-implementation-plan.md for each scenario:
+
+**Passed:**
+```markdown
+- [x] E2E: scenario name - PASSED
+```
+
+**Failed:**
+```markdown
+- [ ] E2E: scenario name - FAILED: [brief reason]
+  - Error: [what went wrong]
+  - Screenshot: [if captured]
+  - Fix needed: [suggested action]
+```
+
+## Error Recovery
+
+If a scenario fails:
+1. Document the failure with specific error details
+2. Take a screenshot: `agent-browser screenshot e2e-failure-<scenario>.png`
+3. Note what fix is likely needed (code bug vs test spec issue)
+4. Continue with remaining scenarios
+5. At end, summary shows total passed/failed
+
+Failures will trigger a fix iteration in the loop.
+
+## Completion
+
+When all scenarios are executed:
+1. Update implementation plan with results for each scenario
+2. Update the Implementation Summary status to `[PASSED]` if all passed
+3. **Commit the updated implementation plan:**
+   ```bash
+   git add -A && git commit -m "test($FEATURE): E2E tests passed via agent-browser"
+   ```
+4. **Push to remote:**
+   ```bash
+   git push origin feat/$FEATURE
+   ```
+5. If all passed: signal ready for PR phase
+6. If any failed: failures documented, loop will retry after fix iteration
+
+## Learning Capture
+If E2E testing revealed issues worth remembering, append to @.ralph/LEARNINGS.md:
+- Flaky test patterns -> Add under "## Anti-Patterns" > "E2E Pitfalls"
+- TUI timing issues -> Add under "## Anti-Patterns"
+- Useful agent-browser techniques -> Add under "## Tool Usage"
+
+Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
+{{else}}
 ## Task
 Execute automated E2E tests for the completed feature using Playwright MCP tools.
 
@@ -232,3 +382,4 @@ If E2E testing revealed issues worth remembering, append to @.ralph/LEARNINGS.md
 - Timing issues or race conditions -> Add under "## Anti-Patterns"
 
 Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
+{{/if}}

@@ -4,7 +4,7 @@
  */
 
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ScanResult, DetectedStack } from '../scanner/types.js';
@@ -50,6 +50,9 @@ export interface TemplateVariables {
 
   // Paths
   appDir: string;
+
+  // TUI detection
+  isTui: string;
 
   // AI Analysis (optional - populated when AI enhancement is used)
   aiEntryPoints: string;
@@ -261,6 +264,17 @@ export function extractVariables(scanResult: ScanResult, customVars: Record<stri
     appDir = 'src';
   }
 
+  // Detect TUI (Ink) projects
+  let isTui = '';
+  try {
+    const pkgPath = join(projectRoot, 'package.json');
+    if (existsSync(pkgPath)) {
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+      const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+      if (allDeps['ink']) isTui = 'true';
+    }
+  } catch { /* ignore */ }
+
   return {
     projectName,
     projectRoot,
@@ -277,6 +291,7 @@ export function extractVariables(scanResult: ScanResult, customVars: Record<stri
     stylingVersion,
     stylingVariant,
     appDir,
+    isTui,
     ...commands,
     ...aiData,
     ...customVars,
