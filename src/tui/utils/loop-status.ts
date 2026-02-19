@@ -267,6 +267,45 @@ export interface ActivityEvent {
 const SUCCESS_KEYWORDS = /completed|passed|success|approved|all implementation tasks completed/i;
 const ERROR_KEYWORDS = /error|failed|failure/i;
 
+/**
+ * Lines matching these patterns are noise and should be skipped entirely.
+ */
+const SKIP_LINE_PATTERNS = [
+  /^=+\s*$/,                                    // bare separator lines (====)
+  /^-+\s*$/,                                    // bare dash lines (----)
+  /^={5,}\s+\S+.*={5,}$/,                       // phase headers like "======= IMPL PHASE ======="
+  /^-{5,}\s+\S+.*-{5,}$/,                       // dashed phase headers
+  /^#{1,4}\s/,                                   // markdown headers (### Files Updated)
+  /^\d+\.\s+(Merge back|Push and create|Keep the branch|Discard this work)/i, // interactive choices
+  /^Which option\??$/i,                          // interactive prompt
+  /^Implementation complete\.\s+What would you like/i, // finishing prompt
+  /^Ralph Loop:/,                                // loop header info
+  /^(Spec|Plan|Branch|App dir|Worktree|Resume|Review|Model|Max):/,  // loop config lines
+  /^Baseline commit:/,                           // baseline
+  /^Creating branch:/,                           // branch creation
+  /^={10,}$/,                                    // long separator (top/bottom of log)
+  /^\{"level"/,                                  // JSON log lines (BashTool warnings etc.)
+  /^Pending implementation tasks: \d+$/,         // raw task count (redundant with progress bar)
+];
+
+/**
+ * Strip markdown formatting from a message for cleaner display.
+ */
+function stripMarkdown(msg: string): string {
+  return msg
+    .replace(/\*\*([^*]+)\*\*/g, '$1')   // **bold** → bold
+    .replace(/`([^`]+)`/g, '$1')          // `code` → code
+    .replace(/^\s*[-*]\s+/, '')           // leading bullet points
+    .trim();
+}
+
+/**
+ * Check whether a log line should be skipped from the activity feed.
+ */
+function shouldSkipLine(line: string): boolean {
+  return SKIP_LINE_PATTERNS.some((pattern) => pattern.test(line));
+}
+
 function inferStatus(message: string): ActivityEvent['status'] {
   if (SUCCESS_KEYWORDS.test(message)) return 'success';
   if (ERROR_KEYWORDS.test(message)) return 'error';
@@ -276,8 +315,8 @@ function inferStatus(message: string): ActivityEvent['status'] {
 /**
  * Parse the loop log file into structured activity events.
  *
- * Each non-empty line becomes an event. Timestamp is extracted from common
- * log prefixes if present, otherwise the file's mtime is used as fallback.
+ * Filters out noise lines (separators, markdown headers, interactive prompts,
+ * config lines) and strips markdown formatting from remaining messages.
  *
  * @param logPath - Absolute path to the loop log file.
  * @param since - Optional epoch ms cutoff; only return events at or after this time.
@@ -315,7 +354,14 @@ export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
       if (!Number.isNaN(parsed)) timestamp = parsed;
     }
 
-    const message = line.replace(/^\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]\s*/, '').trim();
+    const rawMessage = line.replace(/^\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]\s*/, '').trim();
+    if (!rawMessage) continue;
+
+    // Skip noise lines
+    if (shouldSkipLine(rawMessage)) continue;
+
+    // Strip markdown formatting
+    const message = stripMarkdown(rawMessage);
     if (!message) continue;
 
     if (since !== undefined && timestamp < since) continue;

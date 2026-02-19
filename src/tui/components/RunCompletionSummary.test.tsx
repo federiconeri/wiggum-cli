@@ -184,27 +184,27 @@ describe('RunCompletionSummary', () => {
     unmount();
   });
 
-  it('displays iteration count with legacy data', () => {
+  it('displays iteration count in subtitle with legacy data', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary summary={makeSummary({ iterations: 3, maxIterations: 5 })} />,
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('Iterations: 3');
+    expect(frame).toContain('3 iter');
     unmount();
   });
 
-  it('displays task count with legacy data', () => {
+  it('displays task count in subtitle with legacy data', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary summary={makeSummary({ tasksDone: 4, tasksTotal: 6 })} />,
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('Tasks: 4/6 completed');
+    expect(frame).toContain('4/6 tasks');
     unmount();
   });
 
-  it('displays enhanced iteration breakdown when available', () => {
+  it('displays enhanced iteration count in subtitle when available', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary
         summary={makeSummary({
@@ -214,11 +214,11 @@ describe('RunCompletionSummary', () => {
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('Iterations: 11 (10 impl + 1 resume)');
+    expect(frame).toContain('11 iter');
     unmount();
   });
 
-  it('displays duration when available', () => {
+  it('displays duration in subtitle when available', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary
         summary={makeSummary({
@@ -228,7 +228,7 @@ describe('RunCompletionSummary', () => {
     );
 
     const frame = stripAnsi(lastFrame() ?? '');
-    expect(frame).toContain('Duration: 12m 34s');
+    expect(frame).toContain('12m 34s');
     unmount();
   });
 
@@ -448,10 +448,9 @@ describe('RunCompletionSummary', () => {
 
     const frame = stripAnsi(lastFrame() ?? '');
 
-    // All sections should still appear with "Not available" or similar labels
-    expect(frame).toContain('Duration: Not available');
-    expect(frame).toContain('Iterations:');
-    expect(frame).toContain('Tasks:');
+    // All sections should still appear — subtitle shows iter/tasks, no duration when missing
+    expect(frame).toContain('Complete');
+    expect(frame).toContain('iter');
     expect(frame).toContain('Phases');
     expect(frame).toContain('No phase information available');
     expect(frame).toContain('Changes');
@@ -463,7 +462,7 @@ describe('RunCompletionSummary', () => {
     unmount();
   });
 
-  it('renders sections in stable order: header → timing → phases → changes → PR/issue', () => {
+  it('renders sections in stable order: header → subtitle → phases → changes → PR/issue', () => {
     const summary = makeSummary({
       exitCode: 0,
       totalDurationMs: 754000,
@@ -490,15 +489,15 @@ describe('RunCompletionSummary', () => {
 
     // Find the positions of each section to verify order
     const headerPos = frame.indexOf('my-feature');
-    const durationPos = frame.indexOf('Duration:');
+    const subtitlePos = frame.indexOf('Complete');
     const phasesPos = frame.indexOf('Phases');
     const changesPos = frame.indexOf('Changes');
     const prPos = frame.indexOf('PR #24');
 
     // Verify they appear in the correct order
     expect(headerPos).toBeGreaterThan(-1);
-    expect(durationPos).toBeGreaterThan(headerPos);
-    expect(phasesPos).toBeGreaterThan(durationPos);
+    expect(subtitlePos).toBeGreaterThan(headerPos);
+    expect(phasesPos).toBeGreaterThan(subtitlePos);
     expect(changesPos).toBeGreaterThan(phasesPos);
     expect(prPos).toBeGreaterThan(changesPos);
 
@@ -572,9 +571,10 @@ describe('RunCompletionSummary', () => {
     // Verify all major sections are present
     expect(frame).toContain('bracketed-paste-fix');
     expect(frame).toContain('Complete');
-    expect(frame).toContain('Duration: 12m 34s');
-    expect(frame).toContain('Iterations: 11 (10 impl + 1 resume)');
-    expect(frame).toContain('Tasks: 8/8 completed');
+    // Duration, iterations, and tasks are now in the compact subtitle
+    expect(frame).toContain('12m 34s');
+    expect(frame).toContain('11 iter');
+    expect(frame).toContain('8/8 tasks');
     expect(frame).toContain('Phases');
     expect(frame).toContain('Planning');
     expect(frame).toContain('Implementation');

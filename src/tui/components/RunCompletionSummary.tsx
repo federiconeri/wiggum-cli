@@ -127,36 +127,43 @@ export function RunCompletionSummary({
       ? `${tasksCompleted}/${tasksTotal} completed`
       : 'Not available';
 
+  // Status icon for subtitle
+  const statusIcon = summary.exitCode === 0
+    ? phase.complete
+    : stoppedCodes.has(summary.exitCode) ? phase.active : phase.error;
+
+  // Build compact subtitle parts
+  const subtitleParts: string[] = [];
+  if (summary.totalDurationMs !== undefined) {
+    subtitleParts.push(formatDurationMs(summary.totalDurationMs));
+  }
+  subtitleParts.push(`${iterationsTotal} iter`);
+  if (tasksCompleted !== null && tasksTotal !== null) {
+    subtitleParts.push(`${tasksCompleted}/${tasksTotal} tasks`);
+  }
+
   return (
     <SummaryBox minWidth={60}>
-      {/* Header: feature name + status */}
-      <Box flexDirection="row" justifyContent="space-between">
-        <Text bold>{summary.feature}</Text>
-        <Text bold color={exitStatus.color}>{exitStatus.label}</Text>
+      {/* Header: feature name on its own line */}
+      <Text bold>{summary.feature}</Text>
+      {/* Subtitle: status + key metrics */}
+      <Box flexDirection="row" gap={1}>
+        <Text bold color={exitStatus.color}>{statusIcon} {exitStatus.label}</Text>
+        <Text dimColor>·</Text>
+        <Text dimColor>{subtitleParts.join(' · ')}</Text>
       </Box>
-
-      <SummaryBoxSection>
-        {/* Timing, iterations, tasks */}
-        {summary.totalDurationMs !== undefined ? (
-          <Text>Duration: {formatDurationMs(summary.totalDurationMs)}</Text>
-        ) : (
-          <Text>Duration: Not available</Text>
-        )}
-        <Text>Iterations: {iterationsDisplay}</Text>
-        <Text>Tasks: {tasksDisplay}</Text>
-      </SummaryBoxSection>
 
       <SummaryBoxSection>
         {/* Phases section - always shown */}
         <Text bold>Phases</Text>
         {summary.phases && summary.phases.length > 0 ? (
           summary.phases.map((phaseInfo) => {
-            const statusIcon =
+            const phaseIcon =
               phaseInfo.status === 'success' ? phase.complete :
               phaseInfo.status === 'failed' ? phase.error :
               phase.pending;
 
-            const statusColor =
+            const phaseColor =
               phaseInfo.status === 'success' ? colors.green :
               phaseInfo.status === 'failed' ? colors.pink :
               colors.gray;
@@ -174,7 +181,7 @@ export function RunCompletionSummary({
 
             return (
               <Box key={phaseInfo.id} flexDirection="row">
-                <Text color={statusColor}>{statusIcon} </Text>
+                <Text color={phaseColor}>{phaseIcon} </Text>
                 <Text>{phaseInfo.label} {durationText}{iterationsText}{statusText}</Text>
               </Box>
             );
