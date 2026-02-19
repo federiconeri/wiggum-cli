@@ -1,11 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRenderApp } = vi.hoisted(() => {
+const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand } = vi.hoisted(() => {
   const mockRenderApp = vi.fn().mockReturnValue({
     unmount: vi.fn(),
     waitUntilExit: vi.fn().mockResolvedValue(undefined),
   });
-  return { mockRenderApp };
+  const mockRunCommand = vi.fn().mockResolvedValue(undefined);
+  const mockMonitorCommand = vi.fn().mockResolvedValue(undefined);
+  const mockHandleConfigCommand = vi.fn().mockImplementation((args: string[], state: unknown) =>
+    Promise.resolve(state)
+  );
+  return { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand };
 });
 
 // Mock all heavy dependencies before imports
@@ -57,22 +62,155 @@ vi.mock('./utils/logger.js', () => ({
   },
 }));
 
-import { main } from './index.js';
+vi.mock('./commands/run.js', () => ({
+  runCommand: mockRunCommand,
+}));
+
+vi.mock('./commands/monitor.js', () => ({
+  monitorCommand: mockMonitorCommand,
+}));
+
+vi.mock('./commands/config.js', () => ({
+  handleConfigCommand: mockHandleConfigCommand,
+}));
+
+import { main, parseCliArgs } from './index.js';
+
+// ─── parseCliArgs unit tests ──────────────────────────────────────────────────
+
+describe('parseCliArgs', () => {
+  it('empty argv → empty result', () => {
+    expect(parseCliArgs([])).toEqual({ command: undefined, positionalArgs: [], flags: {} });
+  });
+
+  it('single command', () => {
+    expect(parseCliArgs(['run'])).toEqual({ command: 'run', positionalArgs: [], flags: {} });
+  });
+
+  it('command with positional arg', () => {
+    expect(parseCliArgs(['run', 'my-feature'])).toEqual({
+      command: 'run',
+      positionalArgs: ['my-feature'],
+      flags: {},
+    });
+  });
+
+  it('boolean flag', () => {
+    expect(parseCliArgs(['--worktree'])).toEqual({
+      command: undefined,
+      positionalArgs: [],
+      flags: { worktree: true },
+    });
+  });
+
+  it('value flag with space', () => {
+    expect(parseCliArgs(['--model', 'sonnet'])).toEqual({
+      command: undefined,
+      positionalArgs: [],
+      flags: { model: 'sonnet' },
+    });
+  });
+
+  it('value flag with = syntax', () => {
+    expect(parseCliArgs(['--model=claude-opus'])).toEqual({
+      command: undefined,
+      positionalArgs: [],
+      flags: { model: 'claude-opus' },
+    });
+  });
+
+  it('kebab-case flags normalized to camelCase', () => {
+    expect(parseCliArgs(['--max-iterations', '5'])).toEqual({
+      command: undefined,
+      positionalArgs: [],
+      flags: { maxIterations: '5' },
+    });
+    expect(parseCliArgs(['--max-e2e-attempts', '3'])).toEqual({
+      command: undefined,
+      positionalArgs: [],
+      flags: { maxE2eAttempts: '3' },
+    });
+    expect(parseCliArgs(['--review-mode', 'auto'])).toEqual({
+      command: undefined,
+      positionalArgs: [],
+      flags: { reviewMode: 'auto' },
+    });
+  });
+
+  it('short flags normalized', () => {
+    expect(parseCliArgs(['-i'])).toEqual({ command: undefined, positionalArgs: [], flags: { interactive: true } });
+    expect(parseCliArgs(['-y'])).toEqual({ command: undefined, positionalArgs: [], flags: { yes: true } });
+    expect(parseCliArgs(['-e'])).toEqual({ command: undefined, positionalArgs: [], flags: { edit: true } });
+    expect(parseCliArgs(['-f'])).toEqual({ command: undefined, positionalArgs: [], flags: { force: true } });
+    expect(parseCliArgs(['-h'])).toEqual({ command: undefined, positionalArgs: [], flags: { help: true } });
+    expect(parseCliArgs(['-v'])).toEqual({ command: undefined, positionalArgs: [], flags: { version: true } });
+  });
+
+  it('--help and --version become flags', () => {
+    expect(parseCliArgs(['--help'])).toEqual({ command: undefined, positionalArgs: [], flags: { help: true } });
+    expect(parseCliArgs(['--version'])).toEqual({ command: undefined, positionalArgs: [], flags: { version: true } });
+  });
+
+  it('mixed: command + positional + multiple flags', () => {
+    const result = parseCliArgs(['run', 'my-feature', '--worktree', '--model', 'sonnet', '--max-iterations', '10']);
+    expect(result).toEqual({
+      command: 'run',
+      positionalArgs: ['my-feature'],
+      flags: { worktree: true, model: 'sonnet', maxIterations: '10' },
+    });
+  });
+
+  it('multiple short flags', () => {
+    const result = parseCliArgs(['init', '-i', '-y', '--provider', 'anthropic']);
+    expect(result).toEqual({
+      command: 'init',
+      positionalArgs: [],
+      flags: { interactive: true, yes: true, provider: 'anthropic' },
+    });
+  });
+
+  it('value flag next to a flag starting with -- is treated as boolean', () => {
+    // --model followed by another flag (no value)
+    const result = parseCliArgs(['--model', '--resume']);
+    expect(result.flags.model).toBe(true);
+    expect(result.flags.resume).toBe(true);
+  });
+
+  it('flags before command still parsed', () => {
+    // Edge case: flags can appear in any position
+    const result = parseCliArgs(['--worktree', 'run', 'my-feature']);
+    expect(result.command).toBe('run');
+    expect(result.positionalArgs).toEqual(['my-feature']);
+    expect(result.flags.worktree).toBe(true);
+  });
+});
+
+// ─── main() routing tests ──────────────────────────────────────────────────────
 
 describe('main', () => {
   let originalArgv: string[];
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+  let mockExit: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     originalArgv = process.argv;
     vi.clearAllMocks();
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockExit = vi.spyOn(process, 'exit').mockImplementation((code?: number | string | null) => {
+      throw new Error(`process.exit(${code})`);
+    });
   });
 
   afterEach(() => {
     process.argv = originalArgv;
     consoleLogSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
+    mockExit.mockRestore();
   });
+
+  // ─── Existing routing ───────────────────────────────────────────────────────
 
   it('no args → screen="shell"', async () => {
     process.argv = ['node', 'ralph.js'];
@@ -138,5 +276,206 @@ describe('main', () => {
 
     expect(consoleLogSpy).toHaveBeenCalled();
     expect(mockRenderApp).not.toHaveBeenCalled();
+  });
+
+  // ─── Help text completeness ──────────────────────────────────────────────────
+
+  it('--help lists all CLI commands', async () => {
+    process.argv = ['node', 'ralph.js', '--help'];
+    await main();
+
+    const helpText = consoleLogSpy.mock.calls[0][0] as string;
+    expect(helpText).toContain('init');
+    expect(helpText).toContain('new');
+    expect(helpText).toContain('run');
+    expect(helpText).toContain('monitor');
+    expect(helpText).toContain('config');
+  });
+
+  it('--help lists all TUI slash commands', async () => {
+    process.argv = ['node', 'ralph.js', '--help'];
+    await main();
+
+    const helpText = consoleLogSpy.mock.calls[0][0] as string;
+    expect(helpText).toContain('/init');
+    expect(helpText).toContain('/new');
+    expect(helpText).toContain('/run');
+    expect(helpText).toContain('/monitor');
+    expect(helpText).toContain('/sync');
+    expect(helpText).toContain('/config');
+    expect(helpText).toContain('/help');
+    expect(helpText).toContain('/exit');
+  });
+
+  // ─── run command routing ─────────────────────────────────────────────────────
+
+  it('run my-feature → calls runCommand with feature name', async () => {
+    process.argv = ['node', 'ralph.js', 'run', 'my-feature'];
+    await main();
+
+    expect(mockRunCommand).toHaveBeenCalledWith('my-feature', expect.any(Object));
+    expect(mockRenderApp).not.toHaveBeenCalled();
+  });
+
+  it('run my-feature --worktree --resume → passes boolean flags', async () => {
+    process.argv = ['node', 'ralph.js', 'run', 'my-feature', '--worktree', '--resume'];
+    await main();
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      'my-feature',
+      expect.objectContaining({ worktree: true, resume: true }),
+    );
+  });
+
+  it('run my-feature --model sonnet → passes model', async () => {
+    process.argv = ['node', 'ralph.js', 'run', 'my-feature', '--model', 'sonnet'];
+    await main();
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      'my-feature',
+      expect.objectContaining({ model: 'sonnet' }),
+    );
+  });
+
+  it('run my-feature --max-iterations 5 → passes numeric maxIterations', async () => {
+    process.argv = ['node', 'ralph.js', 'run', 'my-feature', '--max-iterations', '5'];
+    await main();
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      'my-feature',
+      expect.objectContaining({ maxIterations: 5 }),
+    );
+  });
+
+  it('run my-feature --max-e2e-attempts 3 → passes numeric maxE2eAttempts', async () => {
+    process.argv = ['node', 'ralph.js', 'run', 'my-feature', '--max-e2e-attempts', '3'];
+    await main();
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      'my-feature',
+      expect.objectContaining({ maxE2eAttempts: 3 }),
+    );
+  });
+
+  it('run my-feature --review-mode auto → passes reviewMode', async () => {
+    process.argv = ['node', 'ralph.js', 'run', 'my-feature', '--review-mode', 'auto'];
+    await main();
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      'my-feature',
+      expect.objectContaining({ reviewMode: 'auto' }),
+    );
+  });
+
+  it('run (no feature) → error + exit(1)', async () => {
+    process.argv = ['node', 'ralph.js', 'run'];
+
+    await expect(main()).rejects.toThrow('process.exit(1)');
+    expect(mockRunCommand).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('<feature>'));
+  });
+
+  // ─── monitor command routing ──────────────────────────────────────────────────
+
+  it('monitor my-feature → calls monitorCommand with feature name', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor', 'my-feature'];
+    await main();
+
+    expect(mockMonitorCommand).toHaveBeenCalledWith('my-feature', expect.any(Object));
+    expect(mockRenderApp).not.toHaveBeenCalled();
+  });
+
+  it('monitor my-feature --bash → passes bash flag', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor', 'my-feature', '--bash'];
+    await main();
+
+    expect(mockMonitorCommand).toHaveBeenCalledWith(
+      'my-feature',
+      expect.objectContaining({ bash: true }),
+    );
+  });
+
+  it('monitor my-feature --interval 3 → passes numeric interval', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor', 'my-feature', '--interval', '3'];
+    await main();
+
+    expect(mockMonitorCommand).toHaveBeenCalledWith(
+      'my-feature',
+      expect.objectContaining({ interval: 3 }),
+    );
+  });
+
+  it('monitor (no feature) → error + exit(1)', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor'];
+
+    await expect(main()).rejects.toThrow('process.exit(1)');
+    expect(mockMonitorCommand).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('<feature>'));
+  });
+
+  // ─── config command routing ───────────────────────────────────────────────────
+
+  it('config → calls handleConfigCommand with empty args', async () => {
+    process.argv = ['node', 'ralph.js', 'config'];
+    await main();
+
+    expect(mockHandleConfigCommand).toHaveBeenCalledWith([], expect.any(Object));
+    expect(mockRenderApp).not.toHaveBeenCalled();
+  });
+
+  it('config set tavily abc123 → calls handleConfigCommand with args', async () => {
+    process.argv = ['node', 'ralph.js', 'config', 'set', 'tavily', 'abc123'];
+    await main();
+
+    expect(mockHandleConfigCommand).toHaveBeenCalledWith(
+      ['set', 'tavily', 'abc123'],
+      expect.any(Object),
+    );
+  });
+
+  it('config passes valid session state with projectRoot', async () => {
+    process.argv = ['node', 'ralph.js', 'config'];
+    await main();
+
+    expect(mockHandleConfigCommand).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        projectRoot: expect.any(String),
+        provider: 'anthropic',
+        model: 'sonnet',
+      }),
+    );
+  });
+
+  // ─── init / new flag parsing ──────────────────────────────────────────────────
+
+  it('init --provider anthropic → starts init TUI (flags parsed, not blocking)', async () => {
+    process.argv = ['node', 'ralph.js', 'init', '--provider', 'anthropic'];
+    await main();
+
+    expect(mockRenderApp).toHaveBeenCalledWith(
+      expect.objectContaining({ screen: 'init' }),
+    );
+  });
+
+  it('init -i -y → starts init TUI', async () => {
+    process.argv = ['node', 'ralph.js', 'init', '-i', '-y'];
+    await main();
+
+    expect(mockRenderApp).toHaveBeenCalledWith(
+      expect.objectContaining({ screen: 'init' }),
+    );
+  });
+
+  it('new my-feature --provider anthropic --model sonnet -e -f → starts interview TUI', async () => {
+    process.argv = ['node', 'ralph.js', 'new', 'my-feature', '--provider', 'anthropic', '--model', 'sonnet', '-e', '-f'];
+    await main();
+
+    expect(mockRenderApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        screen: 'interview',
+        interviewProps: expect.objectContaining({ featureName: 'my-feature' }),
+      }),
+    );
   });
 });
