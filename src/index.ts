@@ -100,6 +100,15 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
   return { command, positionalArgs, flags };
 }
 
+function parseIntFlag(value: string, flagName: string): number {
+  const n = parseInt(value, 10);
+  if (Number.isNaN(n)) {
+    console.error(`Error: ${flagName} must be a number, got "${value}"`);
+    process.exit(1);
+  }
+  return n;
+}
+
 /**
  * Get version from package.json
  */
@@ -276,13 +285,7 @@ Press Esc to cancel any operation.
 
   switch (parsed.command) {
     case 'init': {
-      // Flags parsed; TUI integration deferred (no TUI changes in this iteration)
-      const initFlags = {
-        provider: typeof parsed.flags.provider === 'string' ? parsed.flags.provider : undefined,
-        interactive: parsed.flags.interactive === true,
-        yes: parsed.flags.yes === true,
-      };
-      logger.debug(`init flags: ${JSON.stringify(initFlags)}`);
+      // TODO: pass parsed flags to startInkTui once TUI supports init flags
       await startInkTui('init');
       break;
     }
@@ -290,17 +293,11 @@ Press Esc to cancel any operation.
     case 'new': {
       const featureName = parsed.positionalArgs[0];
       if (!featureName) {
-        logger.error('Feature name required. Usage: wiggum new <feature-name>');
+        console.error('Error: <name> is required for "new"');
+        console.error('Usage: wiggum new <name> [--provider <name>] [--model <model>] [-e] [-f]');
         process.exit(1);
       }
-      // Flags parsed; TUI integration deferred (no TUI changes in this iteration)
-      const newFlags = {
-        provider: typeof parsed.flags.provider === 'string' ? parsed.flags.provider : undefined,
-        model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
-        edit: parsed.flags.edit === true,
-        force: parsed.flags.force === true,
-      };
-      logger.debug(`new flags: ${JSON.stringify(newFlags)}`);
+      // TODO: pass parsed flags to startInkTui once TUI supports new flags
       await startInkTui('interview', featureName);
       break;
     }
@@ -316,8 +313,8 @@ Press Esc to cancel any operation.
         worktree: parsed.flags.worktree === true,
         resume: parsed.flags.resume === true,
         model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
-        maxIterations: typeof parsed.flags.maxIterations === 'string' ? parseInt(parsed.flags.maxIterations, 10) : undefined,
-        maxE2eAttempts: typeof parsed.flags.maxE2eAttempts === 'string' ? parseInt(parsed.flags.maxE2eAttempts, 10) : undefined,
+        maxIterations: typeof parsed.flags.maxIterations === 'string' ? parseIntFlag(parsed.flags.maxIterations, '--max-iterations') : undefined,
+        maxE2eAttempts: typeof parsed.flags.maxE2eAttempts === 'string' ? parseIntFlag(parsed.flags.maxE2eAttempts, '--max-e2e-attempts') : undefined,
         reviewMode: typeof parsed.flags.reviewMode === 'string' ? parsed.flags.reviewMode as RunOptions['reviewMode'] : undefined,
       };
       await runCommand(feature, runOptions);
@@ -333,7 +330,7 @@ Press Esc to cancel any operation.
       }
       const monitorOptions: MonitorOptions = {
         bash: parsed.flags.bash === true,
-        interval: typeof parsed.flags.interval === 'string' ? parseInt(parsed.flags.interval, 10) : undefined,
+        interval: typeof parsed.flags.interval === 'string' ? parseIntFlag(parsed.flags.interval, '--interval') : undefined,
       };
       await monitorCommand(feature, monitorOptions);
       break;

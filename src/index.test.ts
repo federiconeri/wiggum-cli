@@ -117,6 +117,11 @@ describe('parseCliArgs', () => {
       positionalArgs: [],
       flags: { model: 'claude-opus' },
     });
+    expect(parseCliArgs(['--max-iterations=5'])).toEqual({
+      command: undefined,
+      positionalArgs: [],
+      flags: { maxIterations: '5' },
+    });
   });
 
   it('kebab-case flags normalized to camelCase', () => {
@@ -375,6 +380,24 @@ describe('main', () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('<feature>'));
   });
 
+  it('run my-feature --max-iterations abc → error + exit(1) for non-numeric value', async () => {
+    process.argv = ['node', 'ralph.js', 'run', 'my-feature', '--max-iterations', 'abc'];
+
+    await expect(main()).rejects.toThrow('process.exit(1)');
+    expect(mockRunCommand).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('--max-iterations'));
+  });
+
+  it('run my-feature --max-iterations=5 → passes numeric maxIterations via = syntax', async () => {
+    process.argv = ['node', 'ralph.js', 'run', 'my-feature', '--max-iterations=5'];
+    await main();
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      'my-feature',
+      expect.objectContaining({ maxIterations: 5 }),
+    );
+  });
+
   // ─── monitor command routing ──────────────────────────────────────────────────
 
   it('monitor my-feature → calls monitorCommand with feature name', async () => {
@@ -411,6 +434,14 @@ describe('main', () => {
     await expect(main()).rejects.toThrow('process.exit(1)');
     expect(mockMonitorCommand).not.toHaveBeenCalled();
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('<feature>'));
+  });
+
+  it('monitor my-feature --interval abc → error + exit(1) for non-numeric value', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor', 'my-feature', '--interval', 'abc'];
+
+    await expect(main()).rejects.toThrow('process.exit(1)');
+    expect(mockMonitorCommand).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('--interval'));
   });
 
   // ─── config command routing ───────────────────────────────────────────────────
@@ -465,6 +496,14 @@ describe('main', () => {
     expect(mockRenderApp).toHaveBeenCalledWith(
       expect.objectContaining({ screen: 'init' }),
     );
+  });
+
+  it('new (no feature name) → error + exit(1)', async () => {
+    process.argv = ['node', 'ralph.js', 'new'];
+
+    await expect(main()).rejects.toThrow('process.exit(1)');
+    expect(mockRenderApp).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('<name>'));
   });
 
   it('new my-feature --provider anthropic --model sonnet -e -f → starts interview TUI', async () => {
