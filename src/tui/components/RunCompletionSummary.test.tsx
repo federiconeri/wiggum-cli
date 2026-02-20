@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import React from 'react';
 import { render } from 'ink-testing-library';
 import {
@@ -143,6 +143,12 @@ describe('formatChangesFiles', () => {
 });
 
 describe('RunCompletionSummary', () => {
+  const originalColumns = process.stdout.columns;
+
+  afterEach(() => {
+    (process.stdout as any).columns = originalColumns;
+  });
+
   it('renders success state for exitCode 0', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary summary={makeSummary({ exitCode: 0 })} />,
@@ -615,7 +621,6 @@ describe('RunCompletionSummary', () => {
     expect(frame).toContain('+ 3');
 
     unmount();
-    (process.stdout as any).columns = undefined;
   });
 
   it('renders correctly at 120 columns - stats remain visible and aligned', () => {
@@ -644,6 +649,5 @@ describe('RunCompletionSummary', () => {
     }
 
     unmount();
-    (process.stdout as any).columns = undefined;
   });
 });

@@ -278,8 +278,7 @@ export interface ActivityEvent {
  */
 const SKIP_LINE_PATTERNS: RegExp[] = [
   // Markdown formatting noise
-  /^\|.*\|$/,                              // Pipe-delimited markdown table rows
-  /^\|[-:|\s]+\|$/,                        // Table separator rows (|---|---|)
+  /^\|.*\|$/,                              // Pipe-delimited markdown table rows (incl. separator rows)
   /^\d+\.\s/,                              // Numbered list items (1. foo, 2. bar)
   /^\*\*/,                                 // Bold markdown headers (**Summary:**)
   /^#{1,6}\s/,                             // Markdown section headers (## Summary)
