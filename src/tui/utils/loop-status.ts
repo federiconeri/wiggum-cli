@@ -245,11 +245,19 @@ export function formatNumber(num: number): string {
 export function formatRelativeTime(timestampMs: number): string {
   const diffMs = Date.now() - timestampMs;
   const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
-  if (diffSeconds < 60) return `${diffSeconds}s ago`;
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  return `${diffHours}h ago`;
+  let raw: string;
+  if (diffSeconds < 60) {
+    raw = `${diffSeconds}s ago`;
+  } else {
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) {
+      raw = `${diffMinutes}m ago`;
+    } else {
+      const diffHours = Math.floor(diffMinutes / 60);
+      raw = `${diffHours}h ago`;
+    }
+  }
+  return raw.padStart(7);
 }
 
 /**
@@ -264,29 +272,50 @@ export interface ActivityEvent {
   status: 'success' | 'error' | 'in-progress';
 }
 
-const SUCCESS_KEYWORDS = /completed|passed|success|approved|all implementation tasks completed/i;
-const ERROR_KEYWORDS = /error|failed|failure/i;
+/**
+ * Lines matching any of these patterns are filtered out of the activity feed.
+ * Order: most common patterns first for faster short-circuit.
+ */
+const SKIP_LINE_PATTERNS: RegExp[] = [
+  // Markdown formatting noise
+  /^\|.*\|$/,                              // Pipe-delimited markdown table rows
+  /^\|[-:|\s]+\|$/,                        // Table separator rows (|---|---|)
+  /^\d+\.\s/,                              // Numbered list items (1. foo, 2. bar)
+  /^\*\*/,                                 // Bold markdown headers (**Summary:**)
+  /^#{1,6}\s/,                             // Markdown section headers (## Summary)
+  // Separator lines
+  /^=+\s*$/,                               // bare separator lines (====)
+  /^-+\s*$/,                               // bare dash lines (----)
+  /^={5,}\s+\S+.*={5,}$/,                  // phase headers like "======= IMPL PHASE ======="
+  /^-{5,}\s+\S+.*-{5,}$/,                  // dashed phase headers
+  /^={10,}$/,                              // long separator (top/bottom of log)
+  // Iteration / review separators
+  /^---\s*(Iteration|Review attempt)/i,    // Iteration separator lines
+  // Interactive prompts and action lines
+  /^(Action request written|User selected|User chose):/i,
+  /^\d+\.\s+(Merge back|Push and create|Keep the branch|Discard this work)/i,
+  /^Which option\??$/i,
+  /^Implementation complete\.\s+What would you like/i,
+  // Token usage and loop lifecycle
+  /^(Final Token Usage:|Input:|Output:|Total:)/i,
+  /^(Loop complete\. Exiting\.|Ralph loop completed)/i,
+  // Loop config / header lines
+  /^Ralph Loop:/,
+  /^(Spec|Plan|Branch|App dir|Worktree|Resume|Review|Model|Max):/,
+  /^Baseline commit:/,
+  /^Creating branch:/,
+  // Misc noise
+  /^\{"level"/,                            // JSON log lines (BashTool warnings etc.)
+  /^Pending implementation tasks: \d+$/,   // raw task count (redundant with progress bar)
+  /^Ready for feedback\.?$/i,              // Conversational filler
+];
 
 /**
- * Lines matching these patterns are noise and should be skipped entirely.
+ * Returns true if a log line should be excluded from the activity feed.
  */
-const SKIP_LINE_PATTERNS = [
-  /^=+\s*$/,                                    // bare separator lines (====)
-  /^-+\s*$/,                                    // bare dash lines (----)
-  /^={5,}\s+\S+.*={5,}$/,                       // phase headers like "======= IMPL PHASE ======="
-  /^-{5,}\s+\S+.*-{5,}$/,                       // dashed phase headers
-  /^#{1,4}\s/,                                   // markdown headers (### Files Updated)
-  /^\d+\.\s+(Merge back|Push and create|Keep the branch|Discard this work)/i, // interactive choices
-  /^Which option\??$/i,                          // interactive prompt
-  /^Implementation complete\.\s+What would you like/i, // finishing prompt
-  /^Ralph Loop:/,                                // loop header info
-  /^(Spec|Plan|Branch|App dir|Worktree|Resume|Review|Model|Max):/,  // loop config lines
-  /^Baseline commit:/,                           // baseline
-  /^Creating branch:/,                           // branch creation
-  /^={10,}$/,                                    // long separator (top/bottom of log)
-  /^\{"level"/,                                  // JSON log lines (BashTool warnings etc.)
-  /^Pending implementation tasks: \d+$/,         // raw task count (redundant with progress bar)
-];
+function shouldSkipLine(line: string): boolean {
+  return SKIP_LINE_PATTERNS.some((pattern) => pattern.test(line));
+}
 
 /**
  * Strip markdown formatting from a message for cleaner display.
@@ -299,12 +328,8 @@ function stripMarkdown(msg: string): string {
     .trim();
 }
 
-/**
- * Check whether a log line should be skipped from the activity feed.
- */
-function shouldSkipLine(line: string): boolean {
-  return SKIP_LINE_PATTERNS.some((pattern) => pattern.test(line));
-}
+const SUCCESS_KEYWORDS = /completed|passed|success|approved|all implementation tasks completed/i;
+const ERROR_KEYWORDS = /error|failed|failure/i;
 
 function inferStatus(message: string): ActivityEvent['status'] {
   if (SUCCESS_KEYWORDS.test(message)) return 'success';
@@ -363,6 +388,7 @@ export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
     // Strip markdown formatting
     const message = stripMarkdown(rawMessage);
     if (!message) continue;
+    if (shouldSkipLine(message)) continue;
 
     if (since !== undefined && timestamp < since) continue;
 

@@ -37,6 +37,7 @@ import {
   type PhaseInfo,
 } from '../utils/loop-status.js';
 import { buildEnhancedRunSummary } from '../utils/build-run-summary.js';
+import { getCurrentCommitHash } from '../utils/git-summary.js';
 import { writeRunSummaryFile } from '../../utils/summary-file.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
@@ -286,6 +287,8 @@ export function RunScreen({
   const [completionSummary, setCompletionSummary] = useState<RunSummary | null>(null);
   const [actionRequest, setActionRequest] = useState<ActionRequest | null>(null);
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
+  const [latestCommit, setLatestCommit] = useState<string | null>(null);
+  const [baselineCommit, setBaselineCommit] = useState<string | null>(null);
 
   const childRef = useRef<ChildProcess | null>(null);
   const stopRequestedRef = useRef(false);
@@ -300,6 +303,22 @@ export function RunScreen({
   const handledActionIdRef = useRef<string | null>(null);
   const lastLogLineCountRef = useRef<number>(0);
   const lastKnownPhasesRef = useRef<PhaseInfo[] | undefined>(undefined);
+
+  // Read baseline commit once on mount
+  useEffect(() => {
+    const baselinePath = `/tmp/ralph-loop-${featureName}.baseline`;
+    try {
+      if (existsSync(baselinePath)) {
+        const hash = readFileSync(baselinePath, 'utf-8').trim();
+        if (hash) setBaselineCommit(hash);
+      }
+    } catch {
+      // Baseline file is optional — ignore read errors
+    }
+    // Also capture current HEAD as initial latestCommit
+    const head = getCurrentCommitHash(projectRoot);
+    if (head) setLatestCommit(head);
+  }, [featureName, projectRoot]);
 
   useInput((input, key) => {
     // If showing completion summary, Enter or Esc dismisses
@@ -338,6 +357,10 @@ export function RunScreen({
 
     if (!isMountedRef.current) return;
     setBranch(getGitBranch(projectRoot));
+
+    // Update latest commit hash
+    const head = getCurrentCommitHash(projectRoot);
+    if (head && isMountedRef.current) setLatestCommit(head);
 
     // Collect new activity events from log and phase changes
     const logPath = getLoopLogPath(featureName);
@@ -800,7 +823,14 @@ export function RunScreen({
 
             <Box marginTop={1} flexDirection="column">
               <Text bold>Activity</Text>
-              <ActivityFeed events={activityEvents} />
+              <ActivityFeed
+                events={activityEvents}
+                latestCommit={
+                  baselineCommit && latestCommit && baselineCommit !== latestCommit
+                    ? `${baselineCommit} \u2192 ${latestCommit}`
+                    : latestCommit || undefined
+                }
+              />
             </Box>
           </>
         )
