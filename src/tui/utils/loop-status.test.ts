@@ -19,29 +19,36 @@ describe('formatRelativeTime', () => {
     vi.useRealTimers();
   });
 
-  it('returns "0s ago" for the current moment', () => {
-    expect(formatRelativeTime(Date.now())).toBe('0s ago');
+  it('returns " 0s ago" for the current moment (right-padded to 7 chars)', () => {
+    expect(formatRelativeTime(Date.now())).toBe(' 0s ago');
   });
 
-  it('returns seconds for differences under one minute', () => {
+  it('returns right-padded seconds for differences under one minute', () => {
     expect(formatRelativeTime(Date.now() - 30_000)).toBe('30s ago');
     expect(formatRelativeTime(Date.now() - 59_000)).toBe('59s ago');
   });
 
-  it('returns minutes for differences between 1 and 59 minutes', () => {
-    expect(formatRelativeTime(Date.now() - 60_000)).toBe('1m ago');
-    expect(formatRelativeTime(Date.now() - 90_000)).toBe('1m ago');
-    expect(formatRelativeTime(Date.now() - 120_000)).toBe('2m ago');
+  it('returns right-padded minutes for differences between 1 and 59 minutes', () => {
+    expect(formatRelativeTime(Date.now() - 60_000)).toBe(' 1m ago');
+    expect(formatRelativeTime(Date.now() - 90_000)).toBe(' 1m ago');
+    expect(formatRelativeTime(Date.now() - 120_000)).toBe(' 2m ago');
     expect(formatRelativeTime(Date.now() - 59 * 60_000)).toBe('59m ago');
   });
 
-  it('returns hours for differences of 1 hour or more', () => {
-    expect(formatRelativeTime(Date.now() - 3600_000)).toBe('1h ago');
-    expect(formatRelativeTime(Date.now() - 7200_000)).toBe('2h ago');
+  it('returns right-padded hours for differences of 1 hour or more', () => {
+    expect(formatRelativeTime(Date.now() - 3600_000)).toBe(' 1h ago');
+    expect(formatRelativeTime(Date.now() - 7200_000)).toBe(' 2h ago');
   });
 
-  it('returns "0s ago" for future timestamps (clamped to 0)', () => {
-    expect(formatRelativeTime(Date.now() + 5000)).toBe('0s ago');
+  it('returns " 0s ago" for future timestamps (clamped to 0)', () => {
+    expect(formatRelativeTime(Date.now() + 5000)).toBe(' 0s ago');
+  });
+
+  it('produces strings of consistent 7-character width', () => {
+    const timestamps = [0, 5_000, 30_000, 60_000, 3600_000];
+    for (const offset of timestamps) {
+      expect(formatRelativeTime(Date.now() - offset)).toHaveLength(7);
+    }
   });
 });
 
@@ -175,6 +182,93 @@ describe('parseLoopLog', () => {
 
     const events = parseLoopLog(logPath);
     expect(events[0].status).toBe('success');
+  });
+
+  describe('log line filtering', () => {
+    beforeEach(() => {
+      vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1000 } as fs.Stats);
+    });
+
+    it('filters pipe-delimited markdown table rows', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        '| Area | Status |\n|------|--------|\n| Parser | Done |\nActual log line\n'
+      );
+      const events = parseLoopLog(logPath);
+      expect(events).toHaveLength(1);
+      expect(events[0].message).toBe('Actual log line');
+    });
+
+    it('filters numbered list items', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        '1. Parser is a small module\n2. Tests are passing\nActual progress\n'
+      );
+      const events = parseLoopLog(logPath);
+      expect(events).toHaveLength(1);
+      expect(events[0].message).toBe('Actual progress');
+    });
+
+    it('filters bold markdown headers', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        '**Summary of findings:**\nActual message\n'
+      );
+      const events = parseLoopLog(logPath);
+      expect(events).toHaveLength(1);
+      expect(events[0].message).toBe('Actual message');
+    });
+
+    it('filters markdown section headers', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        '## Summary\n### What was done\nActual line\n'
+      );
+      const events = parseLoopLog(logPath);
+      expect(events).toHaveLength(1);
+      expect(events[0].message).toBe('Actual line');
+    });
+
+    it('filters iteration separator lines', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        '--- Iteration 3 ---\n--- Review attempt 2 of 3 ---\nDoing work\n'
+      );
+      const events = parseLoopLog(logPath);
+      expect(events).toHaveLength(1);
+      expect(events[0].message).toBe('Doing work');
+    });
+
+    it('filters action request and user selection lines', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        'Action request written: merge\nUser selected: approve\nUser chose: skip\nReal event\n'
+      );
+      const events = parseLoopLog(logPath);
+      expect(events).toHaveLength(1);
+      expect(events[0].message).toBe('Real event');
+    });
+
+    it('filters token usage block lines', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        'Final Token Usage:\nInput: 50000 tokens\nOutput: 12000 tokens\nTotal: 62000 tokens\nDone\n'
+      );
+      const events = parseLoopLog(logPath);
+      expect(events).toHaveLength(1);
+      expect(events[0].message).toBe('Done');
+    });
+
+    it('filters loop completion lines', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        'Loop complete. Exiting.\nRalph loop completed: feature-x\nFinal message\n'
+      );
+      const events = parseLoopLog(logPath);
+      expect(events).toHaveLength(1);
+      expect(events[0].message).toBe('Final message');
+    });
+
+    it('filters conversational filler', () => {
+      vi.mocked(fs.readFileSync).mockReturnValue(
+        'Ready for feedback.\nMeaningful update\n'
+      );
+      const events = parseLoopLog(logPath);
+      expect(events).toHaveLength(1);
+      expect(events[0].message).toBe('Meaningful update');
+    });
   });
 });
 
