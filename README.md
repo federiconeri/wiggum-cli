@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <img src=".github/screenshot.png" alt="Wiggum TUI — spec generation and autonomous coding loop" width="800">
+  <video src="https://github.com/user-attachments/assets/817edf0c-a7aa-418f-bf85-499be520fd94" width="800" controls></video>
 </p>
 
 ---
