@@ -10,6 +10,104 @@ import { loadApiKeysFromEnvLocal } from './utils/env.js';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { runCommand, type RunOptions } from './commands/run.js';
+import { monitorCommand, type MonitorOptions } from './commands/monitor.js';
+import { handleConfigCommand } from './commands/config.js';
+
+/**
+ * Parsed CLI arguments
+ */
+export interface ParsedArgs {
+  command: string | undefined;
+  positionalArgs: string[];
+  flags: Record<string, string | boolean>;
+}
+
+/**
+ * Normalize a flag name: strip '--' prefix and convert kebab-case to camelCase
+ */
+function normalizeFlagName(flag: string): string {
+  return flag.replace(/^--/, '').replace(/-([a-z])/g, (_: string, c: string) => c.toUpperCase());
+}
+
+/**
+ * Parse CLI arguments into command, positional args, and flags.
+ * Supports: --flag value, --flag=value, boolean flags, short flags (-i, -y, -e, -f, -h, -v).
+ */
+export function parseCliArgs(argv: string[]): ParsedArgs {
+  const positionalArgs: string[] = [];
+  const flags: Record<string, string | boolean> = {};
+  let command: string | undefined;
+
+  const shortFlags: Record<string, string> = {
+    '-i': 'interactive',
+    '-y': 'yes',
+    '-e': 'edit',
+    '-f': 'force',
+    '-h': 'help',
+    '-v': 'version',
+  };
+
+  // Flags that consume the next argument as their value
+  const valueFlagSet = new Set([
+    '--model',
+    '--max-iterations',
+    '--max-e2e-attempts',
+    '--interval',
+    '--provider',
+    '--review-mode',
+  ]);
+
+  let i = 0;
+  while (i < argv.length) {
+    const arg = argv[i];
+
+    if (arg in shortFlags) {
+      flags[shortFlags[arg]] = true;
+      i++;
+      continue;
+    }
+
+    if (arg.startsWith('--') && arg.includes('=')) {
+      const eqIdx = arg.indexOf('=');
+      const key = normalizeFlagName(arg.slice(0, eqIdx));
+      const value = arg.slice(eqIdx + 1);
+      flags[key] = value;
+      i++;
+      continue;
+    }
+
+    if (arg.startsWith('--')) {
+      const normalized = normalizeFlagName(arg);
+      if (valueFlagSet.has(arg) && i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
+        flags[normalized] = argv[i + 1];
+        i += 2;
+      } else {
+        flags[normalized] = true;
+        i++;
+      }
+      continue;
+    }
+
+    if (command === undefined) {
+      command = arg;
+    } else {
+      positionalArgs.push(arg);
+    }
+    i++;
+  }
+
+  return { command, positionalArgs, flags };
+}
+
+function parseIntFlag(value: string, flagName: string): number {
+  const n = parseInt(value, 10);
+  if (Number.isNaN(n)) {
+    console.error(`Error: ${flagName} must be a number, got "${value}"`);
+    process.exit(1);
+  }
+  return n;
+}
 
 /**
  * Get version from package.json
@@ -111,71 +209,146 @@ async function startInkTui(initialScreen: AppScreen = 'shell', interviewFeature?
 
 /**
  * Main entry point for the Wiggum CLI
- * TUI-first: routes args to appropriate TUI screens
+ * TUI-first: routes args to appropriate TUI screens or CLI commands
  */
 export async function main(): Promise<void> {
   // Load API keys from .ralph/.env.local before any provider detection
   loadApiKeysFromEnvLocal();
 
-  const args = process.argv.slice(2);
+  const parsed = parseCliArgs(process.argv.slice(2));
 
   // Check for updates (non-blocking, fails silently)
   await notifyIfUpdateAvailable();
 
-  // No args = start with shell
-  if (args.length === 0) {
+  // Handle --help / -h
+  if (parsed.flags.help) {
+    console.log(`
+Wiggum CLI - AI-powered feature development assistant
+
+Usage:
+  wiggum                    Start interactive TUI
+  wiggum init               Initialize project (TUI)
+  wiggum new <name>         Create new feature spec (TUI)
+  wiggum run <feature>      Run feature development loop
+  wiggum monitor <feature>  Monitor a running feature loop
+  wiggum config [args...]   Manage API keys and settings
+
+Options for run:
+  --worktree                Use git worktree isolation
+  --resume                  Resume from last checkpoint
+  --model <model>           AI model to use
+  --max-iterations <n>      Maximum loop iterations
+  --max-e2e-attempts <n>    Maximum E2E test attempts
+  --review-mode <mode>      Review mode: manual, auto, merge
+
+Options for monitor:
+  --interval <seconds>      Refresh interval (default: 5)
+  --bash                    Use bash monitor script
+
+Options for init:
+  --provider <name>         AI provider (anthropic, openai, openrouter)
+  -i, --interactive         Interactive mode
+  -y, --yes                 Accept all defaults
+
+Options for new:
+  --provider <name>         AI provider
+  --model <model>           AI model
+  -e, --edit                Open in editor after creation
+  -f, --force               Overwrite existing spec
+
+In the TUI:
+  /init                     Initialize or reconfigure project
+  /new <name>               Create a new feature specification
+  /run <name>               Run the feature development loop
+  /monitor <name>           Monitor a running feature loop
+  /sync                     Sync context from git history
+  /config [set <svc> <key>] Manage API keys and settings
+  /help                     Show available commands
+  /exit                     Exit the application
+
+Press Esc to cancel any operation.
+`);
+    return;
+  }
+
+  // Handle --version / -v
+  if (parsed.flags.version) {
+    console.log(getVersion());
+    return;
+  }
+
+  // No command = start with shell
+  if (!parsed.command) {
     await startInkTui('shell');
     return;
   }
 
-  // Route commands to TUI screens
-  const command = args[0];
-
-  switch (command) {
-    case 'init':
-      // Start TUI at init screen
+  switch (parsed.command) {
+    case 'init': {
+      // TODO: pass parsed flags to startInkTui once TUI supports init flags
       await startInkTui('init');
       break;
+    }
 
-    case 'new':
-      // Start TUI at interview screen with feature name
-      const featureName = args[1];
+    case 'new': {
+      const featureName = parsed.positionalArgs[0];
       if (!featureName) {
-        logger.error('Feature name required. Usage: wiggum new <feature-name>');
+        console.error('Error: <name> is required for "new"');
+        console.error('Usage: wiggum new <name> [--provider <name>] [--model <model>] [-e] [-f]');
         process.exit(1);
       }
+      // TODO: pass parsed flags to startInkTui once TUI supports new flags
       await startInkTui('interview', featureName);
       break;
+    }
 
-    case '--help':
-    case '-h':
-      // Show help
-      console.log(`
-Wiggum CLI - AI-powered feature development assistant
+    case 'run': {
+      const feature = parsed.positionalArgs[0];
+      if (!feature) {
+        console.error('Error: <feature> is required for "run"');
+        console.error('Usage: wiggum run <feature> [--worktree] [--resume] [--model <model>] [--max-iterations <n>] [--max-e2e-attempts <n>]');
+        process.exit(1);
+      }
+      const runOptions: RunOptions = {
+        worktree: parsed.flags.worktree === true,
+        resume: parsed.flags.resume === true,
+        model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
+        maxIterations: typeof parsed.flags.maxIterations === 'string' ? parseIntFlag(parsed.flags.maxIterations, '--max-iterations') : undefined,
+        maxE2eAttempts: typeof parsed.flags.maxE2eAttempts === 'string' ? parseIntFlag(parsed.flags.maxE2eAttempts, '--max-e2e-attempts') : undefined,
+        reviewMode: typeof parsed.flags.reviewMode === 'string' ? parsed.flags.reviewMode as RunOptions['reviewMode'] : undefined,
+      };
+      await runCommand(feature, runOptions);
+      break;
+    }
 
-Usage:
-  wiggum              Start interactive TUI
-  wiggum init         Initialize project (TUI)
-  wiggum new <name>   Create new feature spec (TUI)
+    case 'monitor': {
+      const feature = parsed.positionalArgs[0];
+      if (!feature) {
+        console.error('Error: <feature> is required for "monitor"');
+        console.error('Usage: wiggum monitor <feature> [--interval <seconds>] [--bash]');
+        process.exit(1);
+      }
+      const monitorOptions: MonitorOptions = {
+        bash: parsed.flags.bash === true,
+        interval: typeof parsed.flags.interval === 'string' ? parseIntFlag(parsed.flags.interval, '--interval') : undefined,
+      };
+      await monitorCommand(feature, monitorOptions);
+      break;
+    }
 
-In the TUI:
-  /init               Initialize or reconfigure project
-  /new <name>         Create a new feature specification
-  /help               Show available commands
-  /exit               Exit the application
-
-Press Esc to cancel any operation.
-`);
-      return;
-
-    case '--version':
-    case '-v':
-      console.log(getVersion());
-      return;
+    case 'config': {
+      const provider = getAvailableProvider();
+      const model = provider
+        ? (AVAILABLE_MODELS[provider].find((m) => m.hint?.includes('recommended'))?.value ?? AVAILABLE_MODELS[provider][0].value)
+        : 'sonnet';
+      const state = createSessionState(process.cwd(), provider, model);
+      await handleConfigCommand(parsed.positionalArgs, state);
+      break;
+    }
 
     default:
       // Unknown command - start TUI at shell
-      logger.warn(`Unknown command: ${command}. Starting TUI...`);
+      logger.warn(`Unknown command: ${parsed.command}. Starting TUI...`);
       await startInkTui('shell');
   }
 }
