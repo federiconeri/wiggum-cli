@@ -245,11 +245,19 @@ export function formatNumber(num: number): string {
 export function formatRelativeTime(timestampMs: number): string {
   const diffMs = Date.now() - timestampMs;
   const diffSeconds = Math.max(0, Math.floor(diffMs / 1000));
-  if (diffSeconds < 60) return `${diffSeconds}s ago`;
-  const diffMinutes = Math.floor(diffSeconds / 60);
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
-  const diffHours = Math.floor(diffMinutes / 60);
-  return `${diffHours}h ago`;
+  let raw: string;
+  if (diffSeconds < 60) {
+    raw = `${diffSeconds}s ago`;
+  } else {
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    if (diffMinutes < 60) {
+      raw = `${diffMinutes}m ago`;
+    } else {
+      const diffHours = Math.floor(diffMinutes / 60);
+      raw = `${diffHours}h ago`;
+    }
+  }
+  return raw.padStart(7);
 }
 
 /**
@@ -264,6 +272,61 @@ export interface ActivityEvent {
   status: 'success' | 'error' | 'in-progress';
 }
 
+/**
+ * Lines matching any of these patterns are filtered out of the activity feed.
+ * Order: most common patterns first for faster short-circuit.
+ */
+const SKIP_LINE_PATTERNS: RegExp[] = [
+  // Markdown formatting noise
+  /^\|.*\|$/,                              // Pipe-delimited markdown table rows (incl. separator rows)
+  /^\d+\.\s/,                              // Numbered list items (1. foo, 2. bar)
+  /^\*\*/,                                 // Bold markdown headers (**Summary:**)
+  /^#{1,6}\s/,                             // Markdown section headers (## Summary)
+  // Separator lines
+  /^=+\s*$/,                               // bare separator lines (====)
+  /^-+\s*$/,                               // bare dash lines (----)
+  /^={5,}\s+\S+.*={5,}$/,                  // phase headers like "======= IMPL PHASE ======="
+  /^-{5,}\s+\S+.*-{5,}$/,                  // dashed phase headers
+  /^={10,}$/,                              // long separator (top/bottom of log)
+  // Iteration / review separators
+  /^---\s*(Iteration|Review attempt)/i,    // Iteration separator lines
+  // Interactive prompts and action lines
+  /^(Action request written|User selected|User chose):/i,
+  /^\d+\.\s+(Merge back|Push and create|Keep the branch|Discard this work)/i,
+  /^Which option\??$/i,
+  /^Implementation complete\.\s+What would you like/i,
+  // Token usage and loop lifecycle
+  /^(Final Token Usage:|Input:|Output:|Total:)/i,
+  /^(Loop complete\. Exiting\.|Ralph loop completed)/i,
+  // Loop config / header lines
+  /^Ralph Loop:/,
+  /^(Spec|Plan|Branch|App dir|Worktree|Resume|Review|Model|Max):/,
+  /^Baseline commit:/,
+  /^Creating branch:/,
+  // Misc noise
+  /^\{"level"/,                            // JSON log lines (BashTool warnings etc.)
+  /^Pending implementation tasks: \d+$/,   // raw task count (redundant with progress bar)
+  /^Ready for feedback\.?$/i,              // Conversational filler
+];
+
+/**
+ * Returns true if a log line should be excluded from the activity feed.
+ */
+function shouldSkipLine(line: string): boolean {
+  return SKIP_LINE_PATTERNS.some((pattern) => pattern.test(line));
+}
+
+/**
+ * Strip markdown formatting from a message for cleaner display.
+ */
+function stripMarkdown(msg: string): string {
+  return msg
+    .replace(/\*\*([^*]+)\*\*/g, '$1')   // **bold** → bold
+    .replace(/`([^`]+)`/g, '$1')          // `code` → code
+    .replace(/^\s*[-*]\s+/, '')           // leading bullet points
+    .trim();
+}
+
 const SUCCESS_KEYWORDS = /completed|passed|success|approved|all implementation tasks completed/i;
 const ERROR_KEYWORDS = /error|failed|failure/i;
 
@@ -276,8 +339,8 @@ function inferStatus(message: string): ActivityEvent['status'] {
 /**
  * Parse the loop log file into structured activity events.
  *
- * Each non-empty line becomes an event. Timestamp is extracted from common
- * log prefixes if present, otherwise the file's mtime is used as fallback.
+ * Filters out noise lines (separators, markdown headers, interactive prompts,
+ * config lines) and strips markdown formatting from remaining messages.
  *
  * @param logPath - Absolute path to the loop log file.
  * @param since - Optional epoch ms cutoff; only return events at or after this time.
@@ -315,8 +378,16 @@ export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
       if (!Number.isNaN(parsed)) timestamp = parsed;
     }
 
-    const message = line.replace(/^\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]\s*/, '').trim();
+    const rawMessage = line.replace(/^\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]\s*/, '').trim();
+    if (!rawMessage) continue;
+
+    // Skip noise lines
+    if (shouldSkipLine(rawMessage)) continue;
+
+    // Strip markdown formatting
+    const message = stripMarkdown(rawMessage);
     if (!message) continue;
+    if (shouldSkipLine(message)) continue;
 
     if (since !== undefined && timestamp < since) continue;
 

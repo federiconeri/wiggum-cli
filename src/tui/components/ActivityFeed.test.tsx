@@ -123,4 +123,72 @@ describe('ActivityFeed', () => {
     expect(frame).toContain('Event 5');
     unmount();
   });
+
+  it('truncates long messages with ellipsis', () => {
+    const longMessage = 'A'.repeat(120);
+    const event: ActivityEvent = {
+      timestamp: Date.now(),
+      message: longMessage,
+      status: 'in-progress',
+    };
+
+    const { lastFrame, unmount } = render(<ActivityFeed events={[event]} />);
+    const frame = stripAnsi(lastFrame() ?? '');
+
+    // Should NOT contain the full 120-char message
+    expect(frame).not.toContain(longMessage);
+    // Should contain the truncated version ending with ellipsis (…)
+    expect(frame).toContain('\u2026');
+    unmount();
+  });
+
+  it('does not truncate short messages', () => {
+    const shortMessage = 'Build completed';
+    const event: ActivityEvent = {
+      timestamp: Date.now(),
+      message: shortMessage,
+      status: 'success',
+    };
+
+    const { lastFrame, unmount } = render(<ActivityFeed events={[event]} />);
+    const frame = stripAnsi(lastFrame() ?? '');
+
+    expect(frame).toContain(shortMessage);
+    expect(frame).not.toContain('\u2026');
+    unmount();
+  });
+
+  it('renders commit footer when latestCommit is provided', () => {
+    const { lastFrame, unmount } = render(
+      <ActivityFeed events={[SUCCESS_EVENT]} latestCommit="b425c40 \u2192 6efaf80" />
+    );
+    const frame = stripAnsi(lastFrame() ?? '');
+
+    expect(frame).toContain('Commit:');
+    expect(frame).toContain('b425c40');
+    expect(frame).toContain('6efaf80');
+    unmount();
+  });
+
+  it('renders commit footer in empty state', () => {
+    const { lastFrame, unmount } = render(
+      <ActivityFeed events={[]} latestCommit="abc1234" />
+    );
+    const frame = stripAnsi(lastFrame() ?? '');
+
+    expect(frame).toContain('No activity yet');
+    expect(frame).toContain('Commit:');
+    expect(frame).toContain('abc1234');
+    unmount();
+  });
+
+  it('does not render commit footer when latestCommit is undefined', () => {
+    const { lastFrame, unmount } = render(
+      <ActivityFeed events={[SUCCESS_EVENT]} />
+    );
+    const frame = stripAnsi(lastFrame() ?? '');
+
+    expect(frame).not.toContain('Commit:');
+    unmount();
+  });
 });
