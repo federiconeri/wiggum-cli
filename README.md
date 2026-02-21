@@ -83,6 +83,12 @@ npx wiggum-cli init
 
 🔁 **Autonomous Coding Loops** — Hands specs to Claude Code (or any agent) and runs implement → test → fix cycles with git worktree isolation.
 
+✨ **Spec Autocomplete** — AI pre-fills spec names from your codebase context when running `/run`.
+
+📥 **Action Inbox** — Review AI decisions inline without breaking your flow. The loop pauses, you approve or redirect, it continues.
+
+📊 **Run Summaries** — See exactly what changed and why after each loop completes, with activity feed and diff stats.
+
 📋 **Tailored Prompts** — Generates prompts, guides, and scripts specific to your stack. Not generic templates — actual context about *your* project.
 
 🔌 **BYOK** — Bring your own API keys. Works with Anthropic, OpenAI, or OpenRouter. Keys stay local, never leave your machine.
