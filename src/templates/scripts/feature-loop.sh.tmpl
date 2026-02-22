@@ -394,12 +394,13 @@ if [ ! -f "$PLAN_FILE" ]; then
     echo "======================== PLANNING PHASE ========================"
     write_phase_start "planning"
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-    cat "$PROMPTS_DIR/PROMPT_feature.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || {
+    cat "$PROMPTS_DIR/PROMPT_feature.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || {
         echo "ERROR: Planning phase failed"
         write_phase_end "planning" "failed"
         exit 1
     }
-    parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+    extract_session_result "${CLAUDE_OUTPUT}.raw"
+    accumulate_tokens_from_session "$LAST_SESSION_ID"
     write_phase_end "planning" "success"
 else
     echo "Plan file exists, skipping planning phase"
@@ -432,8 +433,9 @@ while true; do
 
     echo "Pending implementation tasks: $PENDING_IMPL"
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-    cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-    parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+    cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+    extract_session_result "${CLAUDE_OUTPUT}.raw"
+    accumulate_tokens_from_session "$LAST_SESSION_ID"
 
     sleep 2
 done
@@ -457,8 +459,9 @@ else
         echo "------------------------ E2E Attempt $E2E_ATTEMPT of $MAX_E2E_ATTEMPTS ------------------------"
 
         export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-        cat "$PROMPTS_DIR/PROMPT_e2e.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-        parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+        cat "$PROMPTS_DIR/PROMPT_e2e.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        extract_session_result "${CLAUDE_OUTPUT}.raw"
+        accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check if all E2E tests passed
         E2E_FAILED=$({ grep "^- \[ \].*E2E:.*FAILED" "$PLAN_FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
@@ -472,8 +475,9 @@ else
 
         if [ $E2E_ATTEMPT -lt $MAX_E2E_ATTEMPTS ]; then
             echo "E2E tests have failures. Running fix iteration..."
-            cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-            parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+            cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            extract_session_result "${CLAUDE_OUTPUT}.raw"
+            accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
     done
 
@@ -489,10 +493,11 @@ echo "======================== SPEC VERIFICATION PHASE ========================"
 write_phase_start "verification"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 VERIFY_STATUS="success"
-if ! cat "$PROMPTS_DIR/PROMPT_verify.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
+if ! cat "$PROMPTS_DIR/PROMPT_verify.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw"; then
     VERIFY_STATUS="failed"
 fi
-parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+extract_session_result "${CLAUDE_OUTPUT}.raw"
+accumulate_tokens_from_session "$LAST_SESSION_ID"
 write_phase_end "verification" "$VERIFY_STATUS"
 
 # Phase 7: PR and Review
@@ -528,10 +533,11 @@ check_review_approved() {
 }
 
 if [ "$REVIEW_MODE" = "manual" ]; then
-    if ! cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
+    if ! cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw"; then
         PR_STATUS="failed"
     fi
-    parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+    extract_session_result "${CLAUDE_OUTPUT}.raw"
+    accumulate_tokens_from_session "$LAST_SESSION_ID"
 
 elif [ "$REVIEW_MODE" = "merge" ]; then
     # Merge mode: create PR, iterate review+fixes until approved, then merge
@@ -540,11 +546,12 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
     while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
         REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
         echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
-        cat "$PROMPTS_DIR/PROMPT_review_merge.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
-        parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+        cat "$PROMPTS_DIR/PROMPT_review_merge.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        extract_session_result "${CLAUDE_OUTPUT}.raw"
+        accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check stdout and PR comment for approval
-        if check_review_approved "$CLAUDE_OUTPUT"; then
+        if check_review_approved "${CLAUDE_OUTPUT}.raw"; then
             echo "Review approved!"
             REVIEW_APPROVED=true
             break
@@ -556,8 +563,9 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
 1. Fix each issue referenced in the review
 2. Run tests: npm test
 3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-            parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            extract_session_result "${CLAUDE_OUTPUT}.raw"
+            accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
     done
     if [ "$REVIEW_APPROVED" != true ]; then
@@ -572,11 +580,12 @@ else
     while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
         REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
         echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
-        cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
-        parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+        cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        extract_session_result "${CLAUDE_OUTPUT}.raw"
+        accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check stdout and PR comment for approval
-        if check_review_approved "$CLAUDE_OUTPUT"; then
+        if check_review_approved "${CLAUDE_OUTPUT}.raw"; then
             echo "Review approved!"
             REVIEW_APPROVED=true
             break
@@ -588,8 +597,9 @@ else
 1. Fix each issue referenced in the review
 2. Run tests: npm test
 3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-            parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            extract_session_result "${CLAUDE_OUTPUT}.raw"
+            accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
     done
     if [ "$REVIEW_APPROVED" != true ]; then
