@@ -649,8 +649,21 @@ if [ -f "/tmp/ralph-loop-${FEATURE}.tokens" ]; then
     echo ""
     echo "=========================================="
     echo "Final Token Usage:"
-    cat "/tmp/ralph-loop-${FEATURE}.tokens" | awk -F'|' '{printf "  Input: %s tokens\n  Output: %s tokens\n  Total: %s tokens\n", $1, $2, $1+$2}'
+    awk -F'|' '{
+        printf "  Input:        %d tokens\n", $1
+        printf "  Output:       %d tokens\n", $2
+        printf "  Cache create: %d tokens\n", $3
+        printf "  Cache read:   %d tokens\n", $4
+        printf "  Total:        %d tokens\n", $1+$2+$3+$4
+    }' "/tmp/ralph-loop-${FEATURE}.tokens"
     echo "=========================================="
+fi
+
+# Print session IDs
+if [ -f "/tmp/ralph-loop-${FEATURE}.sessions" ]; then
+    SESSION_COUNT=$(wc -l < "/tmp/ralph-loop-${FEATURE}.sessions" | tr -d ' ')
+    echo "Sessions: $SESSION_COUNT"
+    cat "/tmp/ralph-loop-${FEATURE}.sessions"
 fi
 
 echo "=========================================="
