@@ -57,7 +57,7 @@ export interface RunAppProps {
   /** If true, opens in monitor-only (read-only) mode — no loop is spawned */
   monitorOnly?: boolean;
   /** Review mode override */
-  reviewMode?: string;
+  reviewMode?: 'manual' | 'auto';
 }
 
 /**

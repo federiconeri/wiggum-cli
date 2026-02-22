@@ -415,7 +415,14 @@ describe('main', () => {
 
   it('monitor my-feature → calls monitorCommand with feature name', async () => {
     process.argv = ['node', 'ralph.js', 'monitor', 'my-feature'];
-    await main();
+    const originalIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, 'isTTY', { value: undefined, configurable: true });
+
+    try {
+      await main();
+    } finally {
+      Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
 
     expect(mockMonitorCommand).toHaveBeenCalledWith('my-feature', expect.any(Object));
     expect(mockRenderApp).not.toHaveBeenCalled();

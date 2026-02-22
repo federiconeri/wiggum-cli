@@ -7,5 +7,8 @@
  * Checks the standard CI and CONTINUOUS_INTEGRATION environment variables.
  */
 export function isCI(): boolean {
-  return !!process.env['CI'] || !!process.env['CONTINUOUS_INTEGRATION'];
+  const ci = process.env['CI'];
+  const continuous = process.env['CONTINUOUS_INTEGRATION'];
+  return (!!ci && ci !== 'false' && ci !== '0') ||
+    (!!continuous && continuous !== 'false' && continuous !== '0');
 }

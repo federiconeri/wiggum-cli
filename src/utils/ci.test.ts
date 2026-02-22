@@ -49,4 +49,19 @@ describe('isCI', () => {
     process.env['CONTINUOUS_INTEGRATION'] = 'true';
     expect(isCI()).toBe(true);
   });
+
+  it('returns false when CI is set to "false"', () => {
+    process.env['CI'] = 'false';
+    expect(isCI()).toBe(false);
+  });
+
+  it('returns false when CI is set to "0"', () => {
+    process.env['CI'] = '0';
+    expect(isCI()).toBe(false);
+  });
+
+  it('returns false when CI is set to empty string', () => {
+    process.env['CI'] = '';
+    expect(isCI()).toBe(false);
+  });
 });
