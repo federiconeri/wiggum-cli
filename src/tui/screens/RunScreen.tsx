@@ -136,6 +136,8 @@ export interface RunSummary {
   tasksTotal: number;
   tokensInput: number;
   tokensOutput: number;
+  cacheCreate: number;
+  cacheRead: number;
   exitCode: number;
   /** True when the exit code was inferred (e.g. monitor mode heuristic) rather than observed directly */
   exitCodeInferred?: boolean;
@@ -271,7 +273,7 @@ export function RunScreen({
       return readLoopStatus(featureName);
     } catch (err) {
       logger.error(`Failed to read initial loop status: ${err instanceof Error ? err.message : String(err)}`);
-      return { running: false, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+      return { running: false, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0, cacheCreate: 0, cacheRead: 0 };
     }
   });
   const [tasks, setTasks] = useState<TaskCounts>({
@@ -418,6 +420,8 @@ export function RunScreen({
         tasksTotal,
         tokensInput: nextStatus.tokensInput,
         tokensOutput: nextStatus.tokensOutput,
+        cacheCreate: nextStatus.cacheCreate,
+        cacheRead: nextStatus.cacheRead,
         exitCode,
         exitCodeInferred: true,
         branch: getGitBranch(projectRoot),
@@ -618,7 +622,7 @@ export function RunScreen({
               latestTasks = await parseImplementationPlan(projectRoot, featureName, specsDirRef.current);
             } catch (err) {
               logger.error(`Failed to read final run status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
-              latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+              latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0, cacheCreate: 0, cacheRead: 0 };
               latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0 };
             }
 
@@ -635,6 +639,8 @@ export function RunScreen({
               tasksTotal,
               tokensInput: latestStatus.tokensInput,
               tokensOutput: latestStatus.tokensOutput,
+              cacheCreate: latestStatus.cacheCreate,
+              cacheRead: latestStatus.cacheRead,
               exitCode,
               branch: getGitBranch(projectRoot),
               logPath,
@@ -689,7 +695,7 @@ export function RunScreen({
   const percentE2e = totalE2e > 0 ? Math.round((tasks.e2eDone / totalE2e) * 100) : 0;
   const percentAll = totalAll > 0 ? Math.round((doneAll / totalAll) * 100) : 0;
 
-  const totalTokens = status.tokensInput + status.tokensOutput;
+  const totalTokens = status.tokensInput + status.tokensOutput + status.cacheCreate + status.cacheRead;
   const phaseLine = isStarting ? 'Starting...' : status.phase;
   const isRunning = !completionSummary && !error;
 
@@ -788,7 +794,7 @@ export function RunScreen({
             <Box marginTop={1} flexDirection="row">
               <Text>Tokens: </Text>
               <Text color={colors.pink}>{formatNumber(totalTokens)}</Text>
-              <Text dimColor> (in:{formatNumber(status.tokensInput)} out:{formatNumber(status.tokensOutput)})</Text>
+              <Text dimColor> (in:{formatNumber(status.tokensInput)} out:{formatNumber(status.tokensOutput)} cache:{formatNumber(status.cacheRead)})</Text>
               <Text dimColor>{theme.statusLine.separator}</Text>
               <Text dimColor>Elapsed: {formatDuration(startTimeRef.current)}</Text>
             </Box>

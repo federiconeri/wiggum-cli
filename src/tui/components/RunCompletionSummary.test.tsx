@@ -32,6 +32,8 @@ function makeSummary(overrides: Partial<RunSummary> = {}): RunSummary {
     tasksTotal: 6,
     tokensInput: 10000,
     tokensOutput: 5000,
+    cacheCreate: 0,
+    cacheRead: 0,
     exitCode: 0,
     branch: 'feat/my-feature',
     logPath: '/tmp/ralph-loop-my-feature.log',

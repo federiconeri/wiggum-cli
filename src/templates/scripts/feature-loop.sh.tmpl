@@ -97,8 +97,8 @@ if [ "$REVIEW_MODE" != "manual" ] && [ "$REVIEW_MODE" != "auto" ] && [ "$REVIEW_
 fi
 
 # Build claude commands
-CLAUDE_CMD_OPUS="claude -p --dangerously-skip-permissions --model ${PLANNING_MODEL}"
-CLAUDE_CMD_IMPL="claude -p --dangerously-skip-permissions --model ${MODEL:-$DEFAULT_MODEL}"
+CLAUDE_CMD_OPUS="claude -p --output-format json --dangerously-skip-permissions --model ${PLANNING_MODEL}"
+CLAUDE_CMD_IMPL="claude -p --output-format json --dangerously-skip-permissions --model ${MODEL:-$DEFAULT_MODEL}"
 
 # Token tracking
 TOKENS_FILE="/tmp/ralph-loop-${1}.tokens"
@@ -107,35 +107,130 @@ STATUS_FILE="/tmp/ralph-loop-${1}.status"
 FINAL_STATUS_FILE="/tmp/ralph-loop-${1}.final"
 PHASES_FILE="/tmp/ralph-loop-${1}.phases"
 BASELINE_FILE="/tmp/ralph-loop-${1}.baseline"
+SESSIONS_FILE="/tmp/ralph-loop-${1}.sessions"
+LOG_FILE="/tmp/ralph-loop-${1}.log"
 
-# Initialize token tracking
+# Initialize token tracking (4-field format: input|output|cache_create|cache_read)
 init_tokens() {
-    echo "0|0" > "$TOKENS_FILE"
+    echo "0|0|0|0" > "$TOKENS_FILE"
+    > "$SESSIONS_FILE"
+    > "$LOG_FILE"
 }
 
-# Parse and accumulate tokens
-parse_and_accumulate_tokens() {
-    local output_file="$1"
-    local input_tokens=$({ grep -oE "input[^0-9]*([0-9,]+)" "$output_file" 2>/dev/null || true; } | { grep -oE "[0-9,]+" || true; } | tr -d ',' | tail -1)
-    local output_tokens=$({ grep -oE "output[^0-9]*([0-9,]+)" "$output_file" 2>/dev/null || true; } | { grep -oE "[0-9,]+" || true; } | tr -d ',' | tail -1)
+# Extract session result from JSON output.
+# Writes human-readable result text to the .log file and captures session_id.
+# Usage: extract_session_result <raw_json_file>
+# Sets: LAST_SESSION_ID variable
+extract_session_result() {
+    local raw_file="$1"
+    LAST_SESSION_ID=""
+    if [ ! -f "$raw_file" ]; then return; fi
 
-    input_tokens=${input_tokens:-0}
-    output_tokens=${output_tokens:-0}
+    local result
+    result=$(python3 -c "
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    if not isinstance(data, list): data = [data]
+    for entry in reversed(data):
+        if isinstance(entry, dict) and entry.get('type') == 'result':
+            print(entry.get('session_id', ''))
+            break
+except Exception:
+    pass
+" "$raw_file" 2>/dev/null) || true
 
-    if [ -f "$TOKENS_FILE" ]; then
-        local current=$(cat "$TOKENS_FILE")
-        local current_input=$(echo "$current" | cut -d'|' -f1)
-        local current_output=$(echo "$current" | cut -d'|' -f2)
-        [[ "$current_input" =~ ^[0-9]+$ ]] || current_input=0
-        [[ "$current_output" =~ ^[0-9]+$ ]] || current_output=0
-    else
-        current_input=0
-        current_output=0
+    LAST_SESSION_ID="$result"
+
+    if [ -n "$LAST_SESSION_ID" ]; then
+        echo "$LAST_SESSION_ID" >> "$SESSIONS_FILE"
     fi
 
-    local new_input=$((current_input + input_tokens))
-    local new_output=$((current_output + output_tokens))
-    echo "${new_input}|${new_output}" > "$TOKENS_FILE"
+    # Extract human-readable result text and append to log
+    python3 -c "
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    if not isinstance(data, list): data = [data]
+    for entry in data:
+        if isinstance(entry, dict) and entry.get('type') == 'result':
+            text = entry.get('result', '')
+            if text:
+                print(text)
+except Exception:
+    pass
+" "$raw_file" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+# Accumulate tokens from a session JSONL file into the .tokens file.
+# Usage: accumulate_tokens_from_session <session_id>
+accumulate_tokens_from_session() {
+    local session_id="$1"
+    if [ -z "$session_id" ]; then return; fi
+
+    # Find the JSONL file for this session
+    local jsonl_file=""
+    for f in ~/.claude/projects/*/"${session_id}.jsonl"; do
+        if [ -f "$f" ]; then
+            jsonl_file="$f"
+            break
+        fi
+    done
+
+    if [ -z "$jsonl_file" ]; then
+        echo "WARNING: Could not find JSONL for session $session_id" >&2
+        return
+    fi
+
+    # Extract and sum token usage from all assistant messages
+    local session_tokens
+    session_tokens=$(python3 -c "
+import json, sys
+totals = {'input': 0, 'output': 0, 'cache_create': 0, 'cache_read': 0}
+for line in open(sys.argv[1]):
+    try:
+        obj = json.loads(line)
+        if obj.get('type') != 'assistant':
+            continue
+        usage = obj.get('message', {}).get('usage', {})
+        if not usage:
+            continue
+        totals['input'] += usage.get('input_tokens', 0)
+        totals['output'] += usage.get('output_tokens', 0)
+        totals['cache_create'] += usage.get('cache_creation_input_tokens', 0)
+        totals['cache_read'] += usage.get('cache_read_input_tokens', 0)
+    except (json.JSONDecodeError, AttributeError):
+        continue
+print(f\"{totals['input']}|{totals['output']}|{totals['cache_create']}|{totals['cache_read']}\")
+" "$jsonl_file" 2>/dev/null) || true
+
+    if [ -z "$session_tokens" ]; then return; fi
+
+    # Parse session tokens
+    local s_input s_output s_cache_create s_cache_read
+    s_input=$(echo "$session_tokens" | cut -d'|' -f1)
+    s_output=$(echo "$session_tokens" | cut -d'|' -f2)
+    s_cache_create=$(echo "$session_tokens" | cut -d'|' -f3)
+    s_cache_read=$(echo "$session_tokens" | cut -d'|' -f4)
+
+    # Read current totals
+    local current c_input c_output c_cache_create c_cache_read
+    if [ -f "$TOKENS_FILE" ]; then
+        current=$(cat "$TOKENS_FILE")
+        c_input=$(echo "$current" | cut -d'|' -f1)
+        c_output=$(echo "$current" | cut -d'|' -f2)
+        c_cache_create=$(echo "$current" | cut -d'|' -f3)
+        c_cache_read=$(echo "$current" | cut -d'|' -f4)
+        [[ "$c_input" =~ ^[0-9]+$ ]] || c_input=0
+        [[ "$c_output" =~ ^[0-9]+$ ]] || c_output=0
+        [[ "$c_cache_create" =~ ^[0-9]+$ ]] || c_cache_create=0
+        [[ "$c_cache_read" =~ ^[0-9]+$ ]] || c_cache_read=0
+    else
+        c_input=0; c_output=0; c_cache_create=0; c_cache_read=0
+    fi
+
+    # Accumulate
+    echo "$((c_input + s_input))|$((c_output + s_output))|$((c_cache_create + s_cache_create))|$((c_cache_read + s_cache_read))" > "$TOKENS_FILE"
 }
 
 # Action inbox: write request file if not already present
@@ -299,12 +394,13 @@ if [ ! -f "$PLAN_FILE" ]; then
     echo "======================== PLANNING PHASE ========================"
     write_phase_start "planning"
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-    cat "$PROMPTS_DIR/PROMPT_feature.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || {
+    cat "$PROMPTS_DIR/PROMPT_feature.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || {
         echo "ERROR: Planning phase failed"
         write_phase_end "planning" "failed"
         exit 1
     }
-    parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+    extract_session_result "${CLAUDE_OUTPUT}.raw"
+    accumulate_tokens_from_session "$LAST_SESSION_ID"
     write_phase_end "planning" "success"
 else
     echo "Plan file exists, skipping planning phase"
@@ -337,8 +433,9 @@ while true; do
 
     echo "Pending implementation tasks: $PENDING_IMPL"
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-    cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-    parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+    cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+    extract_session_result "${CLAUDE_OUTPUT}.raw"
+    accumulate_tokens_from_session "$LAST_SESSION_ID"
 
     sleep 2
 done
@@ -362,8 +459,9 @@ else
         echo "------------------------ E2E Attempt $E2E_ATTEMPT of $MAX_E2E_ATTEMPTS ------------------------"
 
         export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-        cat "$PROMPTS_DIR/PROMPT_e2e.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-        parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+        cat "$PROMPTS_DIR/PROMPT_e2e.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        extract_session_result "${CLAUDE_OUTPUT}.raw"
+        accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check if all E2E tests passed
         E2E_FAILED=$({ grep "^- \[ \].*E2E:.*FAILED" "$PLAN_FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
@@ -377,8 +475,9 @@ else
 
         if [ $E2E_ATTEMPT -lt $MAX_E2E_ATTEMPTS ]; then
             echo "E2E tests have failures. Running fix iteration..."
-            cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-            parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+            cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            extract_session_result "${CLAUDE_OUTPUT}.raw"
+            accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
     done
 
@@ -394,10 +493,11 @@ echo "======================== SPEC VERIFICATION PHASE ========================"
 write_phase_start "verification"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 VERIFY_STATUS="success"
-if ! cat "$PROMPTS_DIR/PROMPT_verify.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
+if ! cat "$PROMPTS_DIR/PROMPT_verify.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw"; then
     VERIFY_STATUS="failed"
 fi
-parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+extract_session_result "${CLAUDE_OUTPUT}.raw"
+accumulate_tokens_from_session "$LAST_SESSION_ID"
 write_phase_end "verification" "$VERIFY_STATUS"
 
 # Phase 7: PR and Review
@@ -433,10 +533,11 @@ check_review_approved() {
 }
 
 if [ "$REVIEW_MODE" = "manual" ]; then
-    if ! cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT"; then
+    if ! cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw"; then
         PR_STATUS="failed"
     fi
-    parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+    extract_session_result "${CLAUDE_OUTPUT}.raw"
+    accumulate_tokens_from_session "$LAST_SESSION_ID"
 
 elif [ "$REVIEW_MODE" = "merge" ]; then
     # Merge mode: create PR, iterate review+fixes until approved, then merge
@@ -445,11 +546,12 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
     while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
         REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
         echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
-        cat "$PROMPTS_DIR/PROMPT_review_merge.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
-        parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+        cat "$PROMPTS_DIR/PROMPT_review_merge.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        extract_session_result "${CLAUDE_OUTPUT}.raw"
+        accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check stdout and PR comment for approval
-        if check_review_approved "$CLAUDE_OUTPUT"; then
+        if check_review_approved "${CLAUDE_OUTPUT}.raw"; then
             echo "Review approved!"
             REVIEW_APPROVED=true
             break
@@ -461,8 +563,9 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
 1. Fix each issue referenced in the review
 2. Run tests: npm test
 3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-            parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            extract_session_result "${CLAUDE_OUTPUT}.raw"
+            accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
     done
     if [ "$REVIEW_APPROVED" != true ]; then
@@ -477,11 +580,12 @@ else
     while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
         REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
         echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
-        cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "$CLAUDE_OUTPUT" || true
-        parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+        cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        extract_session_result "${CLAUDE_OUTPUT}.raw"
+        accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check stdout and PR comment for approval
-        if check_review_approved "$CLAUDE_OUTPUT"; then
+        if check_review_approved "${CLAUDE_OUTPUT}.raw"; then
             echo "Review approved!"
             REVIEW_APPROVED=true
             break
@@ -493,8 +597,9 @@ else
 1. Fix each issue referenced in the review
 2. Run tests: npm test
 3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "$CLAUDE_OUTPUT" || true
-            parse_and_accumulate_tokens "$CLAUDE_OUTPUT"
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            extract_session_result "${CLAUDE_OUTPUT}.raw"
+            accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
     done
     if [ "$REVIEW_APPROVED" != true ]; then
@@ -538,14 +643,28 @@ fi
 # Cleanup temp files
 rm -f "$STATUS_FILE" 2>/dev/null || true
 rm -f "/tmp/ralph-loop-${FEATURE}.output" 2>/dev/null || true
+rm -f "/tmp/ralph-loop-${FEATURE}.output.raw" 2>/dev/null || true
 
 # Print final token usage
 if [ -f "/tmp/ralph-loop-${FEATURE}.tokens" ]; then
     echo ""
     echo "=========================================="
     echo "Final Token Usage:"
-    cat "/tmp/ralph-loop-${FEATURE}.tokens" | awk -F'|' '{printf "  Input: %s tokens\n  Output: %s tokens\n  Total: %s tokens\n", $1, $2, $1+$2}'
+    awk -F'|' '{
+        printf "  Input:        %d tokens\n", $1
+        printf "  Output:       %d tokens\n", $2
+        printf "  Cache create: %d tokens\n", $3
+        printf "  Cache read:   %d tokens\n", $4
+        printf "  Total:        %d tokens\n", $1+$2+$3+$4
+    }' "/tmp/ralph-loop-${FEATURE}.tokens"
     echo "=========================================="
+fi
+
+# Print session IDs
+if [ -f "/tmp/ralph-loop-${FEATURE}.sessions" ]; then
+    SESSION_COUNT=$(wc -l < "/tmp/ralph-loop-${FEATURE}.sessions" | tr -d ' ')
+    echo "Sessions: $SESSION_COUNT"
+    cat "/tmp/ralph-loop-${FEATURE}.sessions"
 fi
 
 echo "=========================================="

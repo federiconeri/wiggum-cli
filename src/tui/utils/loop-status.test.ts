@@ -7,7 +7,10 @@ import * as fs from 'node:fs';
 
 vi.mock('node:fs');
 
-import { formatRelativeTime, parseLoopLog, parsePhaseChanges } from './loop-status.js';
+import { formatRelativeTime, parseLoopLog, parsePhaseChanges, readLoopStatus } from './loop-status.js';
+import * as child_process from 'node:child_process';
+
+vi.mock('node:child_process');
 
 describe('formatRelativeTime', () => {
   beforeEach(() => {
@@ -379,5 +382,57 @@ describe('parsePhaseChanges', () => {
 
     const result = parsePhaseChanges(feature);
     expect(result.events).toEqual([]);
+  });
+});
+
+describe('readLoopStatus', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Make pgrep return no match (exit code 1) so isProcessRunning returns false
+    vi.mocked(child_process.execFileSync).mockImplementation(() => {
+      throw Object.assign(new Error('no match'), { status: 1 });
+    });
+  });
+
+  it('should parse 4-field tokens file (input|output|cache_create|cache_read)', () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/tmp/ralph-loop-test-tokens4.status') return true;
+      if (path === '/tmp/ralph-loop-test-tokens4.tokens') return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/tmp/ralph-loop-test-tokens4.status') return '2|10|1700000000';
+      if (path === '/tmp/ralph-loop-test-tokens4.tokens') return '277|2105|582599|14145458';
+      throw new Error(`Unexpected read: ${path}`);
+    });
+
+    const status = readLoopStatus('test-tokens4');
+    expect(status.tokensInput).toBe(277);
+    expect(status.tokensOutput).toBe(2105);
+    expect(status.cacheCreate).toBe(582599);
+    expect(status.cacheRead).toBe(14145458);
+  });
+
+  it('should parse legacy 2-field tokens file with cache defaulting to 0', () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/tmp/ralph-loop-test-legacy2.status') return true;
+      if (path === '/tmp/ralph-loop-test-legacy2.tokens') return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/tmp/ralph-loop-test-legacy2.status') return '1|5|1700000000';
+      if (path === '/tmp/ralph-loop-test-legacy2.tokens') return '1000|500';
+      throw new Error(`Unexpected read: ${path}`);
+    });
+
+    const status = readLoopStatus('test-legacy2');
+    expect(status.tokensInput).toBe(1000);
+    expect(status.tokensOutput).toBe(500);
+    expect(status.cacheCreate).toBe(0);
+    expect(status.cacheRead).toBe(0);
   });
 });
