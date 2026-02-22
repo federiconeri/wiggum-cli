@@ -90,6 +90,8 @@ const defaultStatus: LoopStatus = {
   maxIterations: 10,
   tokensInput: 100,
   tokensOutput: 50,
+  cacheCreate: 0,
+  cacheRead: 0,
 };
 
 const stoppedStatus: LoopStatus = {

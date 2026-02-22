@@ -271,7 +271,7 @@ export function RunScreen({
       return readLoopStatus(featureName);
     } catch (err) {
       logger.error(`Failed to read initial loop status: ${err instanceof Error ? err.message : String(err)}`);
-      return { running: false, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+      return { running: false, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0, cacheCreate: 0, cacheRead: 0 };
     }
   });
   const [tasks, setTasks] = useState<TaskCounts>({
@@ -618,7 +618,7 @@ export function RunScreen({
               latestTasks = await parseImplementationPlan(projectRoot, featureName, specsDirRef.current);
             } catch (err) {
               logger.error(`Failed to read final run status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
-              latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+              latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0, cacheCreate: 0, cacheRead: 0 };
               latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0 };
             }
 
