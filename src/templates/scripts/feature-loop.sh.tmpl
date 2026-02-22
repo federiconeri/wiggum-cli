@@ -643,6 +643,7 @@ fi
 # Cleanup temp files
 rm -f "$STATUS_FILE" 2>/dev/null || true
 rm -f "/tmp/ralph-loop-${FEATURE}.output" 2>/dev/null || true
+rm -f "/tmp/ralph-loop-${FEATURE}.output.raw" 2>/dev/null || true
 
 # Print final token usage
 if [ -f "/tmp/ralph-loop-${FEATURE}.tokens" ]; then
