@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand } = vi.hoisted(() => {
+const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI } = vi.hoisted(() => {
   const mockRenderApp = vi.fn().mockReturnValue({
     unmount: vi.fn(),
     waitUntilExit: vi.fn().mockResolvedValue(undefined),
@@ -10,7 +10,8 @@ const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigComma
   const mockHandleConfigCommand = vi.fn().mockImplementation((args: string[], state: unknown) =>
     Promise.resolve(state)
   );
-  return { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand };
+  const mockIsCI = vi.fn().mockReturnValue(false);
+  return { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI };
 });
 
 // Mock all heavy dependencies before imports
@@ -68,6 +69,10 @@ vi.mock('./commands/run.js', () => ({
 
 vi.mock('./commands/monitor.js', () => ({
   monitorCommand: mockMonitorCommand,
+}));
+
+vi.mock('./utils/ci.js', () => ({
+  isCI: mockIsCI,
 }));
 
 vi.mock('./commands/config.js', () => ({
@@ -187,6 +192,14 @@ describe('parseCliArgs', () => {
     expect(result.command).toBe('run');
     expect(result.positionalArgs).toEqual(['my-feature']);
     expect(result.flags.worktree).toBe(true);
+  });
+
+  it('--stream flag parsed as boolean', () => {
+    expect(parseCliArgs(['monitor', 'foo', '--stream'])).toEqual({
+      command: 'monitor',
+      positionalArgs: ['foo'],
+      flags: { stream: true },
+    });
   });
 });
 
@@ -442,6 +455,94 @@ describe('main', () => {
     await expect(main()).rejects.toThrow('process.exit(1)');
     expect(mockMonitorCommand).not.toHaveBeenCalled();
     expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('--interval'));
+  });
+
+  it('monitor my-feature --stream → calls monitorCommand (headless) even in TTY', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor', 'my-feature', '--stream'];
+    const originalIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+
+    try {
+      await main();
+    } finally {
+      Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+
+    expect(mockMonitorCommand).toHaveBeenCalledWith('my-feature', expect.any(Object));
+    expect(mockRenderApp).not.toHaveBeenCalled();
+  });
+
+  it('monitor my-feature in TTY (no CI) → starts Ink TUI in monitor-only mode', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor', 'my-feature'];
+    const originalIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    mockIsCI.mockReturnValue(false);
+
+    try {
+      await main();
+    } finally {
+      Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      mockIsCI.mockReturnValue(false);
+    }
+
+    expect(mockRenderApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        screen: 'run',
+        runProps: expect.objectContaining({ featureName: 'my-feature', monitorOnly: true }),
+      }),
+    );
+    expect(mockMonitorCommand).not.toHaveBeenCalled();
+  });
+
+  it('monitor my-feature in CI (even with TTY) → calls monitorCommand (headless)', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor', 'my-feature'];
+    const originalIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    mockIsCI.mockReturnValue(true);
+
+    try {
+      await main();
+    } finally {
+      Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      mockIsCI.mockReturnValue(false);
+    }
+
+    expect(mockMonitorCommand).toHaveBeenCalledWith('my-feature', expect.any(Object));
+    expect(mockRenderApp).not.toHaveBeenCalled();
+  });
+
+  it('monitor my-feature in non-TTY → calls monitorCommand (headless)', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor', 'my-feature'];
+    const originalIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+
+    try {
+      await main();
+    } finally {
+      Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+    }
+
+    expect(mockMonitorCommand).toHaveBeenCalledWith('my-feature', expect.any(Object));
+    expect(mockRenderApp).not.toHaveBeenCalled();
+  });
+
+  it('monitor my-feature in TTY with TUI error → falls back to monitorCommand', async () => {
+    process.argv = ['node', 'ralph.js', 'monitor', 'my-feature'];
+    const originalIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    mockIsCI.mockReturnValue(false);
+    mockRenderApp.mockImplementationOnce(() => {
+      throw new Error('Ink initialization failed');
+    });
+
+    try {
+      await main();
+    } finally {
+      Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      mockIsCI.mockReturnValue(false);
+    }
+
+    expect(mockMonitorCommand).toHaveBeenCalledWith('my-feature', expect.any(Object));
   });
 
   // ─── config command routing ───────────────────────────────────────────────────
