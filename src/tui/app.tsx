@@ -49,6 +49,18 @@ export interface InterviewAppProps {
 }
 
 /**
+ * Props for the run/monitor screen when launched directly from CLI
+ */
+export interface RunAppProps {
+  /** Name of the feature to run or monitor */
+  featureName: string;
+  /** If true, opens in monitor-only (read-only) mode — no loop is spawned */
+  monitorOnly?: boolean;
+  /** Review mode override */
+  reviewMode?: 'manual' | 'auto';
+}
+
+/**
  * Props for the main App component
  */
 export interface AppProps {
@@ -60,6 +72,8 @@ export interface AppProps {
   version?: string;
   /** Props for the interview screen (required when screen is 'interview') */
   interviewProps?: InterviewAppProps;
+  /** Props for the run/monitor screen (required when screen is 'run') */
+  runProps?: RunAppProps;
   /** Called when the screen completes successfully */
   onComplete?: (result: string) => void;
   /** Called when the user exits/cancels */
@@ -77,13 +91,20 @@ export function App({
   initialSessionState,
   version = '0.12.1', // Fallback if package.json read fails (keep in sync with index.ts)
   interviewProps,
+  runProps,
   onComplete,
   onExit,
 }: AppProps): React.ReactElement | null {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(initialScreen);
-  const [screenProps, setScreenProps] = useState<NavigationProps | null>(
-    interviewProps ? { featureName: interviewProps.featureName } : null
-  );
+  const [screenProps, setScreenProps] = useState<NavigationProps | null>(() => {
+    if (initialScreen === 'run' && runProps) {
+      return { featureName: runProps.featureName, monitorOnly: runProps.monitorOnly, reviewMode: runProps.reviewMode };
+    }
+    if (interviewProps) {
+      return { featureName: interviewProps.featureName };
+    }
+    return null;
+  });
   const [sessionState, setSessionState] = useState<SessionState>(initialSessionState);
 
   // Background run tracking
@@ -352,6 +373,8 @@ export interface RenderAppOptions {
   version?: string;
   /** Props for interview screen (if starting directly on interview) */
   interviewProps?: InterviewAppProps;
+  /** Props for run/monitor screen (if starting directly on run screen) */
+  runProps?: RunAppProps;
   /** Called when spec generation completes */
   onComplete?: (result: string) => void;
   /** Called when user exits */
@@ -368,6 +391,7 @@ export function renderApp(options: RenderAppOptions): Instance {
       initialSessionState={options.initialSessionState}
       version={options.version}
       interviewProps={options.interviewProps}
+      runProps={options.runProps}
       onComplete={options.onComplete}
       onExit={options.onExit}
     />

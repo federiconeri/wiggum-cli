@@ -4,7 +4,7 @@ import { listSpecNames } from './utils/spec-names.js';
 import { AVAILABLE_MODELS, getAvailableProvider, isAnthropicAlias } from './ai/providers.js';
 import type { AIProvider } from './ai/providers.js';
 import { notifyIfUpdateAvailable } from './utils/update-check.js';
-import { renderApp, type AppScreen } from './tui/app.js';
+import { renderApp, type AppScreen, type RunAppProps } from './tui/app.js';
 import { logger } from './utils/logger.js';
 import { loadApiKeysFromEnvLocal } from './utils/env.js';
 import { readFileSync } from 'fs';
@@ -13,6 +13,7 @@ import { dirname, join } from 'path';
 import { runCommand, type RunOptions } from './commands/run.js';
 import { monitorCommand, type MonitorOptions } from './commands/monitor.js';
 import { handleConfigCommand } from './commands/config.js';
+import { isCI } from './utils/ci.js';
 
 /**
  * Parsed CLI arguments
@@ -129,7 +130,11 @@ function getVersion(): string {
  * Start Ink TUI mode
  * Called when wiggum is invoked with no arguments or with screen-routing args
  */
-async function startInkTui(initialScreen: AppScreen = 'shell', interviewFeature?: string): Promise<void> {
+async function startInkTui(
+  initialScreen: AppScreen = 'shell',
+  options?: { interviewFeature?: string; runFeature?: string; monitorOnly?: boolean },
+): Promise<void> {
+  const interviewFeature = options?.interviewFeature;
   const projectRoot = process.cwd();
   const version = getVersion();
 
@@ -189,11 +194,17 @@ async function startInkTui(initialScreen: AppScreen = 'shell', interviewFeature?
       }
     : undefined;
 
+  // Build run props if starting on run/monitor screen
+  const runProps: RunAppProps | undefined = options?.runFeature
+    ? { featureName: options.runFeature, monitorOnly: options.monitorOnly }
+    : undefined;
+
   const instance = renderApp({
     screen: initialScreen,
     initialSessionState: initialState,
     version,
     interviewProps,
+    runProps,
     onComplete: (specPath) => {
       // Spec was saved to disk by app.tsx (avoid stdout noise during TUI)
       logger.debug(`Created spec: ${specPath}`);
@@ -244,6 +255,7 @@ Options for run:
 Options for monitor:
   --interval <seconds>      Refresh interval (default: 5)
   --bash                    Use bash monitor script
+  --stream                  Force headless streaming output (skip TUI)
 
 Options for init:
   --provider <name>         AI provider (anthropic, openai, openrouter)
@@ -298,7 +310,7 @@ Press Esc to cancel any operation.
         process.exit(1);
       }
       // TODO: pass parsed flags to startInkTui once TUI supports new flags
-      await startInkTui('interview', featureName);
+      await startInkTui('interview', { interviewFeature: featureName });
       break;
     }
 
@@ -325,14 +337,32 @@ Press Esc to cancel any operation.
       const feature = parsed.positionalArgs[0];
       if (!feature) {
         console.error('Error: <feature> is required for "monitor"');
-        console.error('Usage: wiggum monitor <feature> [--interval <seconds>] [--bash]');
+        console.error('Usage: wiggum monitor <feature> [--interval <seconds>] [--bash] [--stream]');
         process.exit(1);
       }
-      const monitorOptions: MonitorOptions = {
-        bash: parsed.flags.bash === true,
-        interval: typeof parsed.flags.interval === 'string' ? parseIntFlag(parsed.flags.interval, '--interval') : undefined,
-      };
-      await monitorCommand(feature, monitorOptions);
+      const interval = typeof parsed.flags.interval === 'string'
+        ? parseIntFlag(parsed.flags.interval, '--interval')
+        : undefined;
+
+      // Routing order per spec:
+      // 1. --bash → always use bash script path
+      // 2. --stream → force headless streaming
+      // 3. TTY and not CI → start Ink TUI in monitor-only mode
+      // 4. default → headless streaming monitor
+      if (parsed.flags.bash === true) {
+        await monitorCommand(feature, { bash: true, interval });
+      } else if (parsed.flags.stream === true) {
+        await monitorCommand(feature, { interval });
+      } else if (process.stdout.isTTY && !isCI()) {
+        try {
+          await startInkTui('run', { runFeature: feature, monitorOnly: true });
+        } catch (err) {
+          logger.error(`TUI failed to start: ${err instanceof Error ? err.message : String(err)}. Falling back to headless monitor.`);
+          await monitorCommand(feature, { interval });
+        }
+      } else {
+        await monitorCommand(feature, { interval });
+      }
       break;
     }
 
