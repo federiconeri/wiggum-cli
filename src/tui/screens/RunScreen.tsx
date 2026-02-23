@@ -84,6 +84,16 @@ export interface ChangesSummary {
 }
 
 /**
+ * A single commit entry with hash and title
+ */
+export interface CommitEntry {
+  /** Short commit hash */
+  hash: string;
+  /** Commit title (first line of message) */
+  title: string;
+}
+
+/**
  * Commit information from git
  */
 export interface CommitsSummary {
@@ -91,6 +101,8 @@ export interface CommitsSummary {
   fromHash?: string;
   /** Ending commit hash (short) */
   toHash?: string;
+  /** Full list of commits between fromHash and toHash */
+  commitList?: CommitEntry[];
   /** Merge type if applicable */
   mergeType?: 'squash' | 'normal' | 'none';
   /** Whether git commit information was available */

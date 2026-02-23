@@ -4,7 +4,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getCurrentCommitHash, getDiffStats } from './git-summary.js';
+import { getCurrentCommitHash, getDiffStats, getCommitList } from './git-summary.js';
 import { logger } from '../../utils/logger.js';
 
 vi.mock('node:child_process');
@@ -188,6 +188,74 @@ describe('getDiffStats', () => {
     expect(result).toEqual([
       { path: 'src/code.ts', added: 0, removed: 0 },
       { path: 'src/valid.ts', added: 10, removed: 5 },
+    ]);
+  });
+});
+
+describe('getCommitList', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns commit entries with hash and title', () => {
+    const mockOutput = [
+      'c3a3589 fix: address code review feedback',
+      'e32dc12 test(e2e): add E2E fixtures',
+      '5124f05 feat(cli): route wiggum monitor to TUI',
+    ].join('\n');
+
+    vi.mocked(execFileSync).mockReturnValue(mockOutput);
+
+    const result = getCommitList('/project/root', 'abc1234', 'def5678');
+
+    expect(result).toEqual([
+      { hash: 'c3a3589', title: 'fix: address code review feedback' },
+      { hash: 'e32dc12', title: 'test(e2e): add E2E fixtures' },
+      { hash: '5124f05', title: 'feat(cli): route wiggum monitor to TUI' },
+    ]);
+    expect(execFileSync).toHaveBeenCalledWith(
+      'git',
+      ['log', '--oneline', 'abc1234..def5678'],
+      {
+        cwd: '/project/root',
+        encoding: 'utf-8',
+        timeout: 10_000,
+      }
+    );
+  });
+
+  it('returns empty array when no commits', () => {
+    vi.mocked(execFileSync).mockReturnValue('');
+
+    const result = getCommitList('/project/root', 'abc1234', 'def5678');
+
+    expect(result).toEqual([]);
+  });
+
+  it('returns null when git command fails', () => {
+    vi.mocked(execFileSync).mockImplementation(() => {
+      throw new Error('fatal: bad revision');
+    });
+
+    const result = getCommitList('/project/root', 'invalid', 'hashes');
+
+    expect(result).toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('getCommitList failed')
+    );
+  });
+
+  it('handles commit with no title (hash only)', () => {
+    vi.mocked(execFileSync).mockReturnValue('abc1234');
+
+    const result = getCommitList('/project/root', 'from', 'to');
+
+    expect(result).toEqual([
+      { hash: 'abc1234', title: '' },
     ]);
   });
 });

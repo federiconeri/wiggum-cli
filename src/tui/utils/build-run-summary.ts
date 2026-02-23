@@ -13,7 +13,7 @@ import type {
   PrSummary,
   IssueSummary,
 } from '../screens/RunScreen.js';
-import { getCurrentCommitHash, getDiffStats } from './git-summary.js';
+import { getCurrentCommitHash, getDiffStats, getCommitList } from './git-summary.js';
 import { getPrForBranch, getLinkedIssue, type PrInfo } from './pr-summary.js';
 
 /**
@@ -196,9 +196,13 @@ export function buildEnhancedRunSummary(
   let commits: CommitsSummary = { available: false };
 
   if (baselineCommit && currentCommit) {
+    // Get commit log between baseline and current
+    const commitLog = getCommitList(projectRoot, baselineCommit, currentCommit);
+
     commits = {
       fromHash: baselineCommit,
       toHash: currentCommit,
+      commitList: commitLog?.map((c) => ({ hash: c.hash, title: c.title })),
       mergeType: 'none', // TODO: Detect merge type from git history
       available: true,
     };

@@ -4,6 +4,7 @@ import { render } from 'ink-testing-library';
 import {
   RunCompletionSummary,
   truncatePath,
+  truncateEnd,
   formatChangesFiles,
 } from './RunCompletionSummary.js';
 import { stripAnsi } from '../../__test-utils__/ink-helpers.js';
@@ -75,6 +76,27 @@ describe('truncatePath', () => {
     const result = truncatePath('MyComponent.tsx', 10);
     expect(result).toHaveLength(10);
     expect(result.startsWith('…')).toBe(true);
+  });
+});
+
+describe('truncateEnd', () => {
+  it('returns text unchanged when it fits within maxWidth', () => {
+    expect(truncateEnd('short text', 20)).toBe('short text');
+  });
+
+  it('returns text unchanged when exactly at maxWidth', () => {
+    expect(truncateEnd('exact', 5)).toBe('exact');
+  });
+
+  it('truncates long text with trailing ellipsis', () => {
+    const result = truncateEnd('this is a very long commit message', 20);
+    expect(result).toHaveLength(20);
+    expect(result.endsWith('…')).toBe(true);
+    expect(result).toBe('this is a very long…');
+  });
+
+  it('returns ellipsis only when maxWidth is 1', () => {
+    expect(truncateEnd('anything', 1)).toBe('…');
   });
 });
 
@@ -226,6 +248,23 @@ describe('RunCompletionSummary', () => {
     unmount();
   });
 
+  it('displays total tokens in subtitle when non-zero', () => {
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          tokensInput: 5000,
+          tokensOutput: 1000,
+          cacheCreate: 100000,
+          cacheRead: 2000000,
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('2.1M tokens');
+    unmount();
+  });
+
   it('displays duration in subtitle when available', () => {
     const { lastFrame, unmount } = render(
       <RunCompletionSummary
@@ -370,6 +409,72 @@ describe('RunCompletionSummary', () => {
     const frame = stripAnsi(lastFrame() ?? '');
     expect(frame).toContain('Commit: abc1234 → def5678');
     expect(frame).toContain('squash-merged');
+    unmount();
+  });
+
+  it('displays full commit list with titles when available', () => {
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          changes: {
+            available: true,
+            totalFilesChanged: 2,
+            files: [
+              { path: 'src/index.ts', added: 10, removed: 5 },
+              { path: 'src/utils/ci.ts', added: 14, removed: 0 },
+            ],
+          },
+          commits: {
+            available: true,
+            fromHash: 'abc1234',
+            toHash: 'def5678',
+            mergeType: 'none',
+            commitList: [
+              { hash: 'def5678', title: 'fix: address code review feedback' },
+              { hash: 'bbb3333', title: 'feat: add CI detection utility' },
+            ],
+          },
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('Commits');
+    expect(frame).toContain('def5678');
+    expect(frame).toContain('fix: address code review feedback');
+    expect(frame).toContain('bbb3333');
+    expect(frame).toContain('feat: add CI detection utility');
+    // Should NOT show range format when commitList is present
+    expect(frame).not.toContain('→');
+    unmount();
+  });
+
+  it('truncates long commit titles to fit within box width', () => {
+    (process.stdout as any).columns = 60;
+
+    const { lastFrame, unmount } = render(
+      <RunCompletionSummary
+        summary={makeSummary({
+          changes: { available: true, totalFilesChanged: 0, files: [] },
+          commits: {
+            available: true,
+            fromHash: 'abc1234',
+            toHash: 'def5678',
+            mergeType: 'none',
+            commitList: [
+              { hash: 'def5678', title: 'feat(route-wiggum-monitor): this is an extremely long commit message that should be truncated' },
+            ],
+          },
+        })}
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    // Title should be truncated with trailing ellipsis
+    expect(frame).toContain('def5678');
+    expect(frame).toContain('…');
+    // Full title should NOT appear
+    expect(frame).not.toContain('should be truncated');
     unmount();
   });
 
@@ -519,6 +624,10 @@ describe('RunCompletionSummary', () => {
     const fullSummary = makeSummary({
       feature: 'bracketed-paste-fix',
       exitCode: 0,
+      tokensInput: 5000,
+      tokensOutput: 1000,
+      cacheCreate: 100000,
+      cacheRead: 2000000,
       totalDurationMs: 754000, // 12m 34s
       iterationBreakdown: { total: 11, implementation: 10, resumes: 1 },
       tasks: { completed: 8, total: 8 },
@@ -541,6 +650,9 @@ describe('RunCompletionSummary', () => {
         fromHash: 'ee387b9',
         toHash: 'fc9b18a',
         mergeType: 'squash',
+        commitList: [
+          { hash: 'fc9b18a', title: 'fix: bracketed paste handling' },
+        ],
       },
       pr: {
         available: true,
@@ -579,10 +691,11 @@ describe('RunCompletionSummary', () => {
     // Verify all major sections are present
     expect(frame).toContain('bracketed-paste-fix');
     expect(frame).toContain('Complete');
-    // Duration, iterations, and tasks are now in the compact subtitle
+    // Duration, iterations, tasks, and tokens are in the compact subtitle
     expect(frame).toContain('12m 34s');
     expect(frame).toContain('11 iter');
     expect(frame).toContain('8/8 tasks');
+    expect(frame).toContain('2.1M tokens');
     expect(frame).toContain('Phases');
     expect(frame).toContain('Planning');
     expect(frame).toContain('Implementation');
@@ -591,7 +704,9 @@ describe('RunCompletionSummary', () => {
     // Stats should be rendered in fixed-width right-aligned columns
     expect(frame).toContain('+15');
     expect(frame).toContain('-6');
-    expect(frame).toContain('Commit: ee387b9 → fc9b18a');
+    expect(frame).toContain('Commits');
+    expect(frame).toContain('fc9b18a');
+    expect(frame).toContain('fix: bracketed paste handling');
     expect(frame).toContain('PR #24');
     expect(frame).toContain('Issue #22');
 
