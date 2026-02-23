@@ -118,7 +118,7 @@ export function useBackgroundRuns(): UseBackgroundRunsReturn {
     } catch (err) {
       logger.error(`Failed to read initial status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
       // Assume still running so polling can discover truth — if truly dead, polling will detect it
-      status = { running: true, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0 };
+      status = { running: true, iteration: 0, maxIterations: 0, phase: 'unknown', tokensInput: 0, tokensOutput: 0, cacheCreate: 0, cacheRead: 0 };
     }
     const logPath = getLoopLogPath(featureName);
 

@@ -13,6 +13,8 @@ const defaultStatus: LoopStatus = {
   maxIterations: 10,
   tokensInput: 5000,
   tokensOutput: 2000,
+  cacheCreate: 0,
+  cacheRead: 0,
 };
 
 const { mockReadLoopStatus } = vi.hoisted(() => ({

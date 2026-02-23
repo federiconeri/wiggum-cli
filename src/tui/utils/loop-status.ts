@@ -15,6 +15,8 @@ export interface LoopStatus {
   maxIterations: number;
   tokensInput: number;
   tokensOutput: number;
+  cacheCreate: number;
+  cacheRead: number;
 }
 
 export interface TaskCounts {
@@ -132,12 +134,16 @@ export function readLoopStatus(feature: string): LoopStatus {
 
   let tokensInput = 0;
   let tokensOutput = 0;
+  let cacheCreate = 0;
+  let cacheRead = 0;
   if (existsSync(tokensFile)) {
     try {
       const content = readFileSync(tokensFile, 'utf-8').trim();
       const parts = content.split('|');
       tokensInput = parseInt(parts[0] || '0', 10) || 0;
       tokensOutput = parseInt(parts[1] || '0', 10) || 0;
+      cacheCreate = parseInt(parts[2] || '0', 10) || 0;
+      cacheRead = parseInt(parts[3] || '0', 10) || 0;
     } catch (err) {
       logger.debug(`Failed to parse tokens file: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -150,6 +156,8 @@ export function readLoopStatus(feature: string): LoopStatus {
     maxIterations,
     tokensInput,
     tokensOutput,
+    cacheCreate,
+    cacheRead,
   };
 }
 
