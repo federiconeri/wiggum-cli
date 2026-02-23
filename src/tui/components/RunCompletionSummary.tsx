@@ -9,6 +9,7 @@ import React from 'react';
 import { Box, Text, useStdout } from 'ink';
 import { SummaryBox, SummaryBoxSection, MAX_BOX_WIDTH, BOX_BORDER_OVERHEAD } from './SummaryBox.js';
 import { colors, phase } from '../theme.js';
+import { formatNumber } from '../utils/loop-status.js';
 import type { RunSummary, FileChangeStat } from '../screens/RunScreen.js';
 
 const MIN_BOX_WIDTH = 60;
@@ -33,6 +34,16 @@ export function truncatePath(path: string, maxWidth: number): string {
   if (path.length <= maxWidth) return path;
   if (maxWidth <= 1) return '…';
   return '…' + path.slice(-(maxWidth - 1));
+}
+
+/**
+ * Truncate text from the end to fit within maxWidth characters.
+ * Appends '…' if truncated.
+ */
+export function truncateEnd(text: string, maxWidth: number): string {
+  if (text.length <= maxWidth) return text;
+  if (maxWidth <= 1) return '…';
+  return text.slice(0, maxWidth - 1) + '…';
 }
 
 /**
@@ -132,6 +143,9 @@ export function RunCompletionSummary({
     ? phase.complete
     : stoppedCodes.has(summary.exitCode) ? phase.active : phase.error;
 
+  // Total tokens across all categories
+  const totalTokens = summary.tokensInput + summary.tokensOutput + summary.cacheCreate + summary.cacheRead;
+
   // Build compact subtitle parts
   const subtitleParts: string[] = [];
   if (summary.totalDurationMs !== undefined) {
@@ -140,6 +154,9 @@ export function RunCompletionSummary({
   subtitleParts.push(`${iterationsTotal} iter`);
   if (tasksCompleted !== null && tasksTotal !== null) {
     subtitleParts.push(`${tasksCompleted}/${tasksTotal} tasks`);
+  }
+  if (totalTokens > 0) {
+    subtitleParts.push(`${formatNumber(totalTokens)} tokens`);
   }
 
   return (
@@ -219,23 +236,38 @@ export function RunCompletionSummary({
           ));
         })()}
 
-        {summary.commits ? (
-          !summary.commits.available ? (
-            <Text>Commit: Not available</Text>
-          ) : summary.commits.fromHash && summary.commits.toHash ? (
-            <Text>
-              Commit: {summary.commits.fromHash} → {summary.commits.toHash}
-              {summary.commits.mergeType === 'squash' && ' (squash-merged)'}
-              {summary.commits.mergeType === 'normal' && ' (merged)'}
-            </Text>
-          ) : summary.commits.toHash ? (
-            <Text>Commit: {summary.commits.toHash}</Text>
-          ) : (
-            <Text>Commit: Not available</Text>
-          )
-        ) : (
-          <Text>Commit: Not available</Text>
-        )}
+        {(() => {
+          if (!summary.commits || !summary.commits.available) {
+            return <Text>Commit: Not available</Text>;
+          }
+          if (summary.commits.commitList && summary.commits.commitList.length > 0) {
+            // hash (7) + space (1) = 8 chars reserved for prefix
+            const titleMaxWidth = contentWidth - 8;
+            return [
+              <Text key="commit-spacer">{' '}</Text>,
+              <Text key="commit-label" bold>Commits</Text>,
+              ...summary.commits.commitList.map((commit) => (
+                <Box key={commit.hash} flexDirection="row">
+                  <Text dimColor>{commit.hash}</Text>
+                  <Text> {truncateEnd(commit.title, titleMaxWidth)}</Text>
+                </Box>
+              )),
+            ];
+          }
+          if (summary.commits.fromHash && summary.commits.toHash) {
+            return (
+              <Text>
+                Commit: {summary.commits.fromHash} → {summary.commits.toHash}
+                {summary.commits.mergeType === 'squash' && ' (squash-merged)'}
+                {summary.commits.mergeType === 'normal' && ' (merged)'}
+              </Text>
+            );
+          }
+          if (summary.commits.toHash) {
+            return <Text>Commit: {summary.commits.toHash}</Text>;
+          }
+          return <Text>Commit: Not available</Text>;
+        })()}
       </SummaryBoxSection>
 
       <SummaryBoxSection>

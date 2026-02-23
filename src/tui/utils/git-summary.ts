@@ -5,6 +5,11 @@
 import { execFileSync } from 'node:child_process';
 import { logger } from '../../utils/logger.js';
 
+export interface CommitLogEntry {
+  hash: string;
+  title: string;
+}
+
 export interface FileDiffStat {
   path: string;
   added: number;
@@ -79,6 +84,45 @@ export function getDiffStats(
     return stats;
   } catch (err) {
     logger.warn(`getDiffStats failed: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Get the list of commits between two refs.
+ *
+ * @param projectRoot - Root directory of the git repository
+ * @param fromHash - Starting commit hash (exclusive)
+ * @param toHash - Ending commit hash (inclusive)
+ * @returns Array of commit entries, or null if not available
+ */
+export function getCommitList(
+  projectRoot: string,
+  fromHash: string,
+  toHash: string,
+): CommitLogEntry[] | null {
+  try {
+    const output = execFileSync(
+      'git',
+      ['log', '--oneline', `${fromHash}..${toHash}`],
+      {
+        cwd: projectRoot,
+        encoding: 'utf-8',
+        timeout: 10_000,
+      }
+    ).trim();
+
+    if (!output) {
+      return [];
+    }
+
+    return output.split('\n').map((line) => {
+      const spaceIdx = line.indexOf(' ');
+      if (spaceIdx === -1) return { hash: line, title: '' };
+      return { hash: line.substring(0, spaceIdx), title: line.substring(spaceIdx + 1) };
+    });
+  } catch (err) {
+    logger.warn(`getCommitList failed: ${err instanceof Error ? err.message : String(err)}`);
     return null;
   }
 }
