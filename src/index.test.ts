@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand } = vi.hoisted(() => {
+const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand, mockSyncCommand } = vi.hoisted(() => {
   const mockRenderApp = vi.fn().mockReturnValue({
     unmount: vi.fn(),
     waitUntilExit: vi.fn().mockResolvedValue(undefined),
@@ -12,7 +12,8 @@ const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigComma
   );
   const mockIsCI = vi.fn().mockReturnValue(false);
   const mockNewAutoCommand = vi.fn().mockResolvedValue(undefined);
-  return { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand };
+  const mockSyncCommand = vi.fn().mockResolvedValue(undefined);
+  return { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand, mockSyncCommand };
 });
 
 // Mock all heavy dependencies before imports
@@ -82,6 +83,10 @@ vi.mock('./commands/config.js', () => ({
 
 vi.mock('./commands/new-auto.js', () => ({
   newAutoCommand: mockNewAutoCommand,
+}));
+
+vi.mock('./commands/sync.js', () => ({
+  syncCommand: mockSyncCommand,
 }));
 
 import { main, parseCliArgs } from './index.js';
@@ -753,5 +758,21 @@ describe('main', () => {
     const helpText = consoleLogSpy.mock.calls[0][0] as string;
     expect(helpText).toContain('--auto');
     expect(helpText).toContain('--goals');
+  });
+
+  it('sync → calls syncCommand', async () => {
+    process.argv = ['node', 'ralph.js', 'sync'];
+    await main();
+
+    expect(mockSyncCommand).toHaveBeenCalledOnce();
+    expect(mockRenderApp).not.toHaveBeenCalled();
+  });
+
+  it('--help lists sync command', async () => {
+    process.argv = ['node', 'ralph.js', '--help'];
+    await main();
+
+    const helpText = consoleLogSpy.mock.calls[0][0] as string;
+    expect(helpText).toContain('wiggum sync');
   });
 });
