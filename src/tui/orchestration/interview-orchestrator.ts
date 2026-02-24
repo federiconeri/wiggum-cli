@@ -544,7 +544,7 @@ export class InterviewOrchestrator {
   /**
    * Add a reference URL or file path
    */
-  async addReference(refUrl: string): Promise<void> {
+  async addReference(refUrl: string): Promise<boolean> {
     try {
       const trimmed = refUrl.trim();
       const ghIssue = isGitHubIssueUrl(trimmed);
@@ -553,7 +553,7 @@ export class InterviewOrchestrator {
         : 'Fetching reference...');
       if (!trimmed) {
         this.onReady();
-        return;
+        return false;
       }
 
       const forceInline = /^text:\s*/i.test(trimmed);
@@ -568,7 +568,7 @@ export class InterviewOrchestrator {
       if (forceInline && !inlinePayload) {
         this.onMessage('system', 'Error: Inline context is empty after "text:"');
         this.onReady();
-        return;
+        return false;
       }
 
       if ((forceInline || (!isUrlInput && !fileExists && isInlineCandidate)) && inlinePayload) {
@@ -580,13 +580,15 @@ export class InterviewOrchestrator {
         const suffix = truncated ? ' (truncated)' : '';
         this.onMessage('system', `Added inline context${suffix}: "${preview}..."`);
         this.onReady();
-        return;
+        return true;
       }
 
       const result = await fetchContent(trimmed, this.projectRoot);
 
       if (result.error) {
         this.onMessage('system', `Error: ${result.error}`);
+        this.onReady();
+        return false;
       } else {
         this.conversation.addReference(result.content, result.source);
         if (result.source.startsWith('GitHub issue #')) {
@@ -600,9 +602,11 @@ export class InterviewOrchestrator {
       }
 
       this.onReady();
+      return true;
     } catch (error) {
       this.onError(error instanceof Error ? error.message : String(error));
       this.onReady();
+      return false;
     }
   }
 

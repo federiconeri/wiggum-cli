@@ -49,6 +49,7 @@ import {
   type GitHubIssueListItem,
   type GitHubRepo,
 } from '../../utils/github.js';
+import { clearScreen } from '../utils/clear-screen.js';
 
 /**
  * Props for the InterviewScreen component
@@ -326,11 +327,13 @@ export function InterviewScreen({
           } else {
             // Full URL — use existing addReference which handles GitHub URLs
             addMessage('user', value);
-            await orchestrator.addReference(value);
+            const added = await orchestrator.addReference(value);
+            if (added) setHasReferences(true);
           }
         } else {
           addMessage('user', ref);
-          await orchestrator.addReference(ref);
+          const added = await orchestrator.addReference(ref);
+          if (added) setHasReferences(true);
         }
       }
     })();
@@ -373,7 +376,7 @@ export function InterviewScreen({
   }, [projectRoot, issuePickerRepo]);
 
   const handleIssueSelect = useCallback(async (issue: GitHubIssueListItem) => {
-    stdout.write('\x1b[2J\x1b[H');
+    clearScreen(stdout);
     setIssuePickerVisible(false);
     setIssuePickerIssues([]);
 
@@ -400,7 +403,7 @@ export function InterviewScreen({
   }, [stdout, issuePickerRepo, addMessage, setWorking, setReady]);
 
   const handleIssueCancel = useCallback(() => {
-    stdout.write('\x1b[2J\x1b[H');
+    clearScreen(stdout);
     setIssuePickerVisible(false);
     setIssuePickerIssues([]);
     setIssuePickerError(undefined);
@@ -433,8 +436,8 @@ export function InterviewScreen({
             }
 
             if (value) {
-              await orchestrator.addReference(value);
-              setHasReferences(true);
+              const added = await orchestrator.addReference(value);
+              if (added) setHasReferences(true);
             } else {
               await orchestrator.advanceToGoals();
             }
