@@ -598,6 +598,13 @@ export class InterviewOrchestrator {
   }
 
   /**
+   * Add pre-fetched content as a reference (skips URL/file fetch)
+   */
+  addReferenceContent(content: string, source: string): void {
+    this.conversation.addReference(content, source);
+  }
+
+  /**
    * Advance to the goals phase
    * Called when user is done adding context
    */

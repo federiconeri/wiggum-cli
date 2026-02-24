@@ -21,6 +21,7 @@ import type { ScanResult } from '../../scanner/types.js';
 import { MessageList } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
 import { MultiSelect } from '../components/MultiSelect.js';
+import { IssuePicker } from '../components/IssuePicker.js';
 import { AppShell } from '../components/AppShell.js';
 import { SpecCompletionSummary } from '../components/SpecCompletionSummary.js';
 import {
@@ -40,6 +41,14 @@ import { join } from 'node:path';
 import { initTracing, flushTracing } from '../../utils/tracing.js';
 import { resolveOptionLabels, type InterviewQuestion, type InterviewAnswer } from '../types/interview.js';
 import type { Message } from '../components/MessageList.js';
+import {
+  isGhInstalled,
+  detectGitHubRemote,
+  listRepoIssues,
+  fetchGitHubIssue,
+  type GitHubIssueListItem,
+  type GitHubRepo,
+} from '../../utils/github.js';
 
 /**
  * Props for the InterviewScreen component
@@ -110,6 +119,12 @@ export function InterviewScreen({
 
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
+
+  const [issuePickerVisible, setIssuePickerVisible] = useState(false);
+  const [issuePickerIssues, setIssuePickerIssues] = useState<GitHubIssueListItem[]>([]);
+  const [issuePickerLoading, setIssuePickerLoading] = useState(false);
+  const [issuePickerError, setIssuePickerError] = useState<string | undefined>();
+  const [issuePickerRepo, setIssuePickerRepo] = useState<GitHubRepo | null>(null);
 
   // Completion state: when spec is done, show summary inline
   const [completionData, setCompletionData] = useState<{
@@ -273,6 +288,71 @@ export function InterviewScreen({
     };
   }, [featureName, projectRoot, provider, model, scanResult, specsPath]);
 
+  const handleIssueCommand = useCallback(async (searchQuery?: string) => {
+    setIssuePickerVisible(true);
+    setIssuePickerLoading(true);
+    setIssuePickerError(undefined);
+
+    try {
+      const ghAvailable = await isGhInstalled();
+      if (!ghAvailable) {
+        setIssuePickerError('Install GitHub CLI (gh) for issue browsing');
+        setIssuePickerLoading(false);
+        return;
+      }
+
+      let repo = issuePickerRepo;
+      if (!repo) {
+        repo = await detectGitHubRemote(projectRoot);
+        if (!repo) {
+          setIssuePickerError('No GitHub remote detected in this project');
+          setIssuePickerLoading(false);
+          return;
+        }
+        setIssuePickerRepo(repo);
+      }
+
+      const issues = await listRepoIssues(repo.owner, repo.repo, searchQuery);
+      setIssuePickerIssues(issues);
+    } catch (err) {
+      setIssuePickerError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIssuePickerLoading(false);
+    }
+  }, [projectRoot, issuePickerRepo]);
+
+  const handleIssueSelect = useCallback(async (issue: GitHubIssueListItem) => {
+    setIssuePickerVisible(false);
+    setIssuePickerIssues([]);
+
+    const orchestrator = orchestratorRef.current;
+    if (!orchestrator) return;
+
+    const repo = issuePickerRepo;
+    if (!repo) return;
+
+    setWorking(true, `Fetching issue #${issue.number}...`);
+    addMessage('user', `/issue → #${issue.number} ${issue.title}`);
+
+    const detail = await fetchGitHubIssue(repo.owner, repo.repo, issue.number);
+    if (detail) {
+      const content = `# ${detail.title}\n\n${detail.body ?? ''}`;
+      orchestrator.addReferenceContent(content, `GitHub issue #${issue.number}`);
+      const labelStr = detail.labels.length > 0 ? `\n  labels: ${detail.labels.join(', ')}` : '';
+      addMessage('system', `Added: #${issue.number} ${detail.title}${labelStr}`);
+    } else {
+      addMessage('system', `Failed to fetch issue #${issue.number}`);
+    }
+
+    setReady();
+  }, [issuePickerRepo, addMessage, setWorking, setReady]);
+
+  const handleIssueCancel = useCallback(() => {
+    setIssuePickerVisible(false);
+    setIssuePickerIssues([]);
+    setIssuePickerError(undefined);
+  }, []);
+
   const handleSubmit = useCallback(
     async (value: string) => {
       try {
@@ -289,13 +369,21 @@ export function InterviewScreen({
         const currentPhase = orchestrator.getPhase();
 
         switch (currentPhase) {
-          case 'context':
+          case 'context': {
+            const issueMatch = value.match(/^\/issue(?:\s+(.+))?$/i);
+            if (issueMatch) {
+              const searchQuery = issueMatch[1]?.trim();
+              await handleIssueCommand(searchQuery);
+              return;
+            }
+
             if (value) {
               await orchestrator.addReference(value);
             } else {
               await orchestrator.advanceToGoals();
             }
             break;
+          }
 
           case 'goals':
             await orchestrator.submitGoals(value);
@@ -323,7 +411,7 @@ export function InterviewScreen({
         setError(reason);
       }
     },
-    [addMessage, currentQuestion, setError]
+    [addMessage, currentQuestion, setError, handleIssueCommand]
   );
 
   const handleMultiSelectSubmit = useCallback(
@@ -398,7 +486,7 @@ export function InterviewScreen({
     if (completionData) return null;
     switch (state.phase) {
       case 'context':
-        return 'Enter URLs or file paths. Empty input to continue.';
+        return 'Enter URLs, file paths, or /issue to browse. Empty to continue.';
       case 'goals':
         return 'Describe what you want to build.';
       case 'interview':
@@ -417,7 +505,7 @@ export function InterviewScreen({
   const getPlaceholder = () => {
     switch (state.phase) {
       case 'context':
-        return 'Enter URL, file path, or paste text (prefix with "text:" to force inline)...';
+        return 'Enter URL, file path, /issue, or paste text (prefix "text:" for inline)...';
       case 'goals':
         return 'Describe what you want to build...';
       case 'interview':
@@ -452,12 +540,24 @@ export function InterviewScreen({
       );
     } else {
       inputElement = (
-        <ChatInput
-          onSubmit={handleSubmit}
-          disabled={inputDisabled}
-          allowEmpty={state.phase === 'context'}
-          placeholder={getPlaceholder()}
-        />
+        <Box flexDirection="column">
+          <ChatInput
+            onSubmit={handleSubmit}
+            disabled={inputDisabled || issuePickerVisible}
+            allowEmpty={state.phase === 'context'}
+            placeholder={getPlaceholder()}
+          />
+          {issuePickerVisible && (
+            <IssuePicker
+              issues={issuePickerIssues}
+              repoSlug={issuePickerRepo ? `${issuePickerRepo.owner}/${issuePickerRepo.repo}` : '...'}
+              onSelect={handleIssueSelect}
+              onCancel={handleIssueCancel}
+              isLoading={issuePickerLoading}
+              error={issuePickerError}
+            />
+          )}
+        </Box>
       );
     }
   }
