@@ -328,6 +328,27 @@ describe('newAutoCommand', () => {
     expect(capturedOpts.value.model).toBe('claude-opus-4-20250514');
   });
 
+  it('times out if orchestrator never completes', async () => {
+    mockStart.mockImplementation(async () => {
+      capturedOpts.value.onReady();
+    });
+    mockAdvanceToGoals.mockImplementation(async () => {
+      capturedOpts.value.onReady();
+    });
+    // submitGoals fires onReady but never onComplete or onError → hangs
+    mockSubmitGoals.mockImplementation(async () => {
+      capturedOpts.value.onPhaseChange('interview');
+      capturedOpts.value.onReady();
+    });
+    mockSkipToGeneration.mockImplementation(async () => {
+      // Intentionally does NOT fire onComplete — simulates silent failure
+    });
+
+    await expect(
+      newAutoCommand('my-feature', { timeoutMs: 50 }),
+    ).rejects.toThrow('Spec generation timed out');
+  }, 5000);
+
   it('handles issue URL references via addReference', async () => {
     setupHappyPath();
 

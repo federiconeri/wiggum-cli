@@ -24,6 +24,8 @@ export interface NewAutoOptions {
   initialReferences?: string[];
   model?: string;
   provider?: AIProvider;
+  /** Timeout in ms for spec generation (default: 5 minutes) */
+  timeoutMs?: number;
 }
 
 function createDeferred<T = void>() {
@@ -115,6 +117,7 @@ export async function newAutoCommand(
     sessionContext: resolvedSessionContext,
     goals: options.goals,
     initialReferences: options.initialReferences,
+    timeoutMs: options.timeoutMs,
   });
 
   // Save spec to disk
@@ -147,6 +150,7 @@ interface DriveOrchestratorOptions {
   sessionContext?: SessionContext;
   goals?: string;
   initialReferences?: string[];
+  timeoutMs?: number;
 }
 
 async function driveOrchestrator(
@@ -271,6 +275,18 @@ async function driveOrchestrator(
     await orchestrator.skipToGeneration();
   }
 
-  // Wait for spec generation to complete
-  return completionDeferred.promise;
+  // Wait for spec generation to complete (with timeout to prevent silent hangs)
+  const TIMEOUT_MS = opts.timeoutMs ?? 5 * 60 * 1000; // default: 5 minutes
+  let timeoutId: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error('Spec generation timed out after 5 minutes')),
+      TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([completionDeferred.promise, timeout]);
+  } finally {
+    clearTimeout(timeoutId!);
+  }
 }
