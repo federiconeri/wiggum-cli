@@ -14,7 +14,7 @@
  */
 
 import React, { useEffect, useCallback, useRef, useState } from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text, useInput, useStdout } from 'ink';
 import type { AIProvider } from '../../ai/providers.js';
 import { logger } from '../../utils/logger.js';
 import type { ScanResult } from '../../scanner/types.js';
@@ -123,11 +123,14 @@ export function InterviewScreen({
   const [toolCallsExpanded, setToolCallsExpanded] = useState(false);
   const [currentQuestion, setCurrentQuestion] = useState<InterviewQuestion | null>(null);
 
+  const { stdout } = useStdout();
+
   const [issuePickerVisible, setIssuePickerVisible] = useState(false);
   const [issuePickerIssues, setIssuePickerIssues] = useState<GitHubIssueListItem[]>([]);
   const [issuePickerLoading, setIssuePickerLoading] = useState(false);
   const [issuePickerError, setIssuePickerError] = useState<string | undefined>();
   const [issuePickerRepo, setIssuePickerRepo] = useState<GitHubRepo | null>(null);
+  const [hasReferences, setHasReferences] = useState(false);
 
   // Completion state: when spec is done, show summary inline
   const [completionData, setCompletionData] = useState<{
@@ -315,6 +318,7 @@ export function InterviewScreen({
                 const content = `# ${detail.title}\n\n${detail.body ?? ''}`;
                 orchestrator.addReferenceContent(content, `GitHub issue #${value}`);
                 addMessage('system', `Added: GitHub issue #${value} ${detail.title}`);
+                setHasReferences(true);
                 continue;
               }
             }
@@ -369,6 +373,7 @@ export function InterviewScreen({
   }, [projectRoot, issuePickerRepo]);
 
   const handleIssueSelect = useCallback(async (issue: GitHubIssueListItem) => {
+    stdout.write('\x1b[2J\x1b[H');
     setIssuePickerVisible(false);
     setIssuePickerIssues([]);
 
@@ -379,26 +384,27 @@ export function InterviewScreen({
     if (!repo) return;
 
     setWorking(true, `Fetching issue #${issue.number}...`);
-    addMessage('user', `/issue → #${issue.number} ${issue.title}`);
 
     const detail = await fetchGitHubIssue(repo.owner, repo.repo, issue.number);
     if (detail) {
       const content = `# ${detail.title}\n\n${detail.body ?? ''}`;
       orchestrator.addReferenceContent(content, `GitHub issue #${issue.number}`);
-      const labelStr = detail.labels.length > 0 ? `\n  labels: ${detail.labels.join(', ')}` : '';
-      addMessage('system', `Added: #${issue.number} ${detail.title}${labelStr}`);
+      const labelStr = detail.labels.length > 0 ? ` [${detail.labels.join(', ')}]` : '';
+      addMessage('system', `\u2713 #${issue.number} ${detail.title}${labelStr}`);
+      setHasReferences(true);
     } else {
       addMessage('system', `Failed to fetch issue #${issue.number}`);
     }
 
     setReady();
-  }, [issuePickerRepo, addMessage, setWorking, setReady]);
+  }, [stdout, issuePickerRepo, addMessage, setWorking, setReady]);
 
   const handleIssueCancel = useCallback(() => {
+    stdout.write('\x1b[2J\x1b[H');
     setIssuePickerVisible(false);
     setIssuePickerIssues([]);
     setIssuePickerError(undefined);
-  }, []);
+  }, [stdout]);
 
   const handleSubmit = useCallback(
     async (value: string) => {
@@ -409,11 +415,13 @@ export function InterviewScreen({
           return;
         }
 
-        if (value) {
+        const currentPhase = orchestrator.getPhase();
+
+        // In context phase, /issue is a command — don't echo it as user content
+        const isIssueCmd = currentPhase === 'context' && /^\/issue(?:\s|$)/i.test(value);
+        if (value && !isIssueCmd) {
           addMessage('user', value);
         }
-
-        const currentPhase = orchestrator.getPhase();
 
         switch (currentPhase) {
           case 'context': {
@@ -426,6 +434,7 @@ export function InterviewScreen({
 
             if (value) {
               await orchestrator.addReference(value);
+              setHasReferences(true);
             } else {
               await orchestrator.advanceToGoals();
             }
@@ -514,6 +523,7 @@ export function InterviewScreen({
     }
 
     if (key.escape) {
+      if (issuePickerVisible) return;
       if (currentQuestion) {
         setCurrentQuestion(null);
         return;
@@ -533,7 +543,7 @@ export function InterviewScreen({
     if (completionData) return null;
     switch (state.phase) {
       case 'context':
-        return 'Enter URLs, file paths, or /issue to browse. Empty to continue.';
+        return 'Enter URLs, file paths, or /issue to browse. Enter \u21b5 to continue.';
       case 'goals':
         return 'Describe what you want to build.';
       case 'interview':
@@ -552,7 +562,9 @@ export function InterviewScreen({
   const getPlaceholder = () => {
     switch (state.phase) {
       case 'context':
-        return 'Enter URL, file path, /issue, or paste text (prefix "text:" for inline)...';
+        return hasReferences
+          ? 'Add more references, or press Enter \u21b5 to continue to Goals...'
+          : 'Enter URL, file path, /issue, or paste text (prefix "text:" for inline)...';
       case 'goals':
         return 'Describe what you want to build...';
       case 'interview':
