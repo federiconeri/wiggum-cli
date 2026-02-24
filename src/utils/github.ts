@@ -1,3 +1,110 @@
+import { execFile as execFileCb } from 'node:child_process';
+
+/**
+ * Safe command execution using execFile (no shell, array-based args).
+ */
+function safeExec(cmd: string, args: string[], cwd?: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFileCb(cmd, args, { cwd, timeout: 10000 }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(String(stdout));
+    });
+  });
+}
+
+let ghInstalledCache: boolean | null = null;
+
+export async function isGhInstalled(): Promise<boolean> {
+  if (ghInstalledCache !== null) return ghInstalledCache;
+  try {
+    await safeExec('gh', ['--version']);
+    ghInstalledCache = true;
+  } catch {
+    ghInstalledCache = false;
+  }
+  return ghInstalledCache;
+}
+
+export function _resetGhCache(): void {
+  ghInstalledCache = null;
+}
+
+export interface GitHubIssueDetail {
+  title: string;
+  body: string;
+  labels: string[];
+}
+
+export async function fetchGitHubIssue(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<GitHubIssueDetail | null> {
+  try {
+    const stdout = await safeExec('gh', [
+      'issue', 'view', String(number),
+      '--repo', `${owner}/${repo}`,
+      '--json', 'title,body,labels',
+    ]);
+    const data = JSON.parse(stdout);
+    return {
+      title: data.title ?? '',
+      body: data.body ?? '',
+      labels: (data.labels ?? []).map((l: { name: string }) => l.name),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export interface GitHubIssueListItem {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  labels: string[];
+}
+
+export async function listRepoIssues(
+  owner: string,
+  repo: string,
+  search?: string,
+  limit = 20,
+): Promise<GitHubIssueListItem[]> {
+  try {
+    const args = [
+      'issue', 'list',
+      '--repo', `${owner}/${repo}`,
+      '--limit', String(limit),
+      '--json', 'number,title,state,labels',
+      '--state', 'all',
+    ];
+    if (search) {
+      args.push('--search', search);
+    }
+    const stdout = await safeExec('gh', args);
+    const data = JSON.parse(stdout);
+    return (data as any[]).map((item) => ({
+      number: item.number,
+      title: item.title,
+      state: (item.state as string).toLowerCase() as 'open' | 'closed',
+      labels: (item.labels ?? []).map((l: { name: string }) => l.name),
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function detectGitHubRemote(
+  projectRoot: string,
+): Promise<GitHubRepo | null> {
+  try {
+    const stdout = await safeExec('git', ['remote', 'get-url', 'origin'], projectRoot);
+    return parseGitHubRemote(stdout.trim());
+  } catch {
+    return null;
+  }
+}
+
 export interface ParsedGitHubIssue {
   owner: string;
   repo: string;
