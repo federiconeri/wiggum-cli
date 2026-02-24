@@ -78,8 +78,9 @@ vi.mock('../tui/orchestration/interview-orchestrator.js', () => {
 vi.mock('../ai/providers.js', () => ({
   getAvailableProvider: mockGetAvailableProvider,
   AVAILABLE_MODELS: {
-    anthropic: [{ value: 'sonnet', label: 'Sonnet', hint: 'recommended' }],
+    anthropic: [{ value: 'claude-sonnet-4-5-20250929', label: 'Sonnet 4.5', hint: 'recommended' }],
   },
+  normalizeModelId: vi.fn((_provider: string, modelId: string) => modelId),
   isAnthropicAlias: vi.fn().mockReturnValue(false),
 }));
 

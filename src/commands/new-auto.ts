@@ -7,7 +7,11 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
-import { getAvailableProvider } from '../ai/providers.js';
+import {
+  getAvailableProvider,
+  normalizeModelId,
+  AVAILABLE_MODELS,
+} from '../ai/providers.js';
 import type { AIProvider } from '../ai/providers.js';
 import { loadConfigWithDefaults, hasConfig } from '../utils/config.js';
 import { loadContext, toScanResultFromPersisted } from '../context/index.js';
@@ -66,8 +70,12 @@ export async function newAutoCommand(
     specsDir = join(projectRoot, config.paths.specs);
   }
 
-  // Determine model
-  const model = options.model ?? 'sonnet';
+  // Determine model — resolve aliases (e.g. 'sonnet' → full model ID)
+  const recommendedModel = AVAILABLE_MODELS[provider].find(
+    (m) => m.hint?.includes('recommended'),
+  );
+  const defaultModel = recommendedModel?.value ?? AVAILABLE_MODELS[provider][0].value;
+  const model = normalizeModelId(provider, options.model ?? defaultModel);
 
   // Init tracing
   try {
