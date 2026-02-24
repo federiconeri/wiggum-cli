@@ -59,6 +59,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     '--review-mode',
     '--issue',
     '--context',
+    '--goals',
   ]);
 
   // Flags that can be specified multiple times, accumulating into an array
@@ -290,6 +291,8 @@ Options for new:
   --model <model>           AI model
   --issue <number|url>      Add GitHub issue as context (repeatable)
   --context <url|path>      Add URL or file as context (repeatable)
+  --auto                    Headless mode (skip TUI, for scripting/agents)
+  --goals <description>     Feature goals (used with --auto)
   -e, --edit                Open in editor after creation
   -f, --force               Overwrite existing spec
 
@@ -331,7 +334,7 @@ Press Esc to cancel any operation.
       const featureName = parsed.positionalArgs[0];
       if (!featureName) {
         console.error('Error: <name> is required for "new"');
-        console.error('Usage: wiggum new <name> [--issue <number|url>] [--context <url|path>] [--model <model>] [-e] [-f]');
+        console.error('Usage: wiggum new <name> [--issue <number|url>] [--context <url|path>] [--model <model>] [--auto] [--goals <desc>] [-e] [-f]');
         process.exit(1);
       }
 
@@ -343,10 +346,19 @@ Press Esc to cancel any operation.
       if (Array.isArray(contextFlags)) initialReferences.push(...contextFlags);
       else if (typeof contextFlags === 'string') initialReferences.push(contextFlags);
 
-      await startInkTui('interview', {
-        interviewFeature: featureName,
-        initialReferences: initialReferences.length > 0 ? initialReferences : undefined,
-      });
+      if (parsed.flags.auto === true) {
+        const { newAutoCommand } = await import('./commands/new-auto.js');
+        await newAutoCommand(featureName, {
+          goals: typeof parsed.flags.goals === 'string' ? parsed.flags.goals : undefined,
+          initialReferences: initialReferences.length > 0 ? initialReferences : undefined,
+          model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
+        });
+      } else {
+        await startInkTui('interview', {
+          interviewFeature: featureName,
+          initialReferences: initialReferences.length > 0 ? initialReferences : undefined,
+        });
+      }
       break;
     }
 

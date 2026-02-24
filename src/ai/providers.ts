@@ -66,7 +66,7 @@ export interface ModelOption {
 export const AVAILABLE_MODELS: Record<AIProvider, ModelOption[]> = {
   anthropic: [
     { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', hint: 'most capable' },
-    { value: 'claude-sonnet-4-5-20250929', label: 'Claude Sonnet 4.5', hint: 'recommended' },
+    { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', hint: 'recommended' },
     { value: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5', hint: 'fastest' },
   ],
   openai: [
@@ -92,7 +92,7 @@ export const AVAILABLE_MODELS: Record<AIProvider, ModelOption[]> = {
  * Using balanced models for good results
  */
 const DEFAULT_MODELS: Record<AIProvider, string> = {
-  anthropic: 'claude-sonnet-4-5-20250929',
+  anthropic: 'claude-sonnet-4-6',
   openai: 'gpt-5.2',
   openrouter: 'google/gemini-3-pro-preview',
 };
@@ -101,7 +101,7 @@ const DEFAULT_MODELS: Record<AIProvider, string> = {
  * Anthropic shorthand aliases for legacy configs
  */
 const ANTHROPIC_MODEL_ALIASES: Record<string, string> = {
-  sonnet: 'claude-sonnet-4-5-20250929',
+  sonnet: 'claude-sonnet-4-6',
   opus: 'claude-opus-4-6',
   haiku: 'claude-haiku-4-5-20251001',
 };
