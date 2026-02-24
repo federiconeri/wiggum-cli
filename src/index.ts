@@ -266,6 +266,7 @@ Usage:
   wiggum new <name>         Create new feature spec (TUI)
   wiggum run <feature>      Run feature development loop
   wiggum monitor <feature>  Monitor a running feature loop
+  wiggum sync               Refresh project context (scan + AI analysis)
   wiggum config [args...]   Manage API keys and settings
 
 Options for run:
@@ -411,6 +412,12 @@ Press Esc to cancel any operation.
       } else {
         await monitorCommand(feature, { interval });
       }
+      break;
+    }
+
+    case 'sync': {
+      const { syncCommand } = await import('./commands/sync.js');
+      await syncCommand();
       break;
     }
 
