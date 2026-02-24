@@ -201,6 +201,28 @@ describe('parseCliArgs', () => {
       flags: { stream: true },
     });
   });
+
+  it('parses repeatable --issue flags into array', () => {
+    const result = parseCliArgs(['new', 'my-feature', '--issue', '42', '--issue', '87']);
+    expect(result.command).toBe('new');
+    expect(result.flags.issue).toEqual(['42', '87']);
+  });
+
+  it('parses single --issue flag into array', () => {
+    const result = parseCliArgs(['new', 'my-feature', '--issue', '42']);
+    expect(result.flags.issue).toEqual(['42']);
+  });
+
+  it('parses repeatable --context flags into array', () => {
+    const result = parseCliArgs(['new', 'my-feature', '--context', 'src/auth.ts', '--context', 'https://docs.example.com']);
+    expect(result.flags.context).toEqual(['src/auth.ts', 'https://docs.example.com']);
+  });
+
+  it('parses mixed --issue and --context flags', () => {
+    const result = parseCliArgs(['new', 'my-feature', '--issue', '42', '--context', 'src/auth.ts', '--issue', '87']);
+    expect(result.flags.issue).toEqual(['42', '87']);
+    expect(result.flags.context).toEqual(['src/auth.ts']);
+  });
 });
 
 // ─── main() routing tests ──────────────────────────────────────────────────────
@@ -624,5 +646,29 @@ describe('main', () => {
         interviewProps: expect.objectContaining({ featureName: 'my-feature' }),
       }),
     );
+  });
+
+  it('new my-feature --issue 42 --context file.ts → passes initialReferences to interviewProps', async () => {
+    process.argv = ['node', 'ralph.js', 'new', 'my-feature', '--issue', '42', '--context', 'src/auth.ts'];
+    await main();
+
+    expect(mockRenderApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        screen: 'interview',
+        interviewProps: expect.objectContaining({
+          featureName: 'my-feature',
+          initialReferences: ['issue:42', 'src/auth.ts'],
+        }),
+      }),
+    );
+  });
+
+  it('--help lists --issue and --context flags', async () => {
+    process.argv = ['node', 'ralph.js', '--help'];
+    await main();
+
+    const helpText = consoleLogSpy.mock.calls[0][0] as string;
+    expect(helpText).toContain('--issue');
+    expect(helpText).toContain('--context');
   });
 });

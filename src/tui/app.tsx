@@ -46,6 +46,8 @@ export interface InterviewAppProps {
   model: string;
   /** Optional scan result with detected tech stack */
   scanResult?: ScanResult;
+  /** References to auto-add during context phase (from CLI --issue/--context flags) */
+  initialReferences?: string[];
 }
 
 /**
@@ -306,6 +308,7 @@ export function App({
           model={sessionState.model}
           scanResult={sessionState.scanResult}
           specsPath={sessionState.config?.paths.specs}
+          initialReferences={interviewProps?.initialReferences}
           onComplete={handleInterviewComplete}
           onCancel={handleInterviewCancel}
         />

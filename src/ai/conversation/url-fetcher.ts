@@ -5,6 +5,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
+import { isGitHubIssueUrl, isGhInstalled, fetchGitHubIssue } from '../../utils/github.js';
 
 const MAX_CONTENT_LENGTH = 10000;
 const FETCH_TIMEOUT = 10000;
@@ -157,6 +158,32 @@ function readFromFile(filePath: string, projectRoot: string): FetchedContent {
 }
 
 /**
+ * Fetch GitHub issue content via gh CLI
+ */
+async function fetchGitHubContent(
+  owner: string,
+  repo: string,
+  number: number,
+): Promise<FetchedContent | null> {
+  if (!(await isGhInstalled())) return null;
+
+  const issue = await fetchGitHubIssue(owner, repo, number);
+  if (!issue) return null;
+
+  let content = `# ${issue.title}\n\n${issue.body ?? ''}`;
+  const truncated = content.length > MAX_CONTENT_LENGTH;
+  if (truncated) {
+    content = content.slice(0, MAX_CONTENT_LENGTH) + '\n\n[Content truncated...]';
+  }
+
+  return {
+    source: `GitHub issue #${number}`,
+    content,
+    truncated,
+  };
+}
+
+/**
  * Fetch content from a URL or local file path
  */
 export async function fetchContent(
@@ -164,6 +191,11 @@ export async function fetchContent(
   projectRoot: string
 ): Promise<FetchedContent> {
   if (isUrl(input)) {
+    const ghIssue = isGitHubIssueUrl(input);
+    if (ghIssue) {
+      const result = await fetchGitHubContent(ghIssue.owner, ghIssue.repo, ghIssue.number);
+      if (result) return result;
+    }
     return fetchFromUrl(input);
   }
   return readFromFile(input, projectRoot);

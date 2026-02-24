@@ -14,6 +14,7 @@ import { createContext7Tools, canUseContext7 } from '../../ai/tools/context7.js'
 import { existsSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { isUrl } from '../../ai/conversation/url-fetcher.js';
+import { isGitHubIssueUrl } from '../../utils/github.js';
 import type { AIProvider } from '../../ai/providers.js';
 import type { ScanResult } from '../../scanner/types.js';
 import type { GeneratorPhase } from '../hooks/useSpecGenerator.js';
@@ -543,14 +544,16 @@ export class InterviewOrchestrator {
   /**
    * Add a reference URL or file path
    */
-  async addReference(refUrl: string): Promise<void> {
+  async addReference(refUrl: string): Promise<boolean> {
     try {
-      this.onWorkingChange(true, 'Fetching reference...');
-
       const trimmed = refUrl.trim();
+      const ghIssue = isGitHubIssueUrl(trimmed);
+      this.onWorkingChange(true, ghIssue
+        ? `Fetching GitHub issue #${ghIssue.number}...`
+        : 'Fetching reference...');
       if (!trimmed) {
         this.onReady();
-        return;
+        return false;
       }
 
       const forceInline = /^text:\s*/i.test(trimmed);
@@ -565,7 +568,7 @@ export class InterviewOrchestrator {
       if (forceInline && !inlinePayload) {
         this.onMessage('system', 'Error: Inline context is empty after "text:"');
         this.onReady();
-        return;
+        return false;
       }
 
       if ((forceInline || (!isUrlInput && !fileExists && isInlineCandidate)) && inlinePayload) {
@@ -577,24 +580,41 @@ export class InterviewOrchestrator {
         const suffix = truncated ? ' (truncated)' : '';
         this.onMessage('system', `Added inline context${suffix}: "${preview}..."`);
         this.onReady();
-        return;
+        return true;
       }
 
       const result = await fetchContent(trimmed, this.projectRoot);
 
       if (result.error) {
         this.onMessage('system', `Error: ${result.error}`);
+        this.onReady();
+        return false;
       } else {
         this.conversation.addReference(result.content, result.source);
-        const preview = result.content.slice(0, 100).replace(/\n/g, ' ').trim();
-        this.onMessage('system', `Added reference from ${result.source}: "${preview}..."`);
+        if (result.source.startsWith('GitHub issue #')) {
+          const titleMatch = result.content.match(/^# (.+)/);
+          const title = titleMatch ? titleMatch[1] : '';
+          this.onMessage('system', `Added: ${result.source}${title ? ` ${title}` : ''}`);
+        } else {
+          const preview = result.content.slice(0, 100).replace(/\n/g, ' ').trim();
+          this.onMessage('system', `Added reference from ${result.source}: "${preview}..."`);
+        }
       }
 
       this.onReady();
+      return true;
     } catch (error) {
       this.onError(error instanceof Error ? error.message : String(error));
       this.onReady();
+      return false;
     }
+  }
+
+  /**
+   * Add pre-fetched content as a reference (skips URL/file fetch)
+   */
+  addReferenceContent(content: string, source: string): void {
+    this.conversation.addReference(content, source);
   }
 
   /**
