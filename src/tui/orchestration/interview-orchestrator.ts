@@ -14,6 +14,7 @@ import { createContext7Tools, canUseContext7 } from '../../ai/tools/context7.js'
 import { existsSync } from 'node:fs';
 import { resolve, isAbsolute } from 'node:path';
 import { isUrl } from '../../ai/conversation/url-fetcher.js';
+import { isGitHubIssueUrl } from '../../utils/github.js';
 import type { AIProvider } from '../../ai/providers.js';
 import type { ScanResult } from '../../scanner/types.js';
 import type { GeneratorPhase } from '../hooks/useSpecGenerator.js';
@@ -545,9 +546,11 @@ export class InterviewOrchestrator {
    */
   async addReference(refUrl: string): Promise<void> {
     try {
-      this.onWorkingChange(true, 'Fetching reference...');
-
       const trimmed = refUrl.trim();
+      const ghIssue = isGitHubIssueUrl(trimmed);
+      this.onWorkingChange(true, ghIssue
+        ? `Fetching GitHub issue #${ghIssue.number}...`
+        : 'Fetching reference...');
       if (!trimmed) {
         this.onReady();
         return;
@@ -586,8 +589,14 @@ export class InterviewOrchestrator {
         this.onMessage('system', `Error: ${result.error}`);
       } else {
         this.conversation.addReference(result.content, result.source);
-        const preview = result.content.slice(0, 100).replace(/\n/g, ' ').trim();
-        this.onMessage('system', `Added reference from ${result.source}: "${preview}..."`);
+        if (result.source.startsWith('GitHub issue #')) {
+          const titleMatch = result.content.match(/^# (.+)/);
+          const title = titleMatch ? titleMatch[1] : '';
+          this.onMessage('system', `Added: ${result.source}${title ? ` ${title}` : ''}`);
+        } else {
+          const preview = result.content.slice(0, 100).replace(/\n/g, ' ').trim();
+          this.onMessage('system', `Added reference from ${result.source}: "${preview}..."`);
+        }
       }
 
       this.onReady();
