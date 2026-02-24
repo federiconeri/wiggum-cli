@@ -77,7 +77,7 @@ describe('InterviewScreen tracing lifecycle', () => {
           featureName: 'test-feature',
           projectRoot: '/tmp/test',
           provider: 'anthropic',
-          model: 'claude-sonnet-4-5-20250929',
+          model: 'claude-sonnet-4-6',
           onComplete: vi.fn(),
           onCancel: vi.fn(),
         })
@@ -103,7 +103,7 @@ describe('InterviewScreen tracing lifecycle', () => {
         featureName: 'test-feature',
         projectRoot: '/tmp/test',
         provider: 'anthropic',
-        model: 'claude-sonnet-4-5-20250929',
+        model: 'claude-sonnet-4-6',
         onComplete: vi.fn(),
         onCancel: vi.fn(),
       })
@@ -136,7 +136,7 @@ describe('InterviewScreen multi-select integration', () => {
         featureName: 'test-feature',
         projectRoot: '/tmp/test',
         provider: 'anthropic',
-        model: 'claude-sonnet-4-5-20250929',
+        model: 'claude-sonnet-4-6',
         onComplete: vi.fn(),
         onCancel: vi.fn(),
       })
