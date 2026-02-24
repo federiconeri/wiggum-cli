@@ -6,7 +6,7 @@
  * Supports arrow keys and j/k for navigation, Enter to select, Esc to cancel.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
 import Spinner from 'ink-spinner';
 import { colors, box } from '../theme.js';
@@ -56,6 +56,10 @@ export function IssuePicker({
   error,
 }: IssuePickerProps): React.ReactElement {
   const [selectedIndex, setSelectedIndex] = useState(0);
+
+  React.useEffect(() => {
+    setSelectedIndex(0);
+  }, [issues]);
 
   // Handle keyboard input
   useInput((input, key) => {
@@ -172,7 +176,7 @@ export function IssuePicker({
       <Box marginLeft={1}>
         <Text color={colors.gray}>
           {'('}
-          {'\u2191\u2193 navigate, Enter select, type to search, Esc cancel'}
+          {'\u2191\u2193 navigate, Enter select, Esc cancel'}
           {')'}
         </Text>
       </Box>

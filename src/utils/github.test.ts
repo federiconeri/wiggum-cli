@@ -126,7 +126,7 @@ describe('listRepoIssues', () => {
       { number: 41, title: 'Add feature', state: 'CLOSED', labels: [] },
     ]));
     const result = await listRepoIssues('acme', 'api');
-    expect(result).toEqual([
+    expect(result.issues).toEqual([
       { number: 42, title: 'Fix bug', state: 'open', labels: ['bug'] },
       { number: 41, title: 'Add feature', state: 'closed', labels: [] },
     ]);
@@ -141,7 +141,15 @@ describe('listRepoIssues', () => {
 
   it('returns empty array on failure', async () => {
     mockExecFileError('network error');
-    expect(await listRepoIssues('acme', 'api')).toEqual([]);
+    const result = await listRepoIssues('acme', 'api');
+    expect(result.issues).toEqual([]);
+  });
+
+  it('returns auth error message when not authenticated', async () => {
+    mockExecFileError('gh: not logged into any github.com account');
+    const result = await listRepoIssues('acme', 'api');
+    expect(result.issues).toEqual([]);
+    expect(result.error).toContain('gh auth login');
   });
 });
 

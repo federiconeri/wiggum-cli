@@ -312,8 +312,11 @@ export function InterviewScreen({
         setIssuePickerRepo(repo);
       }
 
-      const issues = await listRepoIssues(repo.owner, repo.repo, searchQuery);
-      setIssuePickerIssues(issues);
+      const result = await listRepoIssues(repo.owner, repo.repo, searchQuery);
+      if (result.error) {
+        setIssuePickerError(result.error);
+      }
+      setIssuePickerIssues(result.issues);
     } catch (err) {
       setIssuePickerError(err instanceof Error ? err.message : String(err));
     } finally {

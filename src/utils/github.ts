@@ -64,12 +64,17 @@ export interface GitHubIssueListItem {
   labels: string[];
 }
 
+export interface ListIssuesResult {
+  issues: GitHubIssueListItem[];
+  error?: string;
+}
+
 export async function listRepoIssues(
   owner: string,
   repo: string,
   search?: string,
   limit = 20,
-): Promise<GitHubIssueListItem[]> {
+): Promise<ListIssuesResult> {
   try {
     const args = [
       'issue', 'list',
@@ -83,14 +88,19 @@ export async function listRepoIssues(
     }
     const stdout = await safeExec('gh', args);
     const data = JSON.parse(stdout);
-    return (data as any[]).map((item) => ({
+    const issues = (data as any[]).map((item) => ({
       number: item.number,
       title: item.title,
       state: (item.state as string).toLowerCase() as 'open' | 'closed',
       labels: (item.labels ?? []).map((l: { name: string }) => l.name),
     }));
-  } catch {
-    return [];
+    return { issues };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('auth') || msg.includes('login') || msg.includes('not logged')) {
+      return { issues: [], error: 'Run "gh auth login" to enable issue browsing' };
+    }
+    return { issues: [] };
   }
 }
 
