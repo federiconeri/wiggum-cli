@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI } = vi.hoisted(() => {
+const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand } = vi.hoisted(() => {
   const mockRenderApp = vi.fn().mockReturnValue({
     unmount: vi.fn(),
     waitUntilExit: vi.fn().mockResolvedValue(undefined),
@@ -11,7 +11,8 @@ const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigComma
     Promise.resolve(state)
   );
   const mockIsCI = vi.fn().mockReturnValue(false);
-  return { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI };
+  const mockNewAutoCommand = vi.fn().mockResolvedValue(undefined);
+  return { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand };
 });
 
 // Mock all heavy dependencies before imports
@@ -77,6 +78,10 @@ vi.mock('./utils/ci.js', () => ({
 
 vi.mock('./commands/config.js', () => ({
   handleConfigCommand: mockHandleConfigCommand,
+}));
+
+vi.mock('./commands/new-auto.js', () => ({
+  newAutoCommand: mockNewAutoCommand,
 }));
 
 import { main, parseCliArgs } from './index.js';
@@ -222,6 +227,24 @@ describe('parseCliArgs', () => {
     const result = parseCliArgs(['new', 'my-feature', '--issue', '42', '--context', 'src/auth.ts', '--issue', '87']);
     expect(result.flags.issue).toEqual(['42', '87']);
     expect(result.flags.context).toEqual(['src/auth.ts']);
+  });
+
+  it('--auto parsed as boolean flag', () => {
+    const result = parseCliArgs(['new', 'my-feature', '--auto']);
+    expect(result.flags.auto).toBe(true);
+  });
+
+  it('--goals parsed as value flag', () => {
+    const result = parseCliArgs(['new', 'my-feature', '--goals', 'Build auth system']);
+    expect(result.flags.goals).toBe('Build auth system');
+  });
+
+  it('--auto with --goals and --issue combined', () => {
+    const result = parseCliArgs(['new', 'my-feature', '--auto', '--goals', 'Build auth', '--issue', '42', '--context', 'https://docs.example.com']);
+    expect(result.flags.auto).toBe(true);
+    expect(result.flags.goals).toBe('Build auth');
+    expect(result.flags.issue).toEqual(['42']);
+    expect(result.flags.context).toEqual(['https://docs.example.com']);
   });
 });
 
@@ -670,5 +693,65 @@ describe('main', () => {
     const helpText = consoleLogSpy.mock.calls[0][0] as string;
     expect(helpText).toContain('--issue');
     expect(helpText).toContain('--context');
+  });
+
+  // ─── --auto routing ─────────────────────────────────────────────────────────
+
+  it('new my-feature --auto → calls newAutoCommand instead of TUI', async () => {
+    process.argv = ['node', 'ralph.js', 'new', 'my-feature', '--auto'];
+    await main();
+
+    expect(mockNewAutoCommand).toHaveBeenCalledWith('my-feature', {
+      goals: undefined,
+      initialReferences: undefined,
+      model: undefined,
+    });
+    expect(mockRenderApp).not.toHaveBeenCalled();
+  });
+
+  it('new my-feature --auto --goals "Build auth" → passes goals to newAutoCommand', async () => {
+    process.argv = ['node', 'ralph.js', 'new', 'my-feature', '--auto', '--goals', 'Build auth'];
+    await main();
+
+    expect(mockNewAutoCommand).toHaveBeenCalledWith('my-feature', expect.objectContaining({
+      goals: 'Build auth',
+    }));
+  });
+
+  it('new my-feature --auto --issue 42 --context url → passes refs to newAutoCommand', async () => {
+    process.argv = ['node', 'ralph.js', 'new', 'my-feature', '--auto', '--issue', '42', '--context', 'https://docs.example.com'];
+    await main();
+
+    expect(mockNewAutoCommand).toHaveBeenCalledWith('my-feature', expect.objectContaining({
+      initialReferences: ['issue:42', 'https://docs.example.com'],
+    }));
+  });
+
+  it('new my-feature --auto --model sonnet → passes model to newAutoCommand', async () => {
+    process.argv = ['node', 'ralph.js', 'new', 'my-feature', '--auto', '--model', 'sonnet'];
+    await main();
+
+    expect(mockNewAutoCommand).toHaveBeenCalledWith('my-feature', expect.objectContaining({
+      model: 'sonnet',
+    }));
+  });
+
+  it('new my-feature (no --auto) → starts interview TUI, not newAutoCommand', async () => {
+    process.argv = ['node', 'ralph.js', 'new', 'my-feature'];
+    await main();
+
+    expect(mockNewAutoCommand).not.toHaveBeenCalled();
+    expect(mockRenderApp).toHaveBeenCalledWith(
+      expect.objectContaining({ screen: 'interview' }),
+    );
+  });
+
+  it('--help lists --auto and --goals flags', async () => {
+    process.argv = ['node', 'ralph.js', '--help'];
+    await main();
+
+    const helpText = consoleLogSpy.mock.calls[0][0] as string;
+    expect(helpText).toContain('--auto');
+    expect(helpText).toContain('--goals');
   });
 });
