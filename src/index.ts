@@ -21,7 +21,7 @@ import { isCI } from './utils/ci.js';
 export interface ParsedArgs {
   command: string | undefined;
   positionalArgs: string[];
-  flags: Record<string, string | boolean>;
+  flags: Record<string, string | boolean | string[]>;
 }
 
 /**
@@ -37,7 +37,7 @@ function normalizeFlagName(flag: string): string {
  */
 export function parseCliArgs(argv: string[]): ParsedArgs {
   const positionalArgs: string[] = [];
-  const flags: Record<string, string | boolean> = {};
+  const flags: Record<string, string | boolean | string[]> = {};
   let command: string | undefined;
 
   const shortFlags: Record<string, string> = {
@@ -57,7 +57,12 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     '--interval',
     '--provider',
     '--review-mode',
+    '--issue',
+    '--context',
   ]);
+
+  // Flags that can be specified multiple times, accumulating into an array
+  const repeatableFlagSet = new Set(['--issue', '--context']);
 
   let i = 0;
   while (i < argv.length) {
@@ -81,7 +86,19 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     if (arg.startsWith('--')) {
       const normalized = normalizeFlagName(arg);
       if (valueFlagSet.has(arg) && i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
-        flags[normalized] = argv[i + 1];
+        const value = argv[i + 1];
+        if (repeatableFlagSet.has(arg)) {
+          const existing = flags[normalized];
+          if (Array.isArray(existing)) {
+            existing.push(value);
+          } else if (typeof existing === 'string') {
+            flags[normalized] = [existing, value];
+          } else {
+            flags[normalized] = [value];
+          }
+        } else {
+          flags[normalized] = value;
+        }
         i += 2;
       } else {
         flags[normalized] = true;
@@ -132,7 +149,12 @@ function getVersion(): string {
  */
 async function startInkTui(
   initialScreen: AppScreen = 'shell',
-  options?: { interviewFeature?: string; runFeature?: string; monitorOnly?: boolean },
+  options?: {
+    interviewFeature?: string;
+    runFeature?: string;
+    monitorOnly?: boolean;
+    initialReferences?: string[];
+  },
 ): Promise<void> {
   const interviewFeature = options?.interviewFeature;
   const projectRoot = process.cwd();
@@ -191,6 +213,7 @@ async function startInkTui(
         provider: initialState.provider,
         model: initialState.model,
         scanResult: initialState.scanResult,
+        initialReferences: options?.initialReferences,
       }
     : undefined;
 
@@ -265,6 +288,8 @@ Options for init:
 Options for new:
   --provider <name>         AI provider
   --model <model>           AI model
+  --issue <number|url>      Add GitHub issue as context (repeatable)
+  --context <url|path>      Add URL or file as context (repeatable)
   -e, --edit                Open in editor after creation
   -f, --force               Overwrite existing spec
 
@@ -306,11 +331,22 @@ Press Esc to cancel any operation.
       const featureName = parsed.positionalArgs[0];
       if (!featureName) {
         console.error('Error: <name> is required for "new"');
-        console.error('Usage: wiggum new <name> [--provider <name>] [--model <model>] [-e] [-f]');
+        console.error('Usage: wiggum new <name> [--issue <number|url>] [--context <url|path>] [--model <model>] [-e] [-f]');
         process.exit(1);
       }
-      // TODO: pass parsed flags to startInkTui once TUI supports new flags
-      await startInkTui('interview', { interviewFeature: featureName });
+
+      const initialReferences: string[] = [];
+      const issueFlags = parsed.flags.issue;
+      if (Array.isArray(issueFlags)) initialReferences.push(...issueFlags.map(v => `issue:${v}`));
+      else if (typeof issueFlags === 'string') initialReferences.push(`issue:${issueFlags}`);
+      const contextFlags = parsed.flags.context;
+      if (Array.isArray(contextFlags)) initialReferences.push(...contextFlags);
+      else if (typeof contextFlags === 'string') initialReferences.push(contextFlags);
+
+      await startInkTui('interview', {
+        interviewFeature: featureName,
+        initialReferences: initialReferences.length > 0 ? initialReferences : undefined,
+      });
       break;
     }
 

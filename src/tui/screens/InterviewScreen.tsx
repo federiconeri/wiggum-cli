@@ -68,6 +68,8 @@ export interface InterviewScreenProps {
   scanResult?: ScanResult;
   /** Path to specs directory (relative to project root, defaults to '.ralph/specs') */
   specsPath?: string;
+  /** References to auto-add during context phase (from CLI --issue/--context flags) */
+  initialReferences?: string[];
   /** Called when spec generation is complete - receives spec, messages, and specPath */
   onComplete: (spec: string, messages: Message[], specPath: string) => void;
   /** Called when user cancels the interview */
@@ -88,6 +90,7 @@ export function InterviewScreen({
   model,
   scanResult,
   specsPath = '.ralph/specs',
+  initialReferences,
   onComplete,
   onCancel,
 }: InterviewScreenProps): React.ReactElement {
@@ -287,6 +290,47 @@ export function InterviewScreen({
       orchestratorRef.current = null;
     };
   }, [featureName, projectRoot, provider, model, scanResult, specsPath]);
+
+  // Process initial references from CLI --issue/--context flags
+  const initialRefsProcessed = useRef(false);
+
+  useEffect(() => {
+    const orchestrator = orchestratorRef.current;
+    if (!orchestrator || !initialReferences?.length || initialRefsProcessed.current) return;
+    if (state.phase !== 'context') return;
+    if (!state.awaitingInput) return;
+
+    initialRefsProcessed.current = true;
+
+    (async () => {
+      for (const ref of initialReferences) {
+        if (ref.startsWith('issue:')) {
+          const value = ref.slice(6);
+          if (/^\d+$/.test(value)) {
+            // Bare issue number — resolve from repo remote
+            const repo = await detectGitHubRemote(projectRoot);
+            if (repo) {
+              const detail = await fetchGitHubIssue(repo.owner, repo.repo, parseInt(value, 10));
+              if (detail) {
+                const content = `# ${detail.title}\n\n${detail.body ?? ''}`;
+                orchestrator.addReferenceContent(content, `GitHub issue #${value}`);
+                addMessage('system', `Added: GitHub issue #${value} ${detail.title}`);
+                continue;
+              }
+            }
+            addMessage('system', `Could not fetch issue #${value} — no GitHub remote detected or gh CLI unavailable`);
+          } else {
+            // Full URL — use existing addReference which handles GitHub URLs
+            addMessage('user', value);
+            await orchestrator.addReference(value);
+          }
+        } else {
+          addMessage('user', ref);
+          await orchestrator.addReference(ref);
+        }
+      }
+    })();
+  }, [state.phase, state.awaitingInput, initialReferences, projectRoot, addMessage]);
 
   const handleIssueCommand = useCallback(async (searchQuery?: string) => {
     setIssuePickerVisible(true);
