@@ -81,7 +81,7 @@ export async function listRepoIssues(
       '--repo', `${owner}/${repo}`,
       '--limit', String(limit),
       '--json', 'number,title,state,labels',
-      '--state', 'all',
+      '--state', 'open',
     ];
     if (search) {
       args.push('--search', search);

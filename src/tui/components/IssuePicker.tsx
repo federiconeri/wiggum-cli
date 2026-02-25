@@ -6,11 +6,13 @@
  * Supports arrow keys and j/k for navigation, Enter to select, Esc to cancel.
  */
 
-import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
+import React, { useState } from 'react';
+import { Box, Text, useInput, useStdout } from 'ink';
 import Spinner from 'ink-spinner';
 import { colors, box } from '../theme.js';
 import type { GitHubIssueListItem } from '../../utils/github.js';
+
+const MAX_LABELS = 2;
 
 /**
  * Props for the IssuePicker component
@@ -30,23 +32,11 @@ export interface IssuePickerProps {
   error?: string;
 }
 
-/**
- * IssuePicker component
- *
- * Renders a bordered dropdown list of GitHub issues.
- * Loading, empty, and error states are handled inline.
- *
- * @example
- * ```tsx
- * <IssuePicker
- *   issues={issues}
- *   repoSlug="acme/api"
- *   onSelect={(issue) => console.log('Selected:', issue.number)}
- *   onCancel={() => setShowPicker(false)}
- *   isLoading={false}
- * />
- * ```
- */
+function truncate(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen - 1) + '\u2026';
+}
+
 export function IssuePicker({
   issues,
   repoSlug,
@@ -56,6 +46,8 @@ export function IssuePicker({
   error,
 }: IssuePickerProps): React.ReactElement {
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const { stdout } = useStdout();
+  const columns = stdout?.columns ?? 80;
 
   React.useEffect(() => {
     setSelectedIndex(0);
@@ -85,11 +77,18 @@ export function IssuePicker({
   });
 
   // Build border strings
-  const headerLabel = ` GitHub Issues ${box.horizontal} ${repoSlug} `;
-  const contentWidth = Math.max(60, headerLabel.length + 10);
+  const countSuffix = !isLoading && !error ? ` (${issues.length})` : '';
+  const headerLabel = ` GitHub Issues ${box.horizontal} ${repoSlug}${countSuffix} `;
+  const contentWidth = Math.min(Math.max(60, headerLabel.length + 10), columns - 6);
   const topBorderFill = contentWidth - headerLabel.length - 1;
   const topBorder = box.topLeft + box.horizontal + headerLabel + box.horizontal.repeat(Math.max(0, topBorderFill)) + box.topRight;
   const bottomBorder = box.bottomLeft + box.horizontal.repeat(contentWidth) + box.bottomRight;
+
+  // Space budget for title: total width minus number, labels, borders, padding
+  const numberWidth = 6; // " #999 " — enough for 3-digit issues
+  const labelBudget = 24; // space for up to 2 labels
+  const chrome = 4; // borders + padding
+  const titleMaxLen = Math.max(20, contentWidth - numberWidth - labelBudget - chrome);
 
   return (
     <Box flexDirection="column" marginLeft={2} marginTop={1}>
@@ -122,8 +121,8 @@ export function IssuePicker({
       {!isLoading && !error && issues.length === 0 && (
         <Box flexDirection="row">
           <Text dimColor>{box.vertical}</Text>
-          <Text dimColor> No issues found</Text>
-          <Text>{' '.repeat(Math.max(0, contentWidth - 16))}</Text>
+          <Text dimColor> No open issues found</Text>
+          <Text>{' '.repeat(Math.max(0, contentWidth - 21))}</Text>
           <Text dimColor>{box.vertical}</Text>
         </Box>
       )}
@@ -132,8 +131,8 @@ export function IssuePicker({
       {!isLoading && !error && issues.map((issue, index) => {
         const isSelected = index === selectedIndex;
         const numberText = `#${issue.number}`;
-        const stateText = issue.state;
-        const labelText = issue.labels.length > 0 ? issue.labels[0] : '';
+        const title = truncate(issue.title, titleMaxLen);
+        const labelTags = issue.labels.slice(0, MAX_LABELS).join(' ');
 
         return (
           <Box key={issue.number} flexDirection="row">
@@ -148,20 +147,14 @@ export function IssuePicker({
               backgroundColor={isSelected ? colors.yellow : undefined}
               color={isSelected ? colors.brown : undefined}
             >
-              {'  '}{issue.title}
+              {'  '}{title}
             </Text>
-            <Text
-              backgroundColor={isSelected ? colors.yellow : undefined}
-              color={isSelected ? colors.brown : (issue.state === 'open' ? colors.green : colors.gray)}
-            >
-              {'  '}{stateText}
-            </Text>
-            {labelText && (
+            {labelTags && (
               <Text
                 backgroundColor={isSelected ? colors.yellow : undefined}
                 color={isSelected ? colors.brown : colors.gray}
               >
-                {'  '}{labelText}
+                {'  '}{labelTags}
               </Text>
             )}
             <Text dimColor>{' '.repeat(1)}{box.vertical}</Text>
