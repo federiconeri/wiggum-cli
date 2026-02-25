@@ -123,13 +123,21 @@ describe('listRepoIssues', () => {
   it('returns issue list from gh issue list', async () => {
     mockExecFileResult(JSON.stringify([
       { number: 42, title: 'Fix bug', state: 'OPEN', labels: [{ name: 'bug' }] },
-      { number: 41, title: 'Add feature', state: 'CLOSED', labels: [] },
+      { number: 41, title: 'Add feature', state: 'OPEN', labels: [] },
     ]));
     const result = await listRepoIssues('acme', 'api');
     expect(result.issues).toEqual([
       { number: 42, title: 'Fix bug', state: 'open', labels: ['bug'] },
-      { number: 41, title: 'Add feature', state: 'closed', labels: [] },
+      { number: 41, title: 'Add feature', state: 'open', labels: [] },
     ]);
+  });
+
+  it('passes --state open to gh', async () => {
+    mockExecFileResult('[]');
+    await listRepoIssues('acme', 'api');
+    const args = mockExecFile.mock.calls[0][1] as string[];
+    expect(args).toContain('--state');
+    expect(args).toContain('open');
   });
 
   it('passes search query to gh', async () => {

@@ -9,9 +9,9 @@ const DOWN_ARROW = '\u001b[B';
 const UP_ARROW = '\u001b[A';
 
 const sampleIssues: GitHubIssueListItem[] = [
-  { number: 42, title: 'Fix login bug', state: 'open', labels: ['bug'] },
+  { number: 42, title: 'Fix login bug', state: 'open', labels: ['bug', 'P0'] },
   { number: 41, title: 'Add dark mode', state: 'open', labels: ['enhancement'] },
-  { number: 40, title: 'Update deps', state: 'closed', labels: ['chore'] },
+  { number: 40, title: 'Update deps', state: 'open', labels: ['chore'] },
 ];
 
 describe('IssuePicker', () => {
@@ -58,7 +58,7 @@ describe('IssuePicker', () => {
         isLoading={false}
       />
     );
-    expect(lastFrame()!).toContain('No issues found');
+    expect(lastFrame()!).toContain('No open issues found');
     unmount();
   });
 
@@ -197,7 +197,7 @@ describe('IssuePicker', () => {
     });
   });
 
-  it('shows issue state (open/closed)', () => {
+  it('shows labels instead of state', () => {
     const { lastFrame, unmount } = render(
       <IssuePicker
         issues={sampleIssues}
@@ -208,8 +208,43 @@ describe('IssuePicker', () => {
       />
     );
     const frame = stripAnsi(lastFrame()!);
-    expect(frame).toContain('open');
-    expect(frame).toContain('closed');
+    expect(frame).toContain('bug');
+    expect(frame).toContain('P0');
+    expect(frame).toContain('enhancement');
+    unmount();
+  });
+
+  it('shows issue count in header', () => {
+    const { lastFrame, unmount } = render(
+      <IssuePicker
+        issues={sampleIssues}
+        repoSlug="acme/api"
+        onSelect={vi.fn()}
+        onCancel={vi.fn()}
+        isLoading={false}
+      />
+    );
+    const frame = stripAnsi(lastFrame()!);
+    expect(frame).toContain('(3)');
+    unmount();
+  });
+
+  it('truncates long titles', () => {
+    const longIssue: GitHubIssueListItem[] = [
+      { number: 1, title: 'A'.repeat(100), state: 'open', labels: [] },
+    ];
+    const { lastFrame, unmount } = render(
+      <IssuePicker
+        issues={longIssue}
+        repoSlug="acme/api"
+        onSelect={vi.fn()}
+        onCancel={vi.fn()}
+        isLoading={false}
+      />
+    );
+    const frame = stripAnsi(lastFrame()!);
+    expect(frame).toContain('\u2026');
+    expect(frame).not.toContain('A'.repeat(100));
     unmount();
   });
 
