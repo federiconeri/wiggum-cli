@@ -1,9 +1,21 @@
 import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+
+const SPEC_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const LOOP_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
+
+function killWithTimeout(proc: ChildProcess, timeoutMs: number): NodeJS.Timeout {
+  return setTimeout(() => {
+    proc.kill('SIGTERM');
+    setTimeout(() => {
+      if (!proc.killed) proc.kill('SIGKILL');
+    }, 5000);
+  }, timeoutMs);
+}
 
 export function createExecutionTools(projectRoot: string) {
   const generateSpec = tool({
@@ -19,14 +31,20 @@ export function createExecutionTools(projectRoot: string) {
         if (goals) args.push('--goals', goals);
 
         const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe' });
+        const timer = killWithTimeout(proc, SPEC_TIMEOUT_MS);
         let stdout = '';
         let stderr = '';
+        let timedOut = false;
 
         proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
         proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
 
-        proc.on('close', (code) => {
-          if (code === 0) {
+        proc.on('close', (code, signal) => {
+          clearTimeout(timer);
+          if (signal === 'SIGTERM' || signal === 'SIGKILL') timedOut = true;
+          if (timedOut) {
+            resolve({ success: false, error: `Timed out after ${SPEC_TIMEOUT_MS / 60000}m` });
+          } else if (code === 0) {
             const specPath = stdout.trim().split('\n').pop() ?? '';
             resolve({ success: true, specPath });
           } else {
@@ -35,6 +53,7 @@ export function createExecutionTools(projectRoot: string) {
         });
 
         proc.on('error', (err) => {
+          clearTimeout(timer);
           resolve({ success: false, error: err.message });
         });
       });
@@ -55,13 +74,19 @@ export function createExecutionTools(projectRoot: string) {
         if (model) args.push('--model', model);
 
         const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe' });
+        const timer = killWithTimeout(proc, LOOP_TIMEOUT_MS);
         let stderr = '';
+        let timedOut = false;
 
         proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
 
-        proc.on('close', (code) => {
+        proc.on('close', (code, signal) => {
+          clearTimeout(timer);
+          if (signal === 'SIGTERM' || signal === 'SIGKILL') timedOut = true;
           const finalPath = join(tmpdir(), `ralph-loop-${featureName}.final`);
-          if (existsSync(finalPath)) {
+          if (timedOut) {
+            resolve({ status: 'timeout', error: `Timed out after ${LOOP_TIMEOUT_MS / 60000}m` });
+          } else if (existsSync(finalPath)) {
             const parts = readFileSync(finalPath, 'utf-8').trim().split('|');
             resolve({
               status: parts[3] ?? (code === 0 ? 'done' : 'failed'),
@@ -76,6 +101,7 @@ export function createExecutionTools(projectRoot: string) {
         });
 
         proc.on('error', (err) => {
+          clearTimeout(timer);
           resolve({ status: 'error', error: err.message });
         });
       });
