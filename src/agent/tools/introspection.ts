@@ -28,10 +28,10 @@ export function createIntrospectionTools(projectRoot: string) {
     description: 'Refresh project context by scanning the codebase and running AI analysis. Call before planning if context is stale.',
     inputSchema: zodSchema(z.object({})),
     execute: async () => {
-      const { syncCommand } = await import('../../commands/sync.js');
+      const { syncProjectContext } = await import('../../commands/sync.js');
       try {
-        await syncCommand();
-        return { success: true };
+        const contextPath = await syncProjectContext(projectRoot);
+        return { success: true, contextPath };
       } catch (err) {
         return { success: false, error: err instanceof Error ? err.message : String(err) };
       }

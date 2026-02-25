@@ -65,7 +65,78 @@ vi.mock('../utils/logger.js', () => ({
   },
 }));
 
-import { syncCommand } from './sync.js';
+import { syncCommand, syncProjectContext } from './sync.js';
+
+describe('syncProjectContext', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetAvailableProvider.mockReturnValue('anthropic');
+    mockScan.mockResolvedValue({ files: [], detections: [] });
+    mockEnhance.mockResolvedValue({
+      files: [],
+      detections: [],
+      aiAnalysis: { summary: 'test' },
+    });
+    mockSaveContext.mockResolvedValue(undefined);
+  });
+
+  it('scans, enhances, saves context, and returns path', async () => {
+    const result = await syncProjectContext('/fake/project');
+
+    expect(result).toContain('.context.json');
+    expect(mockScan).toHaveBeenCalledOnce();
+    expect(mockEnhance).toHaveBeenCalledOnce();
+    expect(mockGetGitMetadata).toHaveBeenCalledOnce();
+    expect(mockSaveContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        gitCommitHash: 'abc123',
+        gitBranch: 'main',
+      }),
+      '/fake/project',
+    );
+  });
+
+  it('throws when no provider available', async () => {
+    mockGetAvailableProvider.mockReturnValue(null);
+
+    await expect(syncProjectContext('/fake/project')).rejects.toThrow(
+      'No AI provider available',
+    );
+    expect(mockScan).not.toHaveBeenCalled();
+  });
+
+  it('throws when AI enhancement fails', async () => {
+    mockEnhance.mockResolvedValue({
+      files: [],
+      detections: [],
+      aiError: 'Model rate limited',
+    });
+
+    await expect(syncProjectContext('/fake/project')).rejects.toThrow(
+      'AI analysis failed',
+    );
+    expect(mockSaveContext).not.toHaveBeenCalled();
+  });
+
+  it('propagates scanner errors', async () => {
+    mockScan.mockRejectedValue(new Error('Permission denied'));
+
+    await expect(syncProjectContext('/fake/project')).rejects.toThrow(
+      'Permission denied',
+    );
+    expect(mockEnhance).not.toHaveBeenCalled();
+  });
+
+  it('works with OpenAI provider', async () => {
+    mockGetAvailableProvider.mockReturnValue('openai');
+
+    const result = await syncProjectContext('/fake/project');
+
+    expect(result).toContain('.context.json');
+    expect(mockScan).toHaveBeenCalledOnce();
+    expect(mockEnhance).toHaveBeenCalledOnce();
+  });
+});
 
 describe('syncCommand', () => {
   let mockExit: ReturnType<typeof vi.spyOn>;
@@ -96,25 +167,15 @@ describe('syncCommand', () => {
     consoleErrorSpy.mockRestore();
   });
 
-  it('happy path: scans, enhances, saves context, prints path', async () => {
+  it('prints path and exits 0 on success', async () => {
     await expect(syncCommand()).rejects.toThrow('process.exit(0)');
 
-    expect(mockScan).toHaveBeenCalledOnce();
-    expect(mockEnhance).toHaveBeenCalledOnce();
-    expect(mockGetGitMetadata).toHaveBeenCalledOnce();
-    expect(mockSaveContext).toHaveBeenCalledWith(
-      expect.objectContaining({
-        gitCommitHash: 'abc123',
-        gitBranch: 'main',
-      }),
-      expect.any(String),
-    );
     expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining('.context.json'),
     );
   });
 
-  it('exits with error when no provider available', async () => {
+  it('prints error and exits 1 when no provider', async () => {
     mockGetAvailableProvider.mockReturnValue(null);
 
     await expect(syncCommand()).rejects.toThrow('process.exit(1)');
@@ -122,10 +183,9 @@ describe('syncCommand', () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       expect.stringContaining('No AI provider available'),
     );
-    expect(mockScan).not.toHaveBeenCalled();
   });
 
-  it('exits with error when AI enhancement fails', async () => {
+  it('prints error and exits 1 on AI failure', async () => {
     mockEnhance.mockResolvedValue({
       files: [],
       detections: [],
@@ -137,26 +197,5 @@ describe('syncCommand', () => {
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       expect.stringContaining('AI analysis failed'),
     );
-    expect(mockSaveContext).not.toHaveBeenCalled();
-  });
-
-  it('propagates scanner errors', async () => {
-    mockScan.mockRejectedValue(new Error('Permission denied'));
-
-    await expect(syncCommand()).rejects.toThrow('Permission denied');
-
-    expect(mockEnhance).not.toHaveBeenCalled();
-    expect(mockSaveContext).not.toHaveBeenCalled();
-  });
-
-  it('uses OpenAI model when only OpenAI provider is available', async () => {
-    mockGetAvailableProvider.mockReturnValue('openai');
-
-    await expect(syncCommand()).rejects.toThrow('process.exit(0)');
-
-    // Should complete successfully with OpenAI provider
-    expect(mockScan).toHaveBeenCalledOnce();
-    expect(mockEnhance).toHaveBeenCalledOnce();
-    expect(mockSaveContext).toHaveBeenCalledOnce();
   });
 });

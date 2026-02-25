@@ -1,4 +1,4 @@
-import { ToolLoopAgent, stepCountIs, type ToolSet } from 'ai';
+import { ToolLoopAgent, stepCountIs } from 'ai';
 import { MemoryStore } from './memory/store.js';
 import { ingestStrategicDocs } from './memory/ingest.js';
 import { createBacklogTools } from './tools/backlog.js';
