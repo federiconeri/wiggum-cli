@@ -55,7 +55,7 @@ If a loop fails: reflect on what went wrong, comment on the issue, and move to t
 Never get stuck on a single issue — always make forward progress.`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AgentOrchestrator = ToolLoopAgent<any, any, any>;
+export type AgentOrchestrator = ToolLoopAgent<never, any, any>;
 
 export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator {
   const { model, projectRoot, owner, repo } = config;

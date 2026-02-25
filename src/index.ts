@@ -60,6 +60,8 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     '--issue',
     '--context',
     '--goals',
+    '--max-items',
+    '--max-steps',
   ]);
 
   // Flags that can be specified multiple times, accumulating into an array
@@ -268,6 +270,7 @@ Usage:
   wiggum monitor <feature>  Monitor a running feature loop
   wiggum sync               Refresh project context (scan + AI analysis)
   wiggum config [args...]   Manage API keys and settings
+  wiggum agent              Autonomous backlog executor
 
 Options for run:
   --worktree                Use git worktree isolation
@@ -296,6 +299,13 @@ Options for new:
   --goals <description>     Feature goals (used with --auto)
   -e, --edit                Open in editor after creation
   -f, --force               Overwrite existing spec
+
+Options for agent:
+  --model <model>           AI model for the orchestrator
+  --max-items <n>           Max issues to process before stopping
+  --max-steps <n>           Max agent steps before stopping
+  --dry-run                 Plan what would be done without executing
+  --stream                  Force headless streaming output (skip TUI)
 
 In the TUI:
   /init                     Initialize or reconfigure project
@@ -428,6 +438,18 @@ Press Esc to cancel any operation.
         : 'sonnet';
       const state = createSessionState(process.cwd(), provider, model);
       await handleConfigCommand(parsed.positionalArgs, state);
+      break;
+    }
+
+    case 'agent': {
+      const { agentCommand } = await import('./commands/agent.js');
+      await agentCommand({
+        model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
+        maxItems: typeof parsed.flags.maxItems === 'string' ? parseIntFlag(parsed.flags.maxItems, '--max-items') : undefined,
+        maxSteps: typeof parsed.flags.maxSteps === 'string' ? parseIntFlag(parsed.flags.maxSteps, '--max-steps') : undefined,
+        dryRun: parsed.flags.dryRun === true,
+        stream: parsed.flags.stream === true,
+      });
       break;
     }
 

@@ -31,7 +31,7 @@ import path from 'node:path';
 /**
  * Navigation targets for the shell
  */
-export type NavigationTarget = 'shell' | 'interview' | 'init' | 'run';
+export type NavigationTarget = 'shell' | 'interview' | 'init' | 'run' | 'agent';
 
 /**
  * Navigation props passed to target screens
