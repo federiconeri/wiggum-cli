@@ -176,4 +176,14 @@ describe('agentCommand', () => {
 
     expect(mockGetModel).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
   });
+
+  it('passes labels to orchestrator config', async () => {
+    await agentCommand({ labels: ['P0', 'bug'] });
+
+    expect(mockCreateAgentOrchestrator).toHaveBeenCalledWith(
+      expect.objectContaining({
+        labels: ['P0', 'bug'],
+      }),
+    );
+  });
 });
