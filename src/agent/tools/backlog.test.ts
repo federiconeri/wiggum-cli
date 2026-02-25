@@ -50,6 +50,36 @@ describe('createBacklogTools', () => {
         10,
       );
     });
+
+    it('merges default labels with agent-provided labels', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', { defaultLabels: ['P0'] });
+      mockListRepoIssues.mockResolvedValue({ issues: [] });
+
+      await scopedTools.listIssues.execute({ labels: ['bug'], limit: 10 }, execCtx);
+      const search = mockListRepoIssues.mock.calls[0][2] as string;
+      expect(search).toContain('label:P0');
+      expect(search).toContain('label:bug');
+    });
+
+    it('deduplicates labels when default and agent overlap', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', { defaultLabels: ['bug'] });
+      mockListRepoIssues.mockResolvedValue({ issues: [] });
+
+      await scopedTools.listIssues.execute({ labels: ['bug'], limit: 10 }, execCtx);
+      const search = mockListRepoIssues.mock.calls[0][2] as string;
+      // Should appear only once
+      expect(search.match(/label:bug/g)).toHaveLength(1);
+    });
+
+    it('applies default labels when agent provides none', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', { defaultLabels: ['P0', 'P1'] });
+      mockListRepoIssues.mockResolvedValue({ issues: [] });
+
+      await scopedTools.listIssues.execute({ limit: 10 }, execCtx);
+      const search = mockListRepoIssues.mock.calls[0][2] as string;
+      expect(search).toContain('label:P0');
+      expect(search).toContain('label:P1');
+    });
   });
 
   describe('readIssue', () => {

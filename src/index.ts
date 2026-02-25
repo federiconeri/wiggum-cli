@@ -62,6 +62,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     '--goals',
     '--max-items',
     '--max-steps',
+    '--labels',
   ]);
 
   // Flags that can be specified multiple times, accumulating into an array
@@ -304,6 +305,7 @@ Options for agent:
   --model <model>           AI model for the orchestrator
   --max-items <n>           Max issues to process before stopping
   --max-steps <n>           Max agent steps before stopping
+  --labels <l1,l2>          Only work on issues with these labels (comma-separated)
   --dry-run                 Plan what would be done without executing
   --stream                  Force headless streaming output (skip TUI)
 
@@ -447,6 +449,7 @@ Press Esc to cancel any operation.
         model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
         maxItems: typeof parsed.flags.maxItems === 'string' ? parseIntFlag(parsed.flags.maxItems, '--max-items') : undefined,
         maxSteps: typeof parsed.flags.maxSteps === 'string' ? parseIntFlag(parsed.flags.maxSteps, '--max-steps') : undefined,
+        labels: typeof parsed.flags.labels === 'string' ? parsed.flags.labels.split(',').map(l => l.trim()).filter(Boolean) : undefined,
         dryRun: parsed.flags.dryRun === true,
         stream: parsed.flags.stream === true,
       });

@@ -23,6 +23,7 @@ export interface AgentOptions {
   model?: string;
   maxItems?: number;
   maxSteps?: number;
+  labels?: string[];
   dryRun?: boolean;
   stream?: boolean;
 }
@@ -64,6 +65,7 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
     repo: remote.repo,
     maxSteps: options.maxSteps,
     maxItems: options.maxItems,
+    labels: options.labels,
     dryRun: options.dryRun,
     onStepUpdate: (event) => {
       for (const tc of event.toolCalls) {

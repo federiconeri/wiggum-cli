@@ -2,20 +2,28 @@ import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
 import { listRepoIssues, fetchGitHubIssue } from '../../utils/github.js';
 
-export function createBacklogTools(owner: string, repo: string) {
+export interface BacklogToolsOptions {
+  defaultLabels?: string[];
+  defaultMilestone?: string;
+}
+
+export function createBacklogTools(owner: string, repo: string, options: BacklogToolsOptions = {}) {
   const listIssues = tool({
     description: 'List open GitHub issues from the backlog, optionally filtered by labels or milestone.',
     inputSchema: zodSchema(z.object({
-      labels: z.array(z.string()).optional().describe('Filter by these labels'),
+      labels: z.array(z.string()).optional().describe('Filter by these labels (merged with configured defaults)'),
       milestone: z.string().optional().describe('Filter by milestone name'),
       limit: z.number().int().min(1).max(100).default(20).describe('Max issues to return'),
     })),
     execute: async ({ labels, milestone, limit }) => {
-      let search: string | undefined;
       const parts: string[] = [];
-      if (labels?.length) parts.push(...labels.map(l => `label:${l}`));
-      if (milestone) parts.push(`milestone:${milestone}`);
-      if (parts.length > 0) search = parts.join(' ');
+      // Merge default labels with any the agent provides
+      const allLabels = [...(options.defaultLabels ?? []), ...(labels ?? [])];
+      const uniqueLabels = [...new Set(allLabels)];
+      if (uniqueLabels.length) parts.push(...uniqueLabels.map(l => `label:${l}`));
+      const effectiveMilestone = milestone ?? options.defaultMilestone;
+      if (effectiveMilestone) parts.push(`milestone:${effectiveMilestone}`);
+      const search = parts.length > 0 ? parts.join(' ') : undefined;
 
       const result = await listRepoIssues(owner, repo, search, limit);
       if (result.error) return { issues: [], error: result.error };

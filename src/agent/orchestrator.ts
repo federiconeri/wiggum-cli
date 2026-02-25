@@ -57,12 +57,31 @@ Never get stuck on a single issue — always make forward progress.`;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AgentOrchestrator = ToolLoopAgent<never, any, any>;
 
+export function buildConstraints(config: AgentConfig): string {
+  const lines: string[] = [];
+  if (config.maxItems != null) {
+    lines.push(`- You MUST stop after completing ${config.maxItems} issue(s). Call reflectOnWork for each, then stop.`);
+  }
+  if (config.labels?.length) {
+    lines.push(`- Only work on issues with these labels: ${config.labels.join(', ')}. Ignore all others.`);
+  }
+  if (config.milestone) {
+    lines.push(`- Only work on issues in milestone: ${config.milestone}.`);
+  }
+  return lines.length > 0
+    ? `\n\n## Constraints\n\n${lines.join('\n')}`
+    : '';
+}
+
 export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator {
   const { model, projectRoot, owner, repo } = config;
   const memoryDir = join(projectRoot, '.ralph', 'agent');
   const store = new MemoryStore(memoryDir);
 
-  const backlog = createBacklogTools(owner, repo);
+  const backlog = createBacklogTools(owner, repo, {
+    defaultLabels: config.labels,
+    defaultMilestone: config.milestone,
+  });
   const memory = createMemoryTools(store);
   const execution = createExecutionTools(projectRoot);
   const reporting = createReportingTools(owner, repo);
@@ -76,13 +95,22 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     ...introspection,
   };
 
+  const constraints = buildConstraints(config);
+  const fullPrompt = AGENT_SYSTEM_PROMPT + constraints;
+  let completedItems = 0;
+  const maxSteps = config.maxSteps ?? 200;
+
   return new ToolLoopAgent({
     model,
-    instructions: AGENT_SYSTEM_PROMPT,
+    instructions: fullPrompt,
     tools,
-    stopWhen: stepCountIs(config.maxSteps ?? 200),
-    prepareStep: async ({ stepNumber }) => {
-      if (stepNumber === 0) {
+    stopWhen: ({ steps }) => {
+      if (steps.length >= maxSteps) return true;
+      if (config.maxItems != null && completedItems >= config.maxItems) return true;
+      return false;
+    },
+    prepareStep: async ({ steps }) => {
+      if (steps.length === 0) {
         await ingestStrategicDocs(projectRoot, store);
         await store.prune();
       }
@@ -103,12 +131,19 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
 
       return {
         system: [
-          AGENT_SYSTEM_PROMPT,
+          fullPrompt,
           `## Current Memory\n\n${memoryContext}`,
         ].join('\n\n'),
       };
     },
     onStepFinish: async ({ toolCalls, toolResults }) => {
+      // Track completed items by counting reflectOnWork calls
+      for (const tc of toolCalls) {
+        if (tc.toolName === 'reflectOnWork') {
+          completedItems++;
+        }
+      }
+
       config.onStepUpdate?.({
         toolCalls: toolCalls.map((tc) => ({ toolName: tc.toolName, args: tc.input })),
         toolResults: toolResults.map((tr) => ({ toolName: tr.toolName, result: tr.output })),
