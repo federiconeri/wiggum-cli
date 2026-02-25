@@ -22,6 +22,7 @@ import { logger } from '../utils/logger.js';
 import { InterviewScreen } from './screens/InterviewScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
 import { RunScreen, type RunSummary } from './screens/RunScreen.js';
+import { AgentScreen } from './screens/AgentScreen.js';
 import { MainShell, type NavigationTarget, type NavigationProps } from './screens/MainShell.js';
 import { HeaderContent } from './components/HeaderContent.js';
 import { useBackgroundRuns } from './hooks/useBackgroundRuns.js';
@@ -30,7 +31,7 @@ import type { Message } from './components/MessageList.js';
 /**
  * Available screen types for the App component
  */
-export type AppScreen = 'shell' | 'interview' | 'init' | 'run';
+export type AppScreen = 'shell' | 'interview' | 'init' | 'run' | 'agent';
 
 /**
  * Props for the interview screen
@@ -271,7 +272,7 @@ export function App({
       if (!featureName || typeof featureName !== 'string') {
         navigate('shell', { message: 'Feature name is required for the run screen.' });
       }
-    } else if (currentScreen !== 'shell' && currentScreen !== 'init') {
+    } else if (currentScreen !== 'shell' && currentScreen !== 'init' && currentScreen !== 'agent') {
       // Unknown screen — redirect to shell on next tick
       navigate('shell', { message: `Internal error: unknown screen "${currentScreen}". Returned to shell.` });
     }
@@ -349,6 +350,20 @@ export function App({
         />
       );
     }
+
+    case 'agent':
+      return (
+        <AgentScreen
+          header={headerElement}
+          onExit={() => {
+            if (initialScreen === 'agent') {
+              onExit?.();
+            } else {
+              navigate('shell');
+            }
+          }}
+        />
+      );
 
     default: {
       // Return fallback UI instead of calling navigate() during render (which would be setState during render).
