@@ -19,6 +19,7 @@ import {
   type AgentOrchestrator,
 } from '../agent/orchestrator.js';
 import type { AgentConfig } from '../agent/types.js';
+import { initTracing, flushTracing, traced, currentSpan } from '../utils/tracing.js';
 
 const VALID_PROVIDERS: Set<string> = new Set(['anthropic', 'openai', 'openrouter']);
 
@@ -33,6 +34,9 @@ export interface AgentOptions {
 
 export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   const projectRoot = process.cwd();
+
+  // Initialize Braintrust tracing (no-op if BRAINTRUST_API_KEY not set)
+  initTracing();
 
   // 1. Resolve provider (config > env detection)
   const ralphConfig = await loadConfigWithDefaults(projectRoot);
@@ -85,25 +89,52 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   logger.info(`Agent starting: ${remote.owner}/${remote.repo} with ${provider}/${modelId ?? 'default'}`);
 
   try {
-    if (options.stream) {
-      const result = await agent.stream({ prompt: 'Begin working through the backlog.' });
-      let hasOutput = false;
-      for await (const chunk of result.textStream) {
-        process.stdout.write(chunk);
-        hasOutput = true;
+    await traced(async () => {
+      currentSpan().log({
+        input: {
+          owner: remote.owner,
+          repo: remote.repo,
+          provider,
+          model: modelId ?? 'default',
+          maxItems: options.maxItems,
+          maxSteps: options.maxSteps,
+          labels: options.labels,
+          dryRun: options.dryRun ?? false,
+          stream: options.stream ?? false,
+        },
+        metadata: {
+          command: 'agent',
+          owner: remote.owner,
+          repo: remote.repo,
+          provider,
+          model: modelId ?? 'default',
+          dryRun: String(options.dryRun ?? false),
+        },
+        tags: ['agent'],
+      });
+
+      if (options.stream) {
+        const result = await agent.stream({ prompt: 'Begin working through the backlog.' });
+        let hasOutput = false;
+        for await (const chunk of result.textStream) {
+          process.stdout.write(chunk);
+          hasOutput = true;
+        }
+        if (hasOutput) {
+          process.stdout.write('\n');
+        }
+      } else {
+        const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
+        if (result.text) {
+          console.log(result.text);
+        }
       }
-      if (hasOutput) {
-        process.stdout.write('\n');
-      }
-    } else {
-      const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
-      if (result.text) {
-        console.log(result.text);
-      }
-    }
+    }, { name: 'agent-run' });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Error: Agent failed — ${message}`);
     process.exit(1);
+  } finally {
+    await flushTracing();
   }
 }
