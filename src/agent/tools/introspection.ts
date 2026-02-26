@@ -4,11 +4,14 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
+const FEATURE_NAME_SCHEMA = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/).max(100)
+  .describe('Feature name (alphanumeric, hyphens, underscores)');
+
 export function createIntrospectionTools(projectRoot: string) {
   const readLoopLog = tool({
     description: 'Read the stdout/stderr log of a development loop (running or completed).',
     inputSchema: zodSchema(z.object({
-      featureName: z.string().describe('Feature name whose log to read'),
+      featureName: FEATURE_NAME_SCHEMA,
       tailLines: z.number().int().min(1).max(500).default(100).describe('Number of lines from the end'),
     })),
     execute: async ({ featureName, tailLines }) => {

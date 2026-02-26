@@ -189,7 +189,7 @@ export async function loadConfigWithDefaults(projectRoot: string): Promise<Ralph
     },
     agent: {
       ...DEFAULT_CONFIG.agent,
-      ...(config as any).agent,
+      ...config?.agent,
     },
   };
 }

@@ -1,7 +1,16 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+
+const { mockSyncProjectContext } = vi.hoisted(() => ({
+  mockSyncProjectContext: vi.fn(),
+}));
+
+vi.mock('../../commands/sync.js', () => ({
+  syncProjectContext: mockSyncProjectContext,
+}));
+
 import { createIntrospectionTools } from './introspection.js';
 
 describe('createIntrospectionTools', () => {
@@ -10,6 +19,7 @@ describe('createIntrospectionTools', () => {
   const testLogPath = join(tmpdir(), 'ralph-loop-intro-test.log');
 
   afterEach(() => {
+    vi.clearAllMocks();
     if (existsSync(testLogPath)) unlinkSync(testLogPath);
   });
 
@@ -32,6 +42,27 @@ describe('createIntrospectionTools', () => {
         execCtx,
       );
       expect(result).toHaveProperty('error');
+    });
+  });
+
+  describe('syncContext', () => {
+    it('returns success with context path', async () => {
+      mockSyncProjectContext.mockResolvedValue('/fake/root/.ralph/.context.json');
+
+      const result = await tools.syncContext.execute({}, execCtx);
+
+      expect(result.success).toBe(true);
+      expect(result.contextPath).toBe('/fake/root/.ralph/.context.json');
+      expect(mockSyncProjectContext).toHaveBeenCalledWith('/fake/root');
+    });
+
+    it('returns error when sync fails', async () => {
+      mockSyncProjectContext.mockRejectedValue(new Error('No provider'));
+
+      const result = await tools.syncContext.execute({}, execCtx);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('No provider');
     });
   });
 });

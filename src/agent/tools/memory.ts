@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { MemoryStore } from '../memory/store.js';
 import { createMemoryEntry } from '../memory/types.js';
 
+export const REFLECT_TOOL_NAME = 'reflectOnWork';
+
 export function createMemoryTools(store: MemoryStore) {
   const readMemory = tool({
     description: 'Read recent memory entries. Use before planning to recall past outcomes and decisions.',

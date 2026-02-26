@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { MemoryStore } from './store.js';
@@ -88,6 +88,53 @@ describe('MemoryStore', () => {
 
     const entries = await nestedStore.read();
     expect(entries).toHaveLength(1);
+  });
+
+  it('skips malformed JSONL lines gracefully', async () => {
+    await store.append(makeEntry({ content: 'valid entry' }));
+    // Corrupt the file by appending invalid JSON
+    const filePath = join(tempDir, 'memory.jsonl');
+    writeFileSync(filePath,
+      JSON.stringify(makeEntry({ content: 'valid entry' })) + '\n' +
+      'THIS IS NOT JSON\n' +
+      JSON.stringify(makeEntry({ content: 'also valid' })) + '\n',
+    );
+
+    const entries = await store.read();
+    expect(entries).toHaveLength(2);
+    expect(entries[0].content).toBe('also valid');
+    expect(entries[1].content).toBe('valid entry');
+  });
+
+  it('prune skips malformed JSONL lines without crashing', async () => {
+    const filePath = join(tempDir, 'memory.jsonl');
+    writeFileSync(filePath,
+      JSON.stringify(makeEntry({ content: 'good' })) + '\n' +
+      '{broken\n',
+    );
+
+    const pruned = await store.prune();
+    expect(pruned).toBe(0); // good entry is recent, nothing pruned
+
+    const entries = await store.read();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].content).toBe('good');
+  });
+
+  it('keeps work_log entries under 30 days', async () => {
+    const midAge = makeEntry({
+      type: 'work_log',
+      content: '20-day-old log',
+      timestamp: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    await store.append(midAge);
+
+    const pruned = await store.prune();
+    expect(pruned).toBe(0);
+
+    const entries = await store.read();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].content).toBe('20-day-old log');
   });
 
   it('prunes old entries but keeps decisions', async () => {

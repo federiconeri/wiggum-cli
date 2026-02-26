@@ -7,6 +7,8 @@ import { tmpdir } from 'node:os';
 
 const SPEC_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const LOOP_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
+const FEATURE_NAME_SCHEMA = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/).max(100)
+  .describe('Feature name (alphanumeric, hyphens, underscores)');
 
 function killWithTimeout(proc: ChildProcess, timeoutMs: number): NodeJS.Timeout {
   return setTimeout(() => {
@@ -21,7 +23,7 @@ export function createExecutionTools(projectRoot: string) {
   const generateSpec = tool({
     description: 'Generate a feature spec from a GitHub issue using the interview agent in headless mode. Returns the spec file path on success.',
     inputSchema: zodSchema(z.object({
-      featureName: z.string().describe('Name for the feature (used as filename)'),
+      featureName: FEATURE_NAME_SCHEMA,
       issueNumber: z.number().int().describe('GitHub issue number to use as context'),
       goals: z.string().optional().describe('Feature goals description'),
     })),
@@ -63,7 +65,7 @@ export function createExecutionTools(projectRoot: string) {
   const runLoop = tool({
     description: 'Run the development loop for a feature. Spawns a background process and returns when complete.',
     inputSchema: zodSchema(z.object({
-      featureName: z.string().describe('Feature name to run'),
+      featureName: FEATURE_NAME_SCHEMA,
       worktree: z.boolean().default(true).describe('Use git worktree isolation'),
       model: z.string().optional().describe('Model override for the loop'),
     })),
@@ -111,7 +113,7 @@ export function createExecutionTools(projectRoot: string) {
   const checkLoopStatus = tool({
     description: 'Check the current status of a running or completed development loop.',
     inputSchema: zodSchema(z.object({
-      featureName: z.string().describe('Feature name to check'),
+      featureName: FEATURE_NAME_SCHEMA,
     })),
     execute: async ({ featureName }) => {
       const prefix = join(tmpdir(), `ralph-loop-${featureName}`);

@@ -82,12 +82,12 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
 
   if (options.stream) {
     const result = await agent.stream({ prompt: 'Begin working through the backlog.' });
-    let text = '';
+    let hasOutput = false;
     for await (const chunk of result.textStream) {
       process.stdout.write(chunk);
-      text += chunk;
+      hasOutput = true;
     }
-    if (text) {
+    if (hasOutput) {
       process.stdout.write('\n');
     }
   } else {

@@ -11,7 +11,6 @@ export interface AgentConfig {
   milestone?: string;
   dryRun?: boolean;
   onStepUpdate?: (event: AgentStepEvent) => void;
-  onLogEntry?: (entry: AgentLogEntry) => void;
 }
 
 export interface AgentStepEvent {
