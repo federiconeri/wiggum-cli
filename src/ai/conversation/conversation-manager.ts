@@ -233,6 +233,10 @@ Be concise but thorough. Focus on understanding the user's needs before proposin
       model,
       messages,
       ...(isReasoningModel(this.modelId) ? {} : { temperature: 0.7 }),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: { agent: 'conversation-manager', provider: this.provider, model: this.modelId },
+      },
     };
 
     if (this.tools && Object.keys(this.tools).length > 0) {
@@ -283,6 +287,10 @@ Be concise but thorough. Focus on understanding the user's needs before proposin
       model,
       messages,
       ...(isReasoningModel(this.modelId) ? {} : { temperature: 0.7 }),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: { agent: 'conversation-manager', provider: this.provider, model: this.modelId },
+      },
     });
 
     let fullResponse = '';

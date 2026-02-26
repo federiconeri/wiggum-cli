@@ -114,6 +114,11 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     model,
     instructions: fullPrompt,
     tools,
+    experimental_telemetry: {
+      isEnabled: true,
+      functionId: 'agent-orchestrator',
+      metadata: { owner, repo, dryRun: String(config.dryRun ?? false) },
+    },
     stopWhen: ({ steps }) => {
       if (steps.length >= maxSteps) return true;
       if (config.maxItems != null && completedIssues.size >= config.maxItems) return true;
