@@ -10,6 +10,7 @@ import { createDryRunExecutionTools, createDryRunReportingTools } from './tools/
 import type { AgentConfig } from './types.js';
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
+import { getTracedAI } from '../utils/tracing.js';
 
 export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agent. You work through the GitHub issue backlog, shipping features one at a time.
 
@@ -105,7 +106,11 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
   const completedIssues = new Set<number>();
   const maxSteps = config.maxSteps ?? 200;
 
-  return new ToolLoopAgent({
+  // Use traced ToolLoopAgent so Braintrust automatically captures
+  // all LLM calls, tool executions, and agent steps.
+  const { ToolLoopAgent: TracedToolLoopAgent } = getTracedAI();
+
+  return new TracedToolLoopAgent({
     model,
     instructions: fullPrompt,
     tools,

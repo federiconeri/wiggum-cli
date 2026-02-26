@@ -7,6 +7,7 @@
  */
 
 import { vi } from 'vitest';
+import { ToolLoopAgent } from 'ai';
 
 export function mockTracing() {
   return {
@@ -16,10 +17,11 @@ export function mockTracing() {
     getTracedAI: vi.fn().mockReturnValue({
       generateText: vi.fn(),
       streamText: vi.fn(),
+      ToolLoopAgent,
     }),
     maybeTraced: vi.fn(<T>(fn: T) => fn),
-    traced: vi.fn(<T>(fn: T) => fn),
-    currentSpan: vi.fn().mockReturnValue({}),
+    traced: vi.fn((fn: (...args: unknown[]) => unknown) => fn()),
+    currentSpan: vi.fn().mockReturnValue({ log: vi.fn(), id: 'mock-span-id' }),
     wrapTraced: vi.fn(<T>(fn: T) => fn),
   };
 }
