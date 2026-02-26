@@ -2,10 +2,14 @@ import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
 import type { MemoryStore } from '../memory/store.js';
 import { createMemoryEntry } from '../memory/types.js';
+import {
+  listStrategicDocs,
+  readStrategicDoc,
+} from '../memory/ingest.js';
 
 export const REFLECT_TOOL_NAME = 'reflectOnWork';
 
-export function createMemoryTools(store: MemoryStore) {
+export function createMemoryTools(store: MemoryStore, projectRoot?: string) {
   const readMemory = tool({
     description: 'Read recent memory entries. Use before planning to recall past outcomes and decisions.',
     inputSchema: zodSchema(z.object({
@@ -81,5 +85,28 @@ export function createMemoryTools(store: MemoryStore) {
     },
   });
 
-  return { readMemory, writeMemory, reflectOnWork };
+  const listStrategicDocsT = tool({
+    description: 'List available strategic documents in .ralph/strategic/. Returns filenames. Use readStrategicDoc to read full content.',
+    inputSchema: zodSchema(z.object({})),
+    execute: async () => {
+      if (!projectRoot) return { files: [] };
+      const files = await listStrategicDocs(projectRoot);
+      return { files };
+    },
+  });
+
+  const readStrategicDocT = tool({
+    description: 'Read the full content of a strategic document. Use to get detailed architecture, design, or implementation plans relevant to the current task.',
+    inputSchema: zodSchema(z.object({
+      filename: z.string().describe('Filename to read (e.g. "design.md")'),
+    })),
+    execute: async ({ filename }) => {
+      if (!projectRoot) return { error: 'No project root configured' };
+      const content = await readStrategicDoc(projectRoot, filename);
+      if (content === null) return { error: `File not found: ${filename}` };
+      return { filename, content };
+    },
+  });
+
+  return { readMemory, writeMemory, reflectOnWork, listStrategicDocs: listStrategicDocsT, readStrategicDoc: readStrategicDocT };
 }
