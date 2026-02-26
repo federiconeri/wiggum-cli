@@ -302,12 +302,12 @@ Options for new:
   -f, --force               Overwrite existing spec
 
 Options for agent:
-  --model <model>           AI model for the orchestrator
+  --model <model>           AI model (overrides ralph.config.cjs agent.defaultModel)
   --max-items <n>           Max issues to process before stopping
   --max-steps <n>           Max agent steps before stopping
   --labels <l1,l2>          Only work on issues with these labels (comma-separated)
   --dry-run                 Plan what would be done without executing
-  --stream                  Force headless streaming output (skip TUI)
+  --stream                  Stream output in real-time (default: wait for completion)
 
 In the TUI:
   /init                     Initialize or reconfigure project

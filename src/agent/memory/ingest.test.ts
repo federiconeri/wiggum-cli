@@ -16,8 +16,8 @@ describe('ingestStrategicDocs', () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it('ingests markdown files from docs/plans/', async () => {
-    const docsDir = join(tempDir, 'docs', 'plans');
+  it('ingests markdown files from .ralph/strategic/', async () => {
+    const docsDir = join(tempDir, '.ralph', 'strategic');
     mkdirSync(docsDir, { recursive: true });
     writeFileSync(join(docsDir, 'strategy.md'), '# Strategy\n\nShip auth first.\n');
 
@@ -34,7 +34,7 @@ describe('ingestStrategicDocs', () => {
   });
 
   it('skips already-ingested files', async () => {
-    const docsDir = join(tempDir, 'docs', 'plans');
+    const docsDir = join(tempDir, '.ralph', 'strategic');
     mkdirSync(docsDir, { recursive: true });
     writeFileSync(join(docsDir, 'plan.md'), '# Plan\n\nDo things.\n');
 
@@ -49,7 +49,7 @@ describe('ingestStrategicDocs', () => {
     expect(entries).toHaveLength(1);
   });
 
-  it('returns 0 when no docs/plans/ directory exists', async () => {
+  it('returns 0 when no .ralph/strategic/ directory exists', async () => {
     const memoryDir = join(tempDir, '.ralph', 'agent');
     const store = new MemoryStore(memoryDir);
 
@@ -58,7 +58,7 @@ describe('ingestStrategicDocs', () => {
   });
 
   it('truncates large files', async () => {
-    const docsDir = join(tempDir, 'docs', 'plans');
+    const docsDir = join(tempDir, '.ralph', 'strategic');
     mkdirSync(docsDir, { recursive: true });
     writeFileSync(join(docsDir, 'large.md'), 'x'.repeat(5000));
 
