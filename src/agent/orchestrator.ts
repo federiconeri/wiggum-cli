@@ -17,6 +17,8 @@ export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agen
 ## Workflow
 
 1. Read memory to recall previous work and context
+   - Use listStrategicDocs to see available project documentation
+   - Use readStrategicDoc to read full documents relevant to the current task (architecture, design, implementation plans)
 2. List open issues and reason about what to work on next
    - Consider: PM priority labels (P0 > P1 > P2), dependencies, strategic context
 3. For the chosen issue:
@@ -84,7 +86,7 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
   const backlog = createBacklogTools(owner, repo, {
     defaultLabels: config.labels,
   });
-  const memory = createMemoryTools(store);
+  const memory = createMemoryTools(store, projectRoot);
   const execution = config.dryRun
     ? createDryRunExecutionTools()
     : createExecutionTools(projectRoot);
@@ -135,13 +137,15 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
         const recentLogs = all.filter(e => e.type === 'work_log').slice(0, 5);
         const knowledge = all.filter(e => e.type === 'project_knowledge').slice(0, 3);
         const decisions = all.filter(e => e.type === 'decision').slice(0, 2);
-        const strategic = all.filter(e => e.type === 'strategic_context').slice(0, 1);
+        // Strategic docs are injected as lightweight catalog entries (filename + summary).
+        // The agent reads full content on-demand via readStrategicDoc tool.
+        const strategic = all.filter(e => e.type === 'strategic_context');
 
         const memoryContext = [
           ...recentLogs.map(e => `[work] ${e.content}`),
           ...knowledge.map(e => `[knowledge] ${e.content}`),
           ...decisions.map(e => `[decision] ${e.content}`),
-          ...strategic.map(e => `[strategy] ${e.content}`),
+          ...strategic.map(e => `[strategic-doc] ${e.content}`),
         ].join('\n');
 
         if (!memoryContext) return undefined;
