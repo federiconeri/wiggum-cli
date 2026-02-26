@@ -16,14 +16,23 @@ export interface ReadOptions {
 
 export class MemoryStore {
   private readonly filePath: string;
+  private lock: Promise<void> = Promise.resolve();
 
   constructor(dirPath: string) {
     this.filePath = join(dirPath, MEMORY_FILE);
   }
 
+  private serialize<T>(fn: () => Promise<T>): Promise<T> {
+    const p = this.lock.then(fn, fn);
+    this.lock = p.then(() => {}, () => {});
+    return p;
+  }
+
   async append(entry: MemoryEntry): Promise<void> {
-    await mkdir(dirname(this.filePath), { recursive: true });
-    await appendFile(this.filePath, JSON.stringify(entry) + '\n', { encoding: 'utf-8', mode: FILE_MODE });
+    return this.serialize(async () => {
+      await mkdir(dirname(this.filePath), { recursive: true });
+      await appendFile(this.filePath, JSON.stringify(entry) + '\n', { encoding: 'utf-8', mode: FILE_MODE });
+    });
   }
 
   async read(options: ReadOptions = {}): Promise<MemoryEntry[]> {
@@ -61,37 +70,39 @@ export class MemoryStore {
   }
 
   async prune(): Promise<number> {
-    if (!existsSync(this.filePath)) return 0;
+    return this.serialize(async () => {
+      if (!existsSync(this.filePath)) return 0;
 
-    const raw = (await readFile(this.filePath, 'utf-8')).trim();
-    if (!raw) return 0;
+      const raw = (await readFile(this.filePath, 'utf-8')).trim();
+      if (!raw) return 0;
 
-    const entries: MemoryEntry[] = raw
-      .split('\n')
-      .filter(line => line.trim())
-      .map(line => {
-        try { return JSON.parse(line) as MemoryEntry; }
-        catch { return null; }
-      })
-      .filter((e): e is MemoryEntry => e !== null);
+      const entries: MemoryEntry[] = raw
+        .split('\n')
+        .filter(line => line.trim())
+        .map(line => {
+          try { return JSON.parse(line) as MemoryEntry; }
+          catch { return null; }
+        })
+        .filter((e): e is MemoryEntry => e !== null);
 
-    const now = Date.now();
-    const kept = entries.filter(entry => {
-      if (PERMANENT_TYPES.includes(entry.type)) return true;
-      const age = now - new Date(entry.timestamp).getTime();
-      if (Number.isNaN(age)) return true; // keep entries with corrupted timestamps
-      return age < PRUNE_AGE_MS;
+      const now = Date.now();
+      const kept = entries.filter(entry => {
+        if (PERMANENT_TYPES.includes(entry.type)) return true;
+        const age = now - new Date(entry.timestamp).getTime();
+        if (Number.isNaN(age)) return true; // keep entries with corrupted timestamps
+        return age < PRUNE_AGE_MS;
+      });
+
+      const pruned = entries.length - kept.length;
+      if (pruned > 0) {
+        // Atomic write: write to temp file then rename
+        const tmpPath = this.filePath + '.tmp';
+        const content = kept.map(e => JSON.stringify(e)).join('\n') + '\n';
+        await writeFile(tmpPath, content, { encoding: 'utf-8', mode: FILE_MODE });
+        await rename(tmpPath, this.filePath);
+      }
+
+      return pruned;
     });
-
-    const pruned = entries.length - kept.length;
-    if (pruned > 0) {
-      // Atomic write: write to temp file then rename
-      const tmpPath = this.filePath + '.tmp';
-      const content = kept.map(e => JSON.stringify(e)).join('\n') + '\n';
-      await writeFile(tmpPath, content, { encoding: 'utf-8', mode: FILE_MODE });
-      await rename(tmpPath, this.filePath);
-    }
-
-    return pruned;
   }
 }
