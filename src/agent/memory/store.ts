@@ -77,8 +77,9 @@ export class MemoryStore {
 
     const now = Date.now();
     const kept = entries.filter(entry => {
-      const age = now - new Date(entry.timestamp).getTime();
       if (PERMANENT_TYPES.includes(entry.type)) return true;
+      const age = now - new Date(entry.timestamp).getTime();
+      if (Number.isNaN(age)) return true; // keep entries with corrupted timestamps
       return age < PRUNE_AGE_MS;
     });
 

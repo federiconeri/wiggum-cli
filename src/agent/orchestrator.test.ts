@@ -63,11 +63,6 @@ describe('buildConstraints', () => {
     expect(result).toContain('P0, bug');
   });
 
-  it('includes milestone constraint', () => {
-    const result = buildConstraints({ ...base, milestone: 'Alpha' });
-    expect(result).toContain('Alpha');
-  });
-
   it('combines multiple constraints', () => {
     const result = buildConstraints({ ...base, maxItems: 2, labels: ['P0'] });
     expect(result).toContain('2 issue(s)');

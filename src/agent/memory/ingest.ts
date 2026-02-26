@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createMemoryEntry } from './types.js';
 import type { MemoryStore } from './store.js';
@@ -8,9 +8,15 @@ export async function ingestStrategicDocs(
   store: MemoryStore,
 ): Promise<number> {
   const docsDir = join(projectRoot, '.ralph', 'strategic');
-  if (!existsSync(docsDir)) return 0;
 
-  const files = readdirSync(docsDir).filter(f => f.endsWith('.md'));
+  let allFiles: string[];
+  try {
+    allFiles = await readdir(docsDir);
+  } catch {
+    return 0; // directory does not exist
+  }
+
+  const files = allFiles.filter(f => f.endsWith('.md'));
   if (files.length === 0) return 0;
 
   const existing = await store.read({ type: 'strategic_context' });
@@ -22,7 +28,7 @@ export async function ingestStrategicDocs(
   for (const file of files) {
     if (ingestedFiles.has(file)) continue;
 
-    const content = readFileSync(join(docsDir, file), 'utf-8');
+    const content = await readFile(join(docsDir, file), 'utf-8');
     const truncated = content.length > 2000
       ? content.slice(0, 2000) + '\n...(truncated)'
       : content;

@@ -9,6 +9,7 @@ import { createIntrospectionTools } from './tools/introspection.js';
 import { createDryRunExecutionTools, createDryRunReportingTools } from './tools/dry-run.js';
 import type { AgentConfig } from './types.js';
 import { join } from 'node:path';
+import { logger } from '../utils/logger.js';
 
 export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agent. You work through the GitHub issue backlog, shipping features one at a time.
 
@@ -66,9 +67,6 @@ export function buildConstraints(config: AgentConfig): string {
   if (config.labels?.length) {
     lines.push(`- Only work on issues with these labels: ${config.labels.join(', ')}. Ignore all others.`);
   }
-  if (config.milestone) {
-    lines.push(`- Only work on issues in milestone: ${config.milestone}.`);
-  }
   if (config.dryRun) {
     lines.push('- DRY RUN MODE: Plan what you would do but do NOT execute. Execution and reporting tools return simulated results.');
   }
@@ -84,7 +82,6 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
 
   const backlog = createBacklogTools(owner, repo, {
     defaultLabels: config.labels,
-    defaultMilestone: config.milestone,
   });
   const memory = createMemoryTools(store);
   const execution = config.dryRun
@@ -118,48 +115,57 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
       return false;
     },
     prepareStep: async ({ steps }) => {
-      if (steps.length === 0) {
-        await ingestStrategicDocs(projectRoot, store);
-        await store.prune();
+      try {
+        if (steps.length === 0) {
+          await ingestStrategicDocs(projectRoot, store);
+          await store.prune();
+        }
+
+        const all = await store.read({ limit: 50 });
+        const recentLogs = all.filter(e => e.type === 'work_log').slice(0, 5);
+        const knowledge = all.filter(e => e.type === 'project_knowledge').slice(0, 3);
+        const decisions = all.filter(e => e.type === 'decision').slice(0, 2);
+        const strategic = all.filter(e => e.type === 'strategic_context').slice(0, 1);
+
+        const memoryContext = [
+          ...recentLogs.map(e => `[work] ${e.content}`),
+          ...knowledge.map(e => `[knowledge] ${e.content}`),
+          ...decisions.map(e => `[decision] ${e.content}`),
+          ...strategic.map(e => `[strategy] ${e.content}`),
+        ].join('\n');
+
+        if (!memoryContext) return undefined;
+
+        return {
+          system: [
+            fullPrompt,
+            `## Current Memory\n\n${memoryContext}`,
+          ].join('\n\n'),
+        };
+      } catch (err) {
+        logger.warn(`prepareStep failed, continuing without memory: ${err instanceof Error ? err.message : String(err)}`);
+        return undefined;
       }
-
-      const all = await store.read();
-      const recentLogs = all.filter(e => e.type === 'work_log').slice(0, 5);
-      const knowledge = all.filter(e => e.type === 'project_knowledge').slice(0, 3);
-      const decisions = all.filter(e => e.type === 'decision').slice(0, 2);
-      const strategic = all.filter(e => e.type === 'strategic_context').slice(0, 1);
-
-      const memoryContext = [
-        ...recentLogs.map(e => `[work] ${e.content}`),
-        ...knowledge.map(e => `[knowledge] ${e.content}`),
-        ...decisions.map(e => `[decision] ${e.content}`),
-        ...strategic.map(e => `[strategy] ${e.content}`),
-      ].join('\n');
-
-      if (!memoryContext) return undefined;
-
-      return {
-        system: [
-          fullPrompt,
-          `## Current Memory\n\n${memoryContext}`,
-        ].join('\n\n'),
-      };
     },
     onStepFinish: async ({ toolCalls, toolResults }) => {
-      for (const tc of toolCalls) {
-        if (tc.toolName === REFLECT_TOOL_NAME) {
-          const issueNumber = (tc.input as { issueNumber?: number })?.issueNumber;
-          if (issueNumber != null) {
-            completedIssues.add(issueNumber);
+      try {
+        for (const tc of toolCalls) {
+          if (tc.toolName === REFLECT_TOOL_NAME) {
+            const issueNumber = (tc.input as { issueNumber?: number })?.issueNumber;
+            if (issueNumber != null) {
+              completedIssues.add(issueNumber);
+            }
           }
         }
-      }
 
-      config.onStepUpdate?.({
-        toolCalls: toolCalls.map((tc) => ({ toolName: tc.toolName, args: tc.input })),
-        toolResults: toolResults.map((tr) => ({ toolName: tr.toolName, result: tr.output })),
-        completedItems: completedIssues.size,
-      });
+        config.onStepUpdate?.({
+          toolCalls: toolCalls.map((tc) => ({ toolName: tc.toolName, args: tc.input })),
+          toolResults: toolResults.map((tr) => ({ toolName: tr.toolName, result: tr.output })),
+          completedItems: completedIssues.size,
+        });
+      } catch (err) {
+        logger.warn(`onStepFinish failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     },
   });
 }

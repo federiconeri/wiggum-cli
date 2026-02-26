@@ -16,7 +16,7 @@ export function createIntrospectionTools(projectRoot: string) {
     execute: async ({ featureName, tailLines }) => {
       const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
       if (!existsSync(logPath)) {
-        return { error: `No log found at ${logPath}` };
+        return { error: `No log found for feature: ${featureName}` };
       }
 
       const content = await readFile(logPath, 'utf-8');
