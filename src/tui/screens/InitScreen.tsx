@@ -248,6 +248,10 @@ export function InitScreen({
         existingFiles: 'backup',
         generateConfig: true,
         verbose: false,
+        customVariables: {
+          ...(state.provider ? { agentProvider: state.provider } : {}),
+          ...(state.model ? { agentModel: state.model } : {}),
+        },
       });
 
       try {

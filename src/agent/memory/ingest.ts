@@ -7,7 +7,7 @@ export async function ingestStrategicDocs(
   projectRoot: string,
   store: MemoryStore,
 ): Promise<number> {
-  const docsDir = join(projectRoot, 'docs', 'plans');
+  const docsDir = join(projectRoot, '.ralph', 'strategic');
   if (!existsSync(docsDir)) return 0;
 
   const files = readdirSync(docsDir).filter(f => f.endsWith('.md'));

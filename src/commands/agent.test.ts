@@ -6,6 +6,7 @@ const {
   mockGetModel,
   mockDetectGitHubRemote,
   mockCreateAgentOrchestrator,
+  mockLoadConfigWithDefaults,
   mockGenerate,
   mockStream,
 } = vi.hoisted(() => {
@@ -29,6 +30,13 @@ const {
       generate: mockGenerate,
       stream: mockStream,
     })),
+    mockLoadConfigWithDefaults: vi.fn().mockResolvedValue({
+      agent: {
+        defaultProvider: 'anthropic',
+        defaultModel: 'claude-sonnet-4-6',
+      },
+      loop: { defaultModel: 'sonnet' },
+    }),
     mockGenerate,
     mockStream,
   };
@@ -37,18 +45,14 @@ const {
 vi.mock('../ai/providers.js', () => ({
   getAvailableProvider: mockGetAvailableProvider,
   getModel: mockGetModel,
-  AVAILABLE_MODELS: {
-    anthropic: [
-      { value: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', hint: 'recommended' },
-      { value: 'claude-opus-4-6', label: 'Claude Opus 4.6', hint: 'most capable' },
-    ],
-    openai: [{ value: 'gpt-5.2', label: 'GPT-5.2' }],
-    openrouter: [{ value: 'google/gemini-3-pro-preview', label: 'Gemini 3 Pro' }],
-  },
 }));
 
 vi.mock('../utils/github.js', () => ({
   detectGitHubRemote: mockDetectGitHubRemote,
+}));
+
+vi.mock('../utils/config.js', () => ({
+  loadConfigWithDefaults: mockLoadConfigWithDefaults,
 }));
 
 vi.mock('../agent/orchestrator.js', () => ({
@@ -77,6 +81,13 @@ describe('agentCommand', () => {
     mockGetAvailableProvider.mockReturnValue('anthropic');
     mockDetectGitHubRemote.mockResolvedValue({ owner: 'acme', repo: 'app' });
     mockGenerate.mockResolvedValue({ text: 'Agent completed 3 issues.' });
+    mockLoadConfigWithDefaults.mockResolvedValue({
+      agent: {
+        defaultProvider: 'anthropic',
+        defaultModel: 'claude-sonnet-4-6',
+      },
+      loop: { defaultModel: 'sonnet' },
+    });
 
     mockExit = vi.spyOn(process, 'exit').mockImplementation((code?: number | string | null) => {
       throw new Error(`process.exit(${code})`);
@@ -93,13 +104,17 @@ describe('agentCommand', () => {
     stdoutWriteSpy.mockRestore();
   });
 
-  it('exits with error when no AI provider available', async () => {
+  it('exits with error when no provider available (no config, no env)', async () => {
+    mockLoadConfigWithDefaults.mockResolvedValue({
+      agent: { defaultProvider: '', defaultModel: 'claude-sonnet-4-6' },
+      loop: { defaultModel: 'sonnet' },
+    });
     mockGetAvailableProvider.mockReturnValue(null);
 
     await expect(agentCommand()).rejects.toThrow('process.exit(1)');
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('No AI provider available'),
+      expect.stringContaining('No AI provider configured'),
     );
     expect(mockCreateAgentOrchestrator).not.toHaveBeenCalled();
   });
@@ -165,16 +180,44 @@ describe('agentCommand', () => {
     );
   });
 
-  it('passes custom model to getModel', async () => {
+  it('uses model from config.agent.defaultModel', async () => {
+    mockLoadConfigWithDefaults.mockResolvedValue({
+      agent: { defaultProvider: 'anthropic', defaultModel: 'claude-opus-4-6' },
+      loop: { defaultModel: 'sonnet' },
+    });
+
+    await agentCommand();
+
+    expect(mockGetModel).toHaveBeenCalledWith('anthropic', 'claude-opus-4-6');
+  });
+
+  it('CLI --model flag overrides config', async () => {
     await agentCommand({ model: 'claude-opus-4-6' });
 
     expect(mockGetModel).toHaveBeenCalledWith('anthropic', 'claude-opus-4-6');
   });
 
-  it('uses recommended model as default', async () => {
+  it('uses provider from config.agent.defaultProvider', async () => {
+    mockLoadConfigWithDefaults.mockResolvedValue({
+      agent: { defaultProvider: 'openrouter', defaultModel: 'google/gemini-3-pro-preview' },
+      loop: { defaultModel: 'sonnet' },
+    });
+
     await agentCommand();
 
-    expect(mockGetModel).toHaveBeenCalledWith('anthropic', 'claude-sonnet-4-6');
+    expect(mockGetModel).toHaveBeenCalledWith('openrouter', 'google/gemini-3-pro-preview');
+  });
+
+  it('falls back to env detection when config has no provider', async () => {
+    mockLoadConfigWithDefaults.mockResolvedValue({
+      agent: { defaultProvider: '', defaultModel: 'claude-sonnet-4-6' },
+      loop: { defaultModel: 'sonnet' },
+    });
+    mockGetAvailableProvider.mockReturnValue('openai');
+
+    await agentCommand();
+
+    expect(mockGetModel).toHaveBeenCalledWith('openai', 'claude-sonnet-4-6');
   });
 
   it('passes labels to orchestrator config', async () => {

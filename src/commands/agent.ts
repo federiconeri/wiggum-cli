@@ -1,18 +1,19 @@
 /**
  * Agent Command — Headless autonomous backlog executor
  *
- * Detects provider and GitHub remote, creates the agent orchestrator,
- * and runs it in headless mode (generate or stream).
+ * Reads provider and model from ralph.config.cjs (set during wiggum init),
+ * detects GitHub remote, creates the agent orchestrator, and runs it
+ * in headless mode (generate or stream).
  */
 
 import { logger } from '../utils/logger.js';
 import {
   getAvailableProvider,
   getModel,
-  AVAILABLE_MODELS,
 } from '../ai/providers.js';
 import type { AIProvider } from '../ai/providers.js';
 import { detectGitHubRemote } from '../utils/github.js';
+import { loadConfigWithDefaults } from '../utils/config.js';
 import {
   createAgentOrchestrator,
   type AgentOrchestrator,
@@ -31,11 +32,15 @@ export interface AgentOptions {
 export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   const projectRoot = process.cwd();
 
-  // 1. Detect AI provider
-  const provider = getAvailableProvider();
+  // 1. Resolve provider (CLI flag > config > env detection)
+  const ralphConfig = await loadConfigWithDefaults(projectRoot);
+  const configProvider = ralphConfig.agent.defaultProvider as AIProvider | undefined;
+  const envProvider = getAvailableProvider();
+  const provider = configProvider || envProvider;
+
   if (!provider) {
     console.error(
-      'Error: No AI provider available. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.',
+      'Error: No AI provider configured. Run `wiggum init` or set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.',
     );
     process.exit(1);
   }
@@ -49,16 +54,12 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
     process.exit(1);
   }
 
-  // 3. Resolve model
-  const recommended = AVAILABLE_MODELS[provider as AIProvider].find(
-    (m) => m.hint?.includes('recommended'),
-  );
-  const defaultModelId = recommended?.value ?? AVAILABLE_MODELS[provider as AIProvider][0].value;
-  const modelId = options.model ?? defaultModelId;
-  const { model } = getModel(provider, modelId);
+  // 3. Resolve model (CLI flag > config > provider default)
+  const modelId = options.model ?? ralphConfig.agent.defaultModel;
+  const { model } = getModel(provider as AIProvider, modelId);
 
   // 4. Create orchestrator
-  const config: AgentConfig = {
+  const agentConfig: AgentConfig = {
     model,
     projectRoot,
     owner: remote.owner,
@@ -74,14 +75,13 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
     },
   };
 
-  const agent: AgentOrchestrator = createAgentOrchestrator(config);
+  const agent: AgentOrchestrator = createAgentOrchestrator(agentConfig);
 
   // 5. Run in headless mode
-  logger.info(`Agent starting: ${remote.owner}/${remote.repo} with ${modelId}`);
+  logger.info(`Agent starting: ${remote.owner}/${remote.repo} with ${provider}/${modelId}`);
 
   if (options.stream) {
     const result = await agent.stream({ prompt: 'Begin working through the backlog.' });
-    // Collect streamed text
     let text = '';
     for await (const chunk of result.textStream) {
       process.stdout.write(chunk);

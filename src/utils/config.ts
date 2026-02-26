@@ -61,6 +61,14 @@ export interface LoopConfig {
 }
 
 /**
+ * Agent configuration in ralph.config.cjs
+ */
+export interface AgentSectionConfig {
+  defaultProvider: string;
+  defaultModel: string;
+}
+
+/**
  * Full ralph.config.cjs structure
  */
 export interface RalphConfig {
@@ -69,6 +77,7 @@ export interface RalphConfig {
   commands: CommandsConfig;
   paths: PathsConfig;
   loop: LoopConfig;
+  agent: AgentSectionConfig;
 }
 
 /**
@@ -111,6 +120,10 @@ export const DEFAULT_CONFIG: RalphConfig = {
     defaultModel: 'sonnet',
     planningModel: 'opus',
     reviewMode: 'manual',
+  },
+  agent: {
+    defaultProvider: 'anthropic',
+    defaultModel: 'claude-sonnet-4-6',
   },
 };
 
@@ -173,6 +186,10 @@ export async function loadConfigWithDefaults(projectRoot: string): Promise<Ralph
     loop: {
       ...DEFAULT_CONFIG.loop,
       ...config.loop,
+    },
+    agent: {
+      ...DEFAULT_CONFIG.agent,
+      ...(config as any).agent,
     },
   };
 }
