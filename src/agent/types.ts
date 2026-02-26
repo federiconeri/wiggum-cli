@@ -16,6 +16,7 @@ export interface AgentConfig {
 export interface AgentStepEvent {
   toolCalls: Array<{ toolName: string; args: unknown }>;
   toolResults: Array<{ toolName: string; result: unknown }>;
+  completedItems: number;
 }
 
 export interface AgentLogEntry {

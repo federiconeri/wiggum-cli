@@ -122,8 +122,8 @@ export const DEFAULT_CONFIG: RalphConfig = {
     reviewMode: 'manual',
   },
   agent: {
-    defaultProvider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
+    defaultProvider: '',
+    defaultModel: '',
   },
 };
 

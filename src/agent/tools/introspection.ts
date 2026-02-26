@@ -1,11 +1,10 @@
 import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-
-const FEATURE_NAME_SCHEMA = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/).max(100)
-  .describe('Feature name (alphanumeric, hyphens, underscores)');
+import { FEATURE_NAME_SCHEMA } from './schemas.js';
 
 export function createIntrospectionTools(projectRoot: string) {
   const readLoopLog = tool({
@@ -20,7 +19,7 @@ export function createIntrospectionTools(projectRoot: string) {
         return { error: `No log found at ${logPath}` };
       }
 
-      const content = readFileSync(logPath, 'utf-8');
+      const content = await readFile(logPath, 'utf-8');
       const allLines = content.split('\n');
       const lines = allLines.slice(-tailLines);
       return { lines, totalLines: allLines.length };

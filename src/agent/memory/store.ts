@@ -1,4 +1,4 @@
-import { readFile, writeFile, appendFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, appendFile, mkdir, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import type { MemoryEntry, MemoryType } from './types.js';
@@ -22,10 +22,7 @@ export class MemoryStore {
   }
 
   async append(entry: MemoryEntry): Promise<void> {
-    const dir = dirname(this.filePath);
-    if (!existsSync(dir)) {
-      await mkdir(dir, { recursive: true });
-    }
+    await mkdir(dirname(this.filePath), { recursive: true });
     await appendFile(this.filePath, JSON.stringify(entry) + '\n', { encoding: 'utf-8', mode: FILE_MODE });
   }
 
@@ -91,7 +88,6 @@ export class MemoryStore {
       const tmpPath = this.filePath + '.tmp';
       const content = kept.map(e => JSON.stringify(e)).join('\n') + '\n';
       await writeFile(tmpPath, content, { encoding: 'utf-8', mode: FILE_MODE });
-      const { rename } = await import('node:fs/promises');
       await rename(tmpPath, this.filePath);
     }
 

@@ -105,7 +105,7 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
 
   const constraints = buildConstraints(config);
   const fullPrompt = AGENT_SYSTEM_PROMPT + constraints;
-  let completedItems = 0;
+  const completedIssues = new Set<number>();
   const maxSteps = config.maxSteps ?? 200;
 
   return new ToolLoopAgent({
@@ -114,7 +114,7 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     tools,
     stopWhen: ({ steps }) => {
       if (steps.length >= maxSteps) return true;
-      if (config.maxItems != null && completedItems >= config.maxItems) return true;
+      if (config.maxItems != null && completedIssues.size >= config.maxItems) return true;
       return false;
     },
     prepareStep: async ({ steps }) => {
@@ -123,10 +123,11 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
         await store.prune();
       }
 
-      const recentLogs = await store.read({ type: 'work_log', limit: 5 });
-      const knowledge = await store.read({ type: 'project_knowledge', limit: 3 });
-      const decisions = await store.read({ type: 'decision', limit: 2 });
-      const strategic = await store.read({ type: 'strategic_context', limit: 1 });
+      const all = await store.read();
+      const recentLogs = all.filter(e => e.type === 'work_log').slice(0, 5);
+      const knowledge = all.filter(e => e.type === 'project_knowledge').slice(0, 3);
+      const decisions = all.filter(e => e.type === 'decision').slice(0, 2);
+      const strategic = all.filter(e => e.type === 'strategic_context').slice(0, 1);
 
       const memoryContext = [
         ...recentLogs.map(e => `[work] ${e.content}`),
@@ -145,16 +146,19 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
       };
     },
     onStepFinish: async ({ toolCalls, toolResults }) => {
-      // Track completed items by counting reflectOnWork calls
       for (const tc of toolCalls) {
         if (tc.toolName === REFLECT_TOOL_NAME) {
-          completedItems++;
+          const issueNumber = (tc.input as { issueNumber?: number })?.issueNumber;
+          if (issueNumber != null) {
+            completedIssues.add(issueNumber);
+          }
         }
       }
 
       config.onStepUpdate?.({
         toolCalls: toolCalls.map((tc) => ({ toolName: tc.toolName, args: tc.input })),
         toolResults: toolResults.map((tr) => ({ toolName: tr.toolName, result: tr.output })),
+        completedItems: completedIssues.size,
       });
     },
   });

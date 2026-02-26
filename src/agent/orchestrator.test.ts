@@ -73,4 +73,9 @@ describe('buildConstraints', () => {
     expect(result).toContain('2 issue(s)');
     expect(result).toContain('P0');
   });
+
+  it('includes dryRun constraint', () => {
+    const result = buildConstraints({ ...base, dryRun: true });
+    expect(result).toContain('DRY RUN');
+  });
 });

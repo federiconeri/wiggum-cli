@@ -4,11 +4,10 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { FEATURE_NAME_SCHEMA } from './schemas.js';
 
 const SPEC_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const LOOP_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
-const FEATURE_NAME_SCHEMA = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/).max(100)
-  .describe('Feature name (alphanumeric, hyphens, underscores)');
 
 function killWithTimeout(proc: ChildProcess, timeoutMs: number): NodeJS.Timeout {
   return setTimeout(() => {
