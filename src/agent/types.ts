@@ -8,7 +8,6 @@ export interface AgentConfig {
   maxSteps?: number;
   maxItems?: number;
   labels?: string[];
-  milestone?: string;
   dryRun?: boolean;
   onStepUpdate?: (event: AgentStepEvent) => void;
 }

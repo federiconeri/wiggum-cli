@@ -137,6 +137,17 @@ describe('MemoryStore', () => {
     expect(entries[0].content).toBe('20-day-old log');
   });
 
+  it('filters by both type and search together', async () => {
+    await store.append(makeEntry({ type: 'work_log', content: 'auth middleware works' }));
+    await store.append(makeEntry({ type: 'decision', content: 'auth uses JWT' }));
+    await store.append(makeEntry({ type: 'work_log', content: 'billing integration' }));
+
+    const results = await store.read({ type: 'work_log', search: 'auth' });
+    expect(results).toHaveLength(1);
+    expect(results[0].type).toBe('work_log');
+    expect(results[0].content).toContain('auth');
+  });
+
   it('prunes old entries but keeps decisions', async () => {
     const old = makeEntry({
       type: 'work_log',

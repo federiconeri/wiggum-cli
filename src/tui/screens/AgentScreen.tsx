@@ -172,7 +172,7 @@ function LogPanel({ logEntries }: { logEntries: AgentLogEntry[] }): React.ReactE
       ) : (
         <Static items={logEntries}>
           {(entry, index) => (
-            <Box key={index}>
+            <Box key={`${entry.timestamp}-${index}`}>
               <Text>
                 <Text dimColor>{entry.timestamp.slice(11, 19)}</Text>
                 <Text> </Text>

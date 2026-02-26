@@ -4,7 +4,6 @@ import { listRepoIssues, fetchGitHubIssue } from '../../utils/github.js';
 
 export interface BacklogToolsOptions {
   defaultLabels?: string[];
-  defaultMilestone?: string;
 }
 
 export function createBacklogTools(owner: string, repo: string, options: BacklogToolsOptions = {}) {
@@ -21,8 +20,7 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       const allLabels = [...(options.defaultLabels ?? []), ...(labels ?? [])];
       const uniqueLabels = [...new Set(allLabels)];
       if (uniqueLabels.length) parts.push(...uniqueLabels.map(l => `label:${l}`));
-      const effectiveMilestone = milestone ?? options.defaultMilestone;
-      if (effectiveMilestone) parts.push(`milestone:${effectiveMilestone}`);
+      if (milestone) parts.push(`milestone:${milestone}`);
       const search = parts.length > 0 ? parts.join(' ') : undefined;
 
       const result = await listRepoIssues(owner, repo, search, limit);
