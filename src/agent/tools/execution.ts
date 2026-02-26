@@ -14,9 +14,10 @@ function killWithTimeout(proc: ChildProcess, timeoutMs: number): { timer: NodeJS
   const timer = setTimeout(() => {
     fired = true;
     proc.kill('SIGTERM');
-    setTimeout(() => {
+    const escalation = setTimeout(() => {
       if (!proc.killed) proc.kill('SIGKILL');
     }, 5000);
+    escalation.unref();
   }, timeoutMs);
   return { timer, didTimeout: () => fired };
 }
@@ -30,6 +31,8 @@ export function createExecutionTools(projectRoot: string) {
       goals: z.string().optional().describe('Feature goals description'),
     })),
     execute: async ({ featureName, issueNumber, goals }, { abortSignal }) => {
+      if (abortSignal?.aborted) return { success: false, error: 'Aborted' };
+
       return new Promise<{ success: boolean; specPath?: string; error?: string }>((resolve) => {
         const args = ['new', featureName, '--auto', '--issue', String(issueNumber)];
         if (goals) args.push('--goals', goals);
@@ -39,6 +42,7 @@ export function createExecutionTools(projectRoot: string) {
         let stdout = '';
         let stderr = '';
         let aborted = false;
+        let resolved = false;
 
         const onAbort = () => {
           aborted = true;
@@ -50,6 +54,8 @@ export function createExecutionTools(projectRoot: string) {
         proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
 
         proc.on('close', (code) => {
+          if (resolved) return;
+          resolved = true;
           clearTimeout(timer);
           abortSignal?.removeEventListener('abort', onAbort);
           if (aborted) {
@@ -65,6 +71,8 @@ export function createExecutionTools(projectRoot: string) {
         });
 
         proc.on('error', (err) => {
+          if (resolved) return;
+          resolved = true;
           clearTimeout(timer);
           abortSignal?.removeEventListener('abort', onAbort);
           resolve({ success: false, error: err.message });
@@ -81,6 +89,8 @@ export function createExecutionTools(projectRoot: string) {
       model: z.string().optional().describe('Model override for the loop'),
     })),
     execute: async ({ featureName, worktree, model }, { abortSignal }) => {
+      if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted' };
+
       return new Promise<{ status: string; iterations?: number; error?: string }>((resolve) => {
         const args = ['run', featureName];
         if (worktree) args.push('--worktree');
@@ -90,6 +100,7 @@ export function createExecutionTools(projectRoot: string) {
         const { timer, didTimeout } = killWithTimeout(proc, LOOP_TIMEOUT_MS);
         let stderr = '';
         let aborted = false;
+        let resolved = false;
 
         const onAbort = () => {
           aborted = true;
@@ -100,6 +111,8 @@ export function createExecutionTools(projectRoot: string) {
         proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
 
         proc.on('close', (code) => {
+          if (resolved) return;
+          resolved = true;
           clearTimeout(timer);
           abortSignal?.removeEventListener('abort', onAbort);
           const finalPath = join(tmpdir(), `ralph-loop-${featureName}.final`);
@@ -122,6 +135,8 @@ export function createExecutionTools(projectRoot: string) {
         });
 
         proc.on('error', (err) => {
+          if (resolved) return;
+          resolved = true;
           clearTimeout(timer);
           abortSignal?.removeEventListener('abort', onAbort);
           resolve({ status: 'error', error: err.message });
