@@ -20,6 +20,8 @@ import {
 } from '../agent/orchestrator.js';
 import type { AgentConfig } from '../agent/types.js';
 
+const VALID_PROVIDERS: Set<string> = new Set(['anthropic', 'openai', 'openrouter']);
+
 export interface AgentOptions {
   model?: string;
   maxItems?: number;
@@ -32,11 +34,13 @@ export interface AgentOptions {
 export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   const projectRoot = process.cwd();
 
-  // 1. Resolve provider (CLI flag > config > env detection)
+  // 1. Resolve provider (config > env detection)
   const ralphConfig = await loadConfigWithDefaults(projectRoot);
-  const configProvider = ralphConfig.agent.defaultProvider as AIProvider | undefined;
-  const envProvider = getAvailableProvider();
-  const provider = configProvider || envProvider;
+  const configProvider = ralphConfig.agent.defaultProvider;
+  const validConfigProvider = VALID_PROVIDERS.has(configProvider)
+    ? (configProvider as AIProvider)
+    : null;
+  const provider = validConfigProvider || getAvailableProvider();
 
   if (!provider) {
     console.error(
@@ -55,8 +59,8 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   }
 
   // 3. Resolve model (CLI flag > config > provider default)
-  const modelId = options.model ?? ralphConfig.agent.defaultModel;
-  const { model } = getModel(provider as AIProvider, modelId);
+  const modelId = options.model || ralphConfig.agent.defaultModel || undefined;
+  const { model } = getModel(provider, modelId);
 
   // 4. Create orchestrator
   const agentConfig: AgentConfig = {
@@ -78,22 +82,28 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   const agent: AgentOrchestrator = createAgentOrchestrator(agentConfig);
 
   // 5. Run in headless mode
-  logger.info(`Agent starting: ${remote.owner}/${remote.repo} with ${provider}/${modelId}`);
+  logger.info(`Agent starting: ${remote.owner}/${remote.repo} with ${provider}/${modelId ?? 'default'}`);
 
-  if (options.stream) {
-    const result = await agent.stream({ prompt: 'Begin working through the backlog.' });
-    let hasOutput = false;
-    for await (const chunk of result.textStream) {
-      process.stdout.write(chunk);
-      hasOutput = true;
+  try {
+    if (options.stream) {
+      const result = await agent.stream({ prompt: 'Begin working through the backlog.' });
+      let hasOutput = false;
+      for await (const chunk of result.textStream) {
+        process.stdout.write(chunk);
+        hasOutput = true;
+      }
+      if (hasOutput) {
+        process.stdout.write('\n');
+      }
+    } else {
+      const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
+      if (result.text) {
+        console.log(result.text);
+      }
     }
-    if (hasOutput) {
-      process.stdout.write('\n');
-    }
-  } else {
-    const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
-    if (result.text) {
-      console.log(result.text);
-    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Error: Agent failed — ${message}`);
+    process.exit(1);
   }
 }

@@ -1,8 +1,6 @@
 import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
-
-const FEATURE_NAME_SCHEMA = z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]*$/).max(100)
-  .describe('Feature name (alphanumeric, hyphens, underscores)');
+import { FEATURE_NAME_SCHEMA } from './schemas.js';
 
 export function createDryRunExecutionTools() {
   const generateSpec = tool({

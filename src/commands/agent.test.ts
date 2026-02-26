@@ -229,4 +229,47 @@ describe('agentCommand', () => {
       }),
     );
   });
+
+  it('catches generate errors and exits with user-friendly message', async () => {
+    mockGenerate.mockRejectedValue(new Error('API rate limit exceeded'));
+
+    await expect(agentCommand()).rejects.toThrow('process.exit(1)');
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('API rate limit exceeded'),
+    );
+  });
+
+  it('catches stream errors and exits with user-friendly message', async () => {
+    mockStream.mockRejectedValue(new Error('Network timeout'));
+
+    await expect(agentCommand({ stream: true })).rejects.toThrow('process.exit(1)');
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Network timeout'),
+    );
+  });
+
+  it('ignores invalid provider in config and falls back to env detection', async () => {
+    mockLoadConfigWithDefaults.mockResolvedValue({
+      agent: { defaultProvider: 'invalid-provider', defaultModel: 'some-model' },
+      loop: { defaultModel: 'sonnet' },
+    });
+    mockGetAvailableProvider.mockReturnValue('anthropic');
+
+    await agentCommand();
+
+    expect(mockGetModel).toHaveBeenCalledWith('anthropic', 'some-model');
+  });
+
+  it('uses provider default model when config model is empty', async () => {
+    mockLoadConfigWithDefaults.mockResolvedValue({
+      agent: { defaultProvider: 'anthropic', defaultModel: '' },
+      loop: { defaultModel: 'sonnet' },
+    });
+
+    await agentCommand();
+
+    expect(mockGetModel).toHaveBeenCalledWith('anthropic', undefined);
+  });
 });
