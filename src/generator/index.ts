@@ -11,7 +11,8 @@ import {
   getTemplatesDir,
   type TemplateVariables,
 } from './templates.js';
-import { generateConfig, generateConfigFile, type RalphConfig } from './config.js';
+import { generateConfig, generateConfigFile } from './config.js';
+import type { RalphConfig } from '../utils/config.js';
 import {
   writeFiles,
   createDirectoryStructure,
@@ -24,7 +25,7 @@ import {
 
 // Re-export types and utilities
 export type { TemplateVariables } from './templates.js';
-export type { RalphConfig } from './config.js';
+export type { RalphConfig } from '../utils/config.js';
 export type { WriteOptions, WriteSummary, WriteResult } from './writer.js';
 export {
   extractVariables,

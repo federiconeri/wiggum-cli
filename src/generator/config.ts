@@ -4,53 +4,8 @@
  */
 
 import type { ScanResult } from '../scanner/types.js';
+import type { RalphConfig } from '../utils/config.js';
 import { extractVariables, type TemplateVariables } from './templates.js';
-
-/**
- * Ralph configuration structure
- */
-export interface RalphConfig {
-  name: string;
-  stack: {
-    framework: {
-      name: string;
-      version: string;
-      variant: string;
-    };
-    packageManager: string;
-    testing: {
-      unit: string;
-      e2e: string;
-    };
-    styling: string;
-  };
-  commands: {
-    dev: string;
-    build: string;
-    test: string;
-    lint: string;
-    typecheck: string;
-  };
-  paths: {
-    root: string;
-    prompts: string;
-    guides: string;
-    specs: string;
-    scripts: string;
-    learnings: string;
-    agents: string;
-  };
-  loop: {
-    maxIterations: number;
-    maxE2eAttempts: number;
-    defaultModel: string;
-    planningModel: string;
-  };
-  agent: {
-    defaultProvider: string;
-    defaultModel: string;
-  };
-}
 
 /**
  * Generate ralph config object from scan result
@@ -98,6 +53,7 @@ export function generateConfig(scanResult: ScanResult, customVars: Record<string
       maxE2eAttempts: 5,
       defaultModel,
       planningModel,
+      reviewMode: 'manual',
     },
     agent: {
       defaultProvider: agentProvider,

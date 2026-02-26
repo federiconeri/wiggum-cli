@@ -1,11 +1,12 @@
-import { ToolLoopAgent, stepCountIs } from 'ai';
+import { ToolLoopAgent } from 'ai';
 import { MemoryStore } from './memory/store.js';
 import { ingestStrategicDocs } from './memory/ingest.js';
 import { createBacklogTools } from './tools/backlog.js';
-import { createMemoryTools } from './tools/memory.js';
+import { createMemoryTools, REFLECT_TOOL_NAME } from './tools/memory.js';
 import { createExecutionTools } from './tools/execution.js';
 import { createReportingTools } from './tools/reporting.js';
 import { createIntrospectionTools } from './tools/introspection.js';
+import { createDryRunExecutionTools, createDryRunReportingTools } from './tools/dry-run.js';
 import type { AgentConfig } from './types.js';
 import { join } from 'node:path';
 
@@ -68,6 +69,9 @@ export function buildConstraints(config: AgentConfig): string {
   if (config.milestone) {
     lines.push(`- Only work on issues in milestone: ${config.milestone}.`);
   }
+  if (config.dryRun) {
+    lines.push('- DRY RUN MODE: Plan what you would do but do NOT execute. Execution and reporting tools return simulated results.');
+  }
   return lines.length > 0
     ? `\n\n## Constraints\n\n${lines.join('\n')}`
     : '';
@@ -83,8 +87,12 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     defaultMilestone: config.milestone,
   });
   const memory = createMemoryTools(store);
-  const execution = createExecutionTools(projectRoot);
-  const reporting = createReportingTools(owner, repo);
+  const execution = config.dryRun
+    ? createDryRunExecutionTools()
+    : createExecutionTools(projectRoot);
+  const reporting = config.dryRun
+    ? createDryRunReportingTools()
+    : createReportingTools(owner, repo);
   const introspection = createIntrospectionTools(projectRoot);
 
   const tools = {
@@ -139,7 +147,7 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     onStepFinish: async ({ toolCalls, toolResults }) => {
       // Track completed items by counting reflectOnWork calls
       for (const tc of toolCalls) {
-        if (tc.toolName === 'reflectOnWork') {
+        if (tc.toolName === REFLECT_TOOL_NAME) {
           completedItems++;
         }
       }
