@@ -37,7 +37,7 @@ export function createExecutionTools(projectRoot: string) {
         const args = ['new', featureName, '--auto', '--issue', String(issueNumber)];
         if (goals) args.push('--goals', goals);
 
-        const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe' });
+        const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe', env: { ...process.env, RALPH_AUTOMATED: '1' } });
         const { timer, didTimeout } = killWithTimeout(proc, SPEC_TIMEOUT_MS);
         let stdout = '';
         let stderr = '';
@@ -89,14 +89,15 @@ export function createExecutionTools(projectRoot: string) {
       model: z.string().optional().describe('Model override for the loop'),
     })),
     execute: async ({ featureName, worktree, model }, { abortSignal }) => {
-      if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted' };
+      if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath: join(tmpdir(), `ralph-loop-${featureName}.log`) };
 
-      return new Promise<{ status: string; iterations?: number; error?: string }>((resolve) => {
+      return new Promise<{ status: string; iterations?: number; error?: string; logPath: string }>((resolve) => {
         const args = ['run', featureName];
         if (worktree) args.push('--worktree');
         if (model) args.push('--model', model);
 
-        const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe' });
+        const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
+        const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe', env: { ...process.env, RALPH_AUTOMATED: '1' } });
         const { timer, didTimeout } = killWithTimeout(proc, LOOP_TIMEOUT_MS);
         let stderr = '';
         let aborted = false;
@@ -117,19 +118,21 @@ export function createExecutionTools(projectRoot: string) {
           abortSignal?.removeEventListener('abort', onAbort);
           const finalPath = join(tmpdir(), `ralph-loop-${featureName}.final`);
           if (aborted) {
-            resolve({ status: 'aborted', error: 'Aborted' });
+            resolve({ status: 'aborted', error: 'Aborted', logPath });
           } else if (didTimeout()) {
-            resolve({ status: 'timeout', error: `Timed out after ${LOOP_TIMEOUT_MS / 60000}m` });
+            resolve({ status: 'timeout', error: `Timed out after ${LOOP_TIMEOUT_MS / 60000}m`, logPath });
           } else if (existsSync(finalPath)) {
             const parts = readFileSync(finalPath, 'utf-8').trim().split('|');
             resolve({
               status: parts[3] ?? (code === 0 ? 'done' : 'failed'),
               iterations: parseInt(parts[0], 10) || undefined,
+              logPath,
             });
           } else {
             resolve({
               status: code === 0 ? 'done' : 'failed',
               error: stderr.trim() || undefined,
+              logPath,
             });
           }
         });
@@ -139,7 +142,7 @@ export function createExecutionTools(projectRoot: string) {
           resolved = true;
           clearTimeout(timer);
           abortSignal?.removeEventListener('abort', onAbort);
-          resolve({ status: 'error', error: err.message });
+          resolve({ status: 'error', error: err.message, logPath });
         });
       });
     },
@@ -152,6 +155,7 @@ export function createExecutionTools(projectRoot: string) {
     })),
     execute: async ({ featureName }) => {
       const prefix = join(tmpdir(), `ralph-loop-${featureName}`);
+      const logPath = `${prefix}.log`;
 
       const finalPath = `${prefix}.final`;
       if (existsSync(finalPath)) {
@@ -161,6 +165,7 @@ export function createExecutionTools(projectRoot: string) {
           iteration: parseInt(parts[0], 10) || undefined,
           maxIterations: parseInt(parts[1], 10) || undefined,
           timestamp: parts[2] ?? undefined,
+          logPath,
         };
       }
 
@@ -168,10 +173,14 @@ export function createExecutionTools(projectRoot: string) {
       if (existsSync(phasesPath)) {
         const lines = readFileSync(phasesPath, 'utf-8').trim().split('\n');
         const lastLine = lines[lines.length - 1];
-        return { status: 'running', lastPhase: lastLine };
+        return { status: 'running', lastPhase: lastLine, logPath };
       }
 
-      return { status: 'not_found' };
+      if (existsSync(logPath)) {
+        return { status: 'possibly_running', logPath };
+      }
+
+      return { status: 'not_found', logPath };
     },
   });
 

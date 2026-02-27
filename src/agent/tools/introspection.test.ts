@@ -36,12 +36,13 @@ describe('createIntrospectionTools', () => {
       expect(result.lines[4]).toBe('Line 200');
     });
 
-    it('returns error when log does not exist', async () => {
+    it('returns error with attempted path when log does not exist', async () => {
       const result = await tools.readLoopLog.execute(
         { featureName: 'nonexistent-xyz' },
         execCtx,
       );
       expect(result).toHaveProperty('error');
+      expect(result.error).toContain('ralph-loop-nonexistent-xyz.log');
     });
   });
 
