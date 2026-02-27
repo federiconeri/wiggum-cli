@@ -306,6 +306,7 @@ Options for agent:
   --max-items <n>           Max issues to process before stopping
   --max-steps <n>           Max agent steps before stopping
   --labels <l1,l2>          Only work on issues with these labels (comma-separated)
+  --review-mode <mode>      Review mode: 'manual', 'auto', or 'merge' (default: manual)
   --dry-run                 Plan what would be done without executing
   --stream                  Stream output in real-time (default: wait for completion)
 
@@ -448,11 +449,17 @@ Press Esc to cancel any operation.
 
     case 'agent': {
       const { agentCommand } = await import('./commands/agent.js');
+      const reviewModeFlag = typeof parsed.flags.reviewMode === 'string' ? parsed.flags.reviewMode : undefined;
+      if (reviewModeFlag && !['manual', 'auto', 'merge'].includes(reviewModeFlag)) {
+        console.error(`Error: Invalid --review-mode '${reviewModeFlag}'. Allowed values: manual, auto, merge`);
+        process.exit(1);
+      }
       await agentCommand({
         model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
         maxItems: typeof parsed.flags.maxItems === 'string' ? parseIntFlag(parsed.flags.maxItems, '--max-items') : undefined,
         maxSteps: typeof parsed.flags.maxSteps === 'string' ? parseIntFlag(parsed.flags.maxSteps, '--max-steps') : undefined,
         labels: typeof parsed.flags.labels === 'string' ? parsed.flags.labels.split(',').map(l => l.trim()).filter(Boolean) : undefined,
+        reviewMode: reviewModeFlag as 'manual' | 'auto' | 'merge' | undefined,
         dryRun: parsed.flags.dryRun === true,
         stream: parsed.flags.stream === true,
       });

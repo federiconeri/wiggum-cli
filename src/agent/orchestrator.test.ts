@@ -56,6 +56,13 @@ describe('createAgentOrchestrator', () => {
     // Explicitly warns NOT to forward to runLoop
     expect(AGENT_SYSTEM_PROMPT).toMatch(/NOT.*forward.*runLoop|not.*forward.*runLoop/i);
   });
+
+  it('system prompt mentions reviewMode for runLoop', () => {
+    expect(AGENT_SYSTEM_PROMPT).toContain('reviewMode');
+    expect(AGENT_SYSTEM_PROMPT).toContain("'manual'");
+    expect(AGENT_SYSTEM_PROMPT).toContain("'auto'");
+    expect(AGENT_SYSTEM_PROMPT).toContain("'merge'");
+  });
 });
 
 describe('buildConstraints', () => {
@@ -110,5 +117,18 @@ describe('buildRuntimeConfig', () => {
     const result = buildRuntimeConfig({ ...base, modelId: 'opus', provider: 'anthropic' });
     expect(result).toContain('model: opus');
     expect(result).toContain('provider: anthropic');
+  });
+
+  it('includes reviewMode when provided', () => {
+    const result = buildRuntimeConfig({ ...base, reviewMode: 'auto' });
+    expect(result).toContain('reviewMode: auto');
+    expect(result).toContain('Runtime Config');
+  });
+
+  it('includes reviewMode with model and provider', () => {
+    const result = buildRuntimeConfig({ ...base, modelId: 'opus', provider: 'anthropic', reviewMode: 'merge' });
+    expect(result).toContain('model: opus');
+    expect(result).toContain('provider: anthropic');
+    expect(result).toContain('reviewMode: merge');
   });
 });

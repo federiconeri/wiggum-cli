@@ -308,6 +308,49 @@ describe('createExecutionTools', () => {
       );
     });
 
+    it('passes --review-mode flag when provided', async () => {
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = tools.runLoop.execute(
+        { featureName: 'review-test', worktree: true, reviewMode: 'auto' },
+        execCtx,
+      );
+
+      setTimeout(() => proc.emit('close', 0, null), 10);
+      await promise;
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'wiggum',
+        ['run', 'review-test', '--worktree', '--review-mode', 'auto'],
+        expect.any(Object),
+      );
+    });
+
+    it('omits --review-mode when not provided', async () => {
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = tools.runLoop.execute(
+        { featureName: 'no-review-test', worktree: false },
+        execCtx,
+      );
+
+      setTimeout(() => proc.emit('close', 0, null), 10);
+      await promise;
+
+      const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
+      expect(spawnArgs).not.toContain('--review-mode');
+    });
+
     it('does not forward model or provider to loop', async () => {
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();

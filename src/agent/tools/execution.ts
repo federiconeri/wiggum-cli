@@ -105,13 +105,15 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
     inputSchema: zodSchema(z.object({
       featureName: FEATURE_NAME_SCHEMA,
       worktree: z.boolean().default(true).describe('Use git worktree isolation'),
+      reviewMode: z.enum(['manual', 'auto', 'merge']).optional().describe("Review mode: 'manual' (stop at PR), 'auto' (review, no merge), or 'merge' (review + merge)"),
     })),
-    execute: async ({ featureName, worktree }, { abortSignal }) => {
+    execute: async ({ featureName, worktree, reviewMode }, { abortSignal }) => {
       if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath: join(tmpdir(), `ralph-loop-${featureName}.log`) };
 
       return new Promise<{ status: string; iterations?: number; error?: string; logPath: string }>((resolve) => {
         const args = ['run', featureName];
         if (worktree) args.push('--worktree');
+        if (reviewMode) args.push('--review-mode', reviewMode);
 
         const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
         const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe', env: { ...process.env, RALPH_AUTOMATED: '1' } });

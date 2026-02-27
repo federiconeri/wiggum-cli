@@ -659,9 +659,14 @@ write_phase_end "pr_review" "$PR_STATUS"
 
 # Phase 7.5: Post-completion action request
 echo "======================== ACTION REQUEST PHASE ========================"
-write_action_request
-CHOSEN_ACTION=$(poll_action_reply)
-echo "User chose: $CHOSEN_ACTION"
+if [ "${RALPH_AUTOMATED:-}" = "1" ]; then
+    echo "Automated mode: skipping action request, using default 'done'"
+    CHOSEN_ACTION="done"
+else
+    write_action_request
+    CHOSEN_ACTION=$(poll_action_reply)
+    echo "User chose: $CHOSEN_ACTION"
+fi
 
 # Dispatch based on user choice
 case "$CHOSEN_ACTION" in
