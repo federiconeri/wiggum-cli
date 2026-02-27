@@ -439,6 +439,9 @@ fi
 echo "======================== IMPLEMENTATION PHASE ========================"
 write_phase_start "implementation"
 IMPL_SUCCESS=true
+CONSECUTIVE_FAILURES=0
+LAST_ERROR=""
+MAX_CONSECUTIVE_FAILURES=3
 while true; do
     if [ $ITERATION -ge $MAX_ITERATIONS ]; then
         echo "Reached max iterations: $MAX_ITERATIONS"
@@ -459,10 +462,30 @@ while true; do
     fi
 
     echo "Pending implementation tasks: $PENDING_IMPL"
+    TASKS_BEFORE=$PENDING_IMPL
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
     run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
     extract_session_result "${CLAUDE_OUTPUT}.raw"
     accumulate_tokens_from_session "$LAST_SESSION_ID"
+
+    # Check if any progress was made
+    TASKS_AFTER=$({ grep "^- \[ \]" "$PLAN_FILE" 2>/dev/null || true; } | { grep -v "E2E:" || true; } | wc -l | tr -d ' ')
+    if [ "$TASKS_AFTER" -ge "$TASKS_BEFORE" ]; then
+        CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+        # Capture last few lines of output for error detection
+        CURRENT_ERROR=$(tail -5 "${CLAUDE_OUTPUT}.raw" 2>/dev/null | head -c 200 || echo "unknown")
+        echo "WARNING: No progress in iteration $ITERATION (failure $CONSECUTIVE_FAILURES/$MAX_CONSECUTIVE_FAILURES)"
+        if [ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]; then
+            echo "FATAL: $MAX_CONSECUTIVE_FAILURES consecutive iterations with no progress. Stopping to avoid waste."
+            echo "Last output: $CURRENT_ERROR"
+            IMPL_SUCCESS=false
+            write_phase_end "implementation" "failed"
+            echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|failed" > "$FINAL_STATUS_FILE"
+            exit 1
+        fi
+    else
+        CONSECUTIVE_FAILURES=0
+    fi
 
     sleep 2
 done

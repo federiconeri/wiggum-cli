@@ -49,10 +49,12 @@ describe('createAgentOrchestrator', () => {
     expect(AGENT_SYSTEM_PROMPT).toMatch(/dependsOn|depends.on/i);
   });
 
-  it('system prompt instructs model forwarding to subprocess tools', () => {
+  it('system prompt instructs model forwarding only to generateSpec', () => {
     expect(AGENT_SYSTEM_PROMPT).toMatch(/forward.*model|model.*forward/i);
-    expect(AGENT_SYSTEM_PROMPT).toMatch(/generateSpec|runLoop/);
+    expect(AGENT_SYSTEM_PROMPT).toContain('generateSpec');
     expect(AGENT_SYSTEM_PROMPT).toMatch(/Runtime Config/);
+    // Explicitly warns NOT to forward to runLoop
+    expect(AGENT_SYSTEM_PROMPT).toMatch(/NOT.*forward.*runLoop|not.*forward.*runLoop/i);
   });
 });
 

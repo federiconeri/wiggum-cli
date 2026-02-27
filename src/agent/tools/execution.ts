@@ -101,21 +101,17 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
   });
 
   const runLoop = tool({
-    description: 'Run the development loop for a feature. Spawns a background process and returns when complete.',
+    description: 'Run the development loop for a feature. Spawns a background process and returns when complete. The loop uses Claude Code internally with its own model config — do NOT forward the agent model here.',
     inputSchema: zodSchema(z.object({
       featureName: FEATURE_NAME_SCHEMA,
       worktree: z.boolean().default(true).describe('Use git worktree isolation'),
-      model: z.string().optional().describe('Model override for the loop (from Runtime Config)'),
-      provider: z.string().optional().describe('Provider override (from Runtime Config)'),
     })),
-    execute: async ({ featureName, worktree, model, provider }, { abortSignal }) => {
+    execute: async ({ featureName, worktree }, { abortSignal }) => {
       if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath: join(tmpdir(), `ralph-loop-${featureName}.log`) };
 
       return new Promise<{ status: string; iterations?: number; error?: string; logPath: string }>((resolve) => {
         const args = ['run', featureName];
         if (worktree) args.push('--worktree');
-        if (model) args.push('--model', model);
-        if (provider) args.push('--provider', provider);
 
         const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
         const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe', env: { ...process.env, RALPH_AUTOMATED: '1' } });
