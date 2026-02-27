@@ -335,12 +335,17 @@ function stripMarkdown(msg: string): string {
     .trim();
 }
 
-const SUCCESS_KEYWORDS = /completed|passed|success|approved|all implementation tasks completed/i;
-const ERROR_KEYWORDS = /error|failed|failure/i;
+const SUCCESS_KEYWORDS = /\b(completed|passed|success|approved|fixed|resolved|merged|works)\b/i;
+const ERROR_KEYWORDS = /\b(error|failed|failure)\b/i;
+const POSITIVE_ERROR_CONTEXT = /\b(fixed|resolved|added|handled|handling|recovery|boundary|boundaries|tests?\s+passed)\b/i;
 
 function inferStatus(message: string): ActivityEvent['status'] {
   if (SUCCESS_KEYWORDS.test(message)) return 'success';
-  if (ERROR_KEYWORDS.test(message)) return 'error';
+  if (ERROR_KEYWORDS.test(message)) {
+    // Avoid misclassifying positive actions that mention error-related words
+    if (POSITIVE_ERROR_CONTEXT.test(message)) return 'in-progress';
+    return 'error';
+  }
   return 'in-progress';
 }
 
