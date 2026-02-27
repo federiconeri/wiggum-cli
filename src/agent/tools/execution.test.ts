@@ -38,12 +38,39 @@ describe('createExecutionTools', () => {
       expect(result.maxIterations).toBe(10);
     });
 
-    it('returns not_found when no status files exist', async () => {
+    it('returns not_found with logPath hint when no status files exist', async () => {
       const result = await tools.checkLoopStatus.execute(
         { featureName: 'nonexistent-feature-xyz-123' },
         execCtx,
       );
       expect(result.status).toBe('not_found');
+      expect(result.logPath).toMatch(/ralph-loop-nonexistent-feature-xyz-123/);
+    });
+
+    it('returns possibly_running when only log file exists', async () => {
+      const logPath = join(tmpdir(), 'ralph-loop-log-detect-test.log');
+      writeFileSync(logPath, 'some log output\n');
+
+      try {
+        const result = await tools.checkLoopStatus.execute(
+          { featureName: 'log-detect-test' },
+          execCtx,
+        );
+        expect(result.status).toBe('possibly_running');
+        expect(result.logPath).toBeDefined();
+      } finally {
+        unlinkSync(logPath);
+      }
+    });
+
+    it('includes logPath in .final file result', async () => {
+      writeFileSync(testFinalPath, '3|10|2026-02-25T12:00:00Z|done');
+
+      const result = await tools.checkLoopStatus.execute(
+        { featureName: 'exec-test-feat' },
+        execCtx,
+      );
+      expect(result.logPath).toMatch(/ralph-loop-exec-test-feat/);
     });
   });
 
@@ -108,6 +135,17 @@ describe('createExecutionTools', () => {
       expect(result.error).toBe('Something broke');
     });
 
+    it('passes RALPH_AUTOMATED=1 env to subprocess', async () => {
+      mockSpawn.mockReturnValue(createFakeProc(0, 'spec-path\n'));
+
+      await tools.generateSpec.execute(
+        { featureName: 'env-feat', issueNumber: 7 },
+        execCtx,
+      );
+
+      expect(mockSpawn.mock.calls[0][2]?.env?.RALPH_AUTOMATED).toBe('1');
+    });
+
     it('returns error on spawn error', async () => {
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
@@ -153,6 +191,44 @@ describe('createExecutionTools', () => {
       expect(result.iterations).toBe(5);
 
       unlinkSync(finalPath);
+    });
+
+    it('passes RALPH_AUTOMATED=1 env to subprocess', async () => {
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = tools.runLoop.execute(
+        { featureName: 'env-test', worktree: false },
+        execCtx,
+      );
+
+      setTimeout(() => proc.emit('close', 0, null), 10);
+      await promise;
+
+      expect(mockSpawn.mock.calls[0][2]?.env?.RALPH_AUTOMATED).toBe('1');
+    });
+
+    it('returns logPath in result', async () => {
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = tools.runLoop.execute(
+        { featureName: 'log-path-test', worktree: false },
+        execCtx,
+      );
+
+      setTimeout(() => proc.emit('close', 0, null), 10);
+      const result = await promise;
+
+      expect(result.logPath).toMatch(/ralph-loop-log-path-test\.log$/);
     });
 
     it('passes --worktree and --model flags', async () => {
