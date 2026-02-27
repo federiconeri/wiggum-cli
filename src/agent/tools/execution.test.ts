@@ -174,6 +174,32 @@ describe('createExecutionTools', () => {
       expect(spawnArgs).not.toContain('--provider');
     });
 
+    it('calls onProgress with stderr lines', async () => {
+      const onProgress = vi.fn();
+      const toolsWithProgress = createExecutionTools('/fake/root', { onProgress });
+
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = toolsWithProgress.generateSpec.execute(
+        { featureName: 'progress-feat', issueNumber: 1 },
+        execCtx,
+      );
+
+      setTimeout(() => {
+        proc.stderr.emit('data', Buffer.from('Starting interview agent...\n'));
+        proc.stdout.emit('data', Buffer.from('/fake/spec.md\n'));
+        proc.emit('close', 0, null);
+      }, 10);
+
+      await promise;
+      expect(onProgress).toHaveBeenCalledWith('generateSpec', 'Starting interview agent...');
+    });
+
     it('returns error on spawn error', async () => {
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
@@ -280,6 +306,32 @@ describe('createExecutionTools', () => {
         ['run', 'flag-test', '--worktree', '--model', 'opus'],
         expect.any(Object),
       );
+    });
+
+    it('calls onProgress with stderr lines', async () => {
+      const onProgress = vi.fn();
+      const toolsWithProgress = createExecutionTools('/fake/root', { onProgress });
+
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = toolsWithProgress.runLoop.execute(
+        { featureName: 'loop-progress', worktree: false },
+        execCtx,
+      );
+
+      setTimeout(() => {
+        proc.stderr.emit('data', Buffer.from('Iteration 1: Planning\nIteration 1: Implementation\n'));
+        proc.emit('close', 0, null);
+      }, 10);
+
+      await promise;
+      expect(onProgress).toHaveBeenCalledWith('runLoop', 'Iteration 1: Planning');
+      expect(onProgress).toHaveBeenCalledWith('runLoop', 'Iteration 1: Implementation');
     });
 
     it('passes --provider flag when provided', async () => {

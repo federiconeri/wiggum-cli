@@ -22,7 +22,13 @@ function killWithTimeout(proc: ChildProcess, timeoutMs: number): { timer: NodeJS
   return { timer, didTimeout: () => fired };
 }
 
-export function createExecutionTools(projectRoot: string) {
+export interface ExecutionToolsOptions {
+  onProgress?: (toolName: string, line: string) => void;
+}
+
+export function createExecutionTools(projectRoot: string, options?: ExecutionToolsOptions) {
+  const emitProgress = options?.onProgress;
+
   const generateSpec = tool({
     description: 'Generate a feature spec from a GitHub issue using the interview agent in headless mode. Returns the spec file path on success.',
     inputSchema: zodSchema(z.object({
@@ -55,7 +61,16 @@ export function createExecutionTools(projectRoot: string) {
         abortSignal?.addEventListener('abort', onAbort, { once: true });
 
         proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
-        proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+        proc.stderr?.on('data', (d: Buffer) => {
+          const chunk = d.toString();
+          stderr += chunk;
+          if (emitProgress) {
+            for (const line of chunk.split('\n')) {
+              const trimmed = line.trim();
+              if (trimmed) emitProgress('generateSpec', trimmed);
+            }
+          }
+        });
 
         proc.on('close', (code) => {
           if (resolved) return;
@@ -115,7 +130,16 @@ export function createExecutionTools(projectRoot: string) {
         };
         abortSignal?.addEventListener('abort', onAbort, { once: true });
 
-        proc.stderr?.on('data', (d: Buffer) => { stderr += d.toString(); });
+        proc.stderr?.on('data', (d: Buffer) => {
+          const chunk = d.toString();
+          stderr += chunk;
+          if (emitProgress) {
+            for (const line of chunk.split('\n')) {
+              const trimmed = line.trim();
+              if (trimmed) emitProgress('runLoop', trimmed);
+            }
+          }
+        });
 
         proc.on('close', (code) => {
           if (resolved) return;
