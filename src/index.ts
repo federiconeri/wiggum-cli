@@ -361,10 +361,13 @@ Press Esc to cancel any operation.
 
       if (parsed.flags.auto === true) {
         const { newAutoCommand } = await import('./commands/new-auto.js');
+        const providerFlag = typeof parsed.flags.provider === 'string' ? parsed.flags.provider : undefined;
+        const validProviders = new Set(['anthropic', 'openai', 'openrouter']);
         await newAutoCommand(featureName, {
           goals: typeof parsed.flags.goals === 'string' ? parsed.flags.goals : undefined,
           initialReferences: initialReferences.length > 0 ? initialReferences : undefined,
           model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
+          provider: providerFlag && validProviders.has(providerFlag) ? providerFlag as import('./ai/providers.js').AIProvider : undefined,
         });
       } else {
         await startInkTui('interview', {

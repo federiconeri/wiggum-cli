@@ -2,6 +2,8 @@ import type { LanguageModel } from 'ai';
 
 export interface AgentConfig {
   model: LanguageModel;
+  modelId?: string;
+  provider?: string;
   projectRoot: string;
   owner: string;
   repo: string;

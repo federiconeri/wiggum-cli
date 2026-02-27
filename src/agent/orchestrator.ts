@@ -33,6 +33,10 @@ export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agen
    - Write additional project_knowledge entries if needed
 5. Repeat from step 2 with enriched memory
 
+## Model forwarding
+
+When calling generateSpec or runLoop, ALWAYS forward the model and provider so subprocess commands use the same configuration as this agent session. The values are provided in the Runtime Config section below.
+
 ## Prioritization
 
 Use hybrid reasoning: respect PM labels (P0 > P1 > P2) but apply your own judgment for ordering within the same priority tier.
@@ -63,6 +67,15 @@ Never get stuck on a single issue — always make forward progress.`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AgentOrchestrator = ToolLoopAgent<never, any, any>;
+
+export function buildRuntimeConfig(config: AgentConfig): string {
+  const lines: string[] = [];
+  if (config.modelId) lines.push(`- model: ${config.modelId}`);
+  if (config.provider) lines.push(`- provider: ${config.provider}`);
+  return lines.length > 0
+    ? `\n\n## Runtime Config\n\n${lines.join('\n')}`
+    : '';
+}
 
 export function buildConstraints(config: AgentConfig): string {
   const lines: string[] = [];
@@ -106,7 +119,8 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
   };
 
   const constraints = buildConstraints(config);
-  const fullPrompt = AGENT_SYSTEM_PROMPT + constraints;
+  const runtimeConfig = buildRuntimeConfig(config);
+  const fullPrompt = AGENT_SYSTEM_PROMPT + runtimeConfig + constraints;
   const completedIssues = new Set<number>();
   const maxSteps = config.maxSteps ?? 200;
 
