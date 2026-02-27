@@ -108,6 +108,23 @@ describe('parseLoopLog', () => {
     expect(events[1].status).toBe('error');
   });
 
+  it('does not misclassify positive actions containing error-related words', () => {
+    vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1705318800000 } as fs.Stats);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      'Fixed error handling in login flow\nAdded error recovery logic\nError handling tests passed\nResolved authentication failure\n'
+    );
+
+    const events = parseLoopLog(logPath);
+    // "Fixed error handling" — positive action, should NOT be error
+    expect(events[0].status).not.toBe('error');
+    // "Added error recovery" — positive action, should NOT be error
+    expect(events[1].status).not.toBe('error');
+    // "Error handling tests passed" — contains "passed", should be success
+    expect(events[2].status).toBe('success');
+    // "Resolved authentication failure" — positive action, should NOT be error
+    expect(events[3].status).not.toBe('error');
+  });
+
   it('uses file mtime as timestamp fallback when no timestamp prefix found', () => {
     const mtimeMs = 1705318800000;
     vi.mocked(fs.statSync).mockReturnValue({ mtimeMs } as fs.Stats);
