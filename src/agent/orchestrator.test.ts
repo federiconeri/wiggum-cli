@@ -43,6 +43,11 @@ describe('createAgentOrchestrator', () => {
     expect(AGENT_SYSTEM_PROMPT).toContain('memory');
     expect(AGENT_SYSTEM_PROMPT).toContain('reflectOnWork');
   });
+
+  it('system prompt contains concrete dependency ordering guidance', () => {
+    expect(AGENT_SYSTEM_PROMPT).toMatch(/lower.number/i);
+    expect(AGENT_SYSTEM_PROMPT).toMatch(/dependsOn|depends.on/i);
+  });
 });
 
 describe('buildConstraints', () => {
