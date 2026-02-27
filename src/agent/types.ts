@@ -1,5 +1,7 @@
 import type { LanguageModel } from 'ai';
 
+export type ReviewMode = 'manual' | 'auto' | 'merge';
+
 export interface AgentConfig {
   model: LanguageModel;
   modelId?: string;
@@ -10,6 +12,7 @@ export interface AgentConfig {
   maxSteps?: number;
   maxItems?: number;
   labels?: string[];
+  reviewMode?: ReviewMode;
   dryRun?: boolean;
   onStepUpdate?: (event: AgentStepEvent) => void;
   onProgress?: (toolName: string, line: string) => void;

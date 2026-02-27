@@ -39,6 +39,11 @@ When calling generateSpec, ALWAYS forward the model and provider so the spec gen
 
 Do NOT forward model/provider to runLoop — the development loop uses Claude Code internally, which has its own model configuration (opus for planning, sonnet for implementation). Passing a non-Claude model would break the loop.
 
+When calling runLoop, pass the reviewMode from the Runtime Config below (if configured). This controls how the loop handles the PR phase:
+- 'manual': stop at PR creation (default)
+- 'auto': create PR + run automated review (no merge)
+- 'merge': create PR + review + merge if approved
+
 ## Prioritization
 
 Use hybrid reasoning: respect PM labels (P0 > P1 > P2) but apply your own judgment for ordering within the same priority tier.
@@ -74,6 +79,7 @@ export function buildRuntimeConfig(config: AgentConfig): string {
   const lines: string[] = [];
   if (config.modelId) lines.push(`- model: ${config.modelId}`);
   if (config.provider) lines.push(`- provider: ${config.provider}`);
+  if (config.reviewMode) lines.push(`- reviewMode: ${config.reviewMode}`);
   return lines.length > 0
     ? `\n\n## Runtime Config\n\n${lines.join('\n')}`
     : '';
