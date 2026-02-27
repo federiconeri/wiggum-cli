@@ -9,6 +9,8 @@ export function createDryRunExecutionTools() {
       featureName: FEATURE_NAME_SCHEMA,
       issueNumber: z.number().int().describe('GitHub issue number'),
       goals: z.string().optional().describe('Feature goals'),
+      model: z.string().optional().describe('Model override'),
+      provider: z.string().optional().describe('Provider override'),
     })),
     execute: async ({ featureName }) => ({
       success: true,
@@ -22,7 +24,7 @@ export function createDryRunExecutionTools() {
     inputSchema: zodSchema(z.object({
       featureName: FEATURE_NAME_SCHEMA,
       worktree: z.boolean().default(true).describe('Use git worktree isolation'),
-      model: z.string().optional().describe('Model override'),
+      reviewMode: z.enum(['manual', 'auto', 'merge']).optional().describe("Review mode: 'manual' (stop at PR), 'auto' (review, no merge), or 'merge' (review + merge)"),
     })),
     execute: async () => ({
       status: 'done',

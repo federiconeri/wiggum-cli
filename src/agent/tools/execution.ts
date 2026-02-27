@@ -8,6 +8,8 @@ import { FEATURE_NAME_SCHEMA } from './schemas.js';
 
 const SPEC_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const LOOP_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
+const MAX_STDERR_BYTES = 256 * 1024; // 256 KB — only tail matters for error reporting
+const MAX_STDOUT_BYTES = 64 * 1024; // 64 KB — only last line used (spec path)
 
 function killWithTimeout(proc: ChildProcess, timeoutMs: number): { timer: NodeJS.Timeout; didTimeout: () => boolean } {
   let fired = false;
@@ -60,10 +62,14 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
         };
         abortSignal?.addEventListener('abort', onAbort, { once: true });
 
-        proc.stdout?.on('data', (d: Buffer) => { stdout += d.toString(); });
+        proc.stdout?.on('data', (d: Buffer) => {
+          stdout += d.toString();
+          if (stdout.length > MAX_STDOUT_BYTES) stdout = stdout.slice(-MAX_STDOUT_BYTES);
+        });
         proc.stderr?.on('data', (d: Buffer) => {
           const chunk = d.toString();
           stderr += chunk;
+          if (stderr.length > MAX_STDERR_BYTES) stderr = stderr.slice(-MAX_STDERR_BYTES);
           if (emitProgress) {
             for (const line of chunk.split('\n')) {
               const trimmed = line.trim();
@@ -116,7 +122,8 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
         if (reviewMode) args.push('--review-mode', reviewMode);
 
         const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
-        const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe', env: { ...process.env, RALPH_AUTOMATED: '1' } });
+        // Only capture stderr; ignore stdout to prevent pipe backpressure blocking the child
+        const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, RALPH_AUTOMATED: '1' } });
         const { timer, didTimeout } = killWithTimeout(proc, LOOP_TIMEOUT_MS);
         let stderr = '';
         let aborted = false;
@@ -131,6 +138,7 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
         proc.stderr?.on('data', (d: Buffer) => {
           const chunk = d.toString();
           stderr += chunk;
+          if (stderr.length > MAX_STDERR_BYTES) stderr = stderr.slice(-MAX_STDERR_BYTES);
           if (emitProgress) {
             for (const line of chunk.split('\n')) {
               const trimmed = line.trim();
