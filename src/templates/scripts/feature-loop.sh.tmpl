@@ -353,6 +353,11 @@ write_phase_end() {
 > "$PHASES_FILE"
 
 FEATURE="${1:?Usage: ./feature-loop.sh <feature-name> [max-iterations] [max-e2e-attempts] [--worktree] [--resume] [--model MODEL]}"
+# Sanitize feature name to prevent path traversal and shell injection when used in temp file paths
+if [[ ! "$FEATURE" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+    echo "ERROR: Feature name must start with alphanumeric and contain only letters, numbers, hyphens, and underscores." >&2
+    exit 1
+fi
 MAX_ITERATIONS="${2:-$DEFAULT_MAX_ITERATIONS}"
 MAX_E2E_ATTEMPTS="${3:-$DEFAULT_MAX_E2E}"
 ITERATION=0
