@@ -18,10 +18,10 @@ Key patterns: parallel fetches, direct imports, React.cache(), lazy loading.
 - Search codebase before assuming something doesn't exist
 
 ## Task
-Pick the next incomplete task from the implementation plan.
+Work through ALL incomplete tasks in the implementation plan in a single session.
 **Skip E2E tasks** (tasks starting with `E2E:`) - those are handled in a separate phase.
-Implement it following the project's established patterns.
-Write tests for the implementation.
+For each task: implement it, write tests, validate, commit, then move to the next task.
+Do not stop after one task — keep going until all non-E2E tasks are complete.
 
 ## Validation
 After changes, ALL must pass:
@@ -69,9 +69,10 @@ If this iteration revealed something useful, append to @.ralph/LEARNINGS.md:
 Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
 
 ## Rules
-- One task per iteration
+- Complete ALL remaining non-E2E tasks before ending the session
+- Commit after each task so progress is preserved if the session is interrupted
 - Tests are mandatory - no task is complete without tests
 - Search codebase before assuming something doesn't exist
-- If blocked, document in implementation plan and move to next task
+- If blocked on a task, document in implementation plan and move to the next task
 - Use Supabase MCP for database operations
 - Use PostHog MCP for analytics queries

@@ -21,6 +21,7 @@ If either fails, fix issues before proceeding with E2E tests.
 {{#if isTui}}
 ## Task
 Execute automated E2E tests for the completed TUI feature using the xterm.js bridge and agent-browser.
+Run ALL scenarios in a single session — do not end between scenarios.
 
 ### Step 1: Start Bridge
 Check the bridge is running:
@@ -168,6 +169,7 @@ Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
 {{else}}
 ## Task
 Execute automated E2E tests for the completed feature using Playwright MCP tools.
+Run ALL scenarios in a single session — do not end between scenarios.
 
 ### Step 1: Check Dev Server
 Verify dev server is running at http://localhost:3000. If not accessible, start it:
