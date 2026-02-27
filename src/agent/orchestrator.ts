@@ -35,7 +35,9 @@ export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agen
 
 ## Model forwarding
 
-When calling generateSpec or runLoop, ALWAYS forward the model and provider so subprocess commands use the same configuration as this agent session. The values are provided in the Runtime Config section below.
+When calling generateSpec, ALWAYS forward the model and provider so the spec generation uses the same AI model as this agent session. The values are provided in the Runtime Config section below.
+
+Do NOT forward model/provider to runLoop — the development loop uses Claude Code internally, which has its own model configuration (opus for planning, sonnet for implementation). Passing a non-Claude model would break the loop.
 
 ## Prioritization
 
