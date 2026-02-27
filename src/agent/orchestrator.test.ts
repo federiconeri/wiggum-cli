@@ -19,7 +19,7 @@ vi.mock('./memory/ingest.js', () => ({
   ingestStrategicDocs: vi.fn().mockResolvedValue(0),
 }));
 
-import { createAgentOrchestrator, AGENT_SYSTEM_PROMPT, buildConstraints } from './orchestrator.js';
+import { createAgentOrchestrator, AGENT_SYSTEM_PROMPT, buildConstraints, buildRuntimeConfig } from './orchestrator.js';
 
 describe('createAgentOrchestrator', () => {
   it('returns a ToolLoopAgent instance with generate and stream methods', () => {
@@ -47,6 +47,12 @@ describe('createAgentOrchestrator', () => {
   it('system prompt contains concrete dependency ordering guidance', () => {
     expect(AGENT_SYSTEM_PROMPT).toMatch(/lower.number/i);
     expect(AGENT_SYSTEM_PROMPT).toMatch(/dependsOn|depends.on/i);
+  });
+
+  it('system prompt instructs model forwarding to subprocess tools', () => {
+    expect(AGENT_SYSTEM_PROMPT).toMatch(/forward.*model|model.*forward/i);
+    expect(AGENT_SYSTEM_PROMPT).toMatch(/generateSpec|runLoop/);
+    expect(AGENT_SYSTEM_PROMPT).toMatch(/Runtime Config/);
   });
 });
 
@@ -77,5 +83,30 @@ describe('buildConstraints', () => {
   it('includes dryRun constraint', () => {
     const result = buildConstraints({ ...base, dryRun: true });
     expect(result).toContain('DRY RUN');
+  });
+});
+
+describe('buildRuntimeConfig', () => {
+  const base = { model: {} as any, projectRoot: '/fake', owner: 'o', repo: 'r' };
+
+  it('returns empty string when no model or provider', () => {
+    expect(buildRuntimeConfig(base)).toBe('');
+  });
+
+  it('includes model when provided', () => {
+    const result = buildRuntimeConfig({ ...base, modelId: 'gpt-5.2-codex' });
+    expect(result).toContain('model: gpt-5.2-codex');
+    expect(result).toContain('Runtime Config');
+  });
+
+  it('includes provider when provided', () => {
+    const result = buildRuntimeConfig({ ...base, provider: 'openai' });
+    expect(result).toContain('provider: openai');
+  });
+
+  it('includes both model and provider', () => {
+    const result = buildRuntimeConfig({ ...base, modelId: 'opus', provider: 'anthropic' });
+    expect(result).toContain('model: opus');
+    expect(result).toContain('provider: anthropic');
   });
 });

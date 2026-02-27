@@ -69,6 +69,8 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   // 4. Create orchestrator
   const agentConfig: AgentConfig = {
     model,
+    modelId: modelId ?? undefined,
+    provider,
     projectRoot,
     owner: remote.owner,
     repo: remote.repo,

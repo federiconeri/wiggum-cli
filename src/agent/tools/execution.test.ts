@@ -281,5 +281,28 @@ describe('createExecutionTools', () => {
         expect.any(Object),
       );
     });
+
+    it('passes --provider flag when provided', async () => {
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = tools.runLoop.execute(
+        { featureName: 'provider-test', worktree: false, model: 'gpt-5.2-codex', provider: 'openai' },
+        execCtx,
+      );
+
+      setTimeout(() => proc.emit('close', 0, null), 10);
+      await promise;
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'wiggum',
+        ['run', 'provider-test', '--model', 'gpt-5.2-codex', '--provider', 'openai'],
+        expect.any(Object),
+      );
+    });
   });
 });

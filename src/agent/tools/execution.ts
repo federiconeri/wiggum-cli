@@ -90,15 +90,17 @@ export function createExecutionTools(projectRoot: string) {
     inputSchema: zodSchema(z.object({
       featureName: FEATURE_NAME_SCHEMA,
       worktree: z.boolean().default(true).describe('Use git worktree isolation'),
-      model: z.string().optional().describe('Model override for the loop'),
+      model: z.string().optional().describe('Model override for the loop (from Runtime Config)'),
+      provider: z.string().optional().describe('Provider override (from Runtime Config)'),
     })),
-    execute: async ({ featureName, worktree, model }, { abortSignal }) => {
+    execute: async ({ featureName, worktree, model, provider }, { abortSignal }) => {
       if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath: join(tmpdir(), `ralph-loop-${featureName}.log`) };
 
       return new Promise<{ status: string; iterations?: number; error?: string; logPath: string }>((resolve) => {
         const args = ['run', featureName];
         if (worktree) args.push('--worktree');
         if (model) args.push('--model', model);
+        if (provider) args.push('--provider', provider);
 
         const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
         const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe', env: { ...process.env, RALPH_AUTOMATED: '1' } });
