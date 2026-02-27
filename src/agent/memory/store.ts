@@ -36,37 +36,39 @@ export class MemoryStore {
   }
 
   async read(options: ReadOptions = {}): Promise<MemoryEntry[]> {
-    if (!existsSync(this.filePath)) return [];
+    return this.serialize(async () => {
+      if (!existsSync(this.filePath)) return [];
 
-    const raw = (await readFile(this.filePath, 'utf-8')).trim();
-    if (!raw) return [];
+      const raw = (await readFile(this.filePath, 'utf-8')).trim();
+      if (!raw) return [];
 
-    let entries: MemoryEntry[] = raw
-      .split('\n')
-      .filter(line => line.trim())
-      .map(line => {
-        try { return JSON.parse(line) as MemoryEntry; }
-        catch { return null; }
-      })
-      .filter((e): e is MemoryEntry => e !== null);
+      let entries: MemoryEntry[] = raw
+        .split('\n')
+        .filter(line => line.trim())
+        .map(line => {
+          try { return JSON.parse(line) as MemoryEntry; }
+          catch { return null; }
+        })
+        .filter((e): e is MemoryEntry => e !== null);
 
-    if (options.type) {
-      entries = entries.filter(e => e.type === options.type);
-    }
+      if (options.type) {
+        entries = entries.filter(e => e.type === options.type);
+      }
 
-    if (options.search) {
-      const term = options.search.toLowerCase();
-      entries = entries.filter(e => e.content.toLowerCase().includes(term));
-    }
+      if (options.search) {
+        const term = options.search.toLowerCase();
+        entries = entries.filter(e => e.content.toLowerCase().includes(term));
+      }
 
-    // Most recent first for limit
-    entries.reverse();
+      // Most recent first for limit
+      entries.reverse();
 
-    if (options.limit && options.limit > 0) {
-      entries = entries.slice(0, options.limit);
-    }
+      if (options.limit && options.limit > 0) {
+        entries = entries.slice(0, options.limit);
+      }
 
-    return entries;
+      return entries;
+    });
   }
 
   async prune(): Promise<number> {
