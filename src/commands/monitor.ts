@@ -140,6 +140,37 @@ function readStatus(feature: string): LoopStatus {
 }
 
 /**
+ * Find the implementation plan file, checking main project and worktrees.
+ */
+function findImplementationPlan(projectRoot: string, specsRelPath: string, feature: string): string | null {
+  // 1. Check main project
+  const mainPath = join(projectRoot, specsRelPath, `${feature}-implementation-plan.md`);
+  if (existsSync(mainPath)) return mainPath;
+
+  // 2. Check git worktrees for the feature branch
+  try {
+    const output = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: projectRoot,
+      encoding: 'utf-8',
+    });
+    const worktrees = output.split('\n\n').filter(Boolean);
+    for (const wt of worktrees) {
+      const pathMatch = wt.match(/^worktree (.+)$/m);
+      const escapedFeature = feature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const branchMatch = wt.match(new RegExp(`^branch .+/feat/${escapedFeature}$`, 'm'));
+      if (pathMatch && branchMatch) {
+        const wtPlan = join(pathMatch[1], specsRelPath, `${feature}-implementation-plan.md`);
+        if (existsSync(wtPlan)) return wtPlan;
+      }
+    }
+  } catch {
+    // git worktree list failed — ignore
+  }
+
+  return null;
+}
+
+/**
  * Parse implementation plan for task counts
  */
 async function parseImplementationPlan(
@@ -147,14 +178,14 @@ async function parseImplementationPlan(
   feature: string
 ): Promise<{ tasksDone: number; tasksPending: number; e2eDone: number; e2ePending: number }> {
   const config = await loadConfigWithDefaults(projectRoot);
-  const planPath = join(projectRoot, config.paths.specs, `${feature}-implementation-plan.md`);
+  const planPath = findImplementationPlan(projectRoot, config.paths.specs, feature);
 
   let tasksDone = 0;
   let tasksPending = 0;
   let e2eDone = 0;
   let e2ePending = 0;
 
-  if (existsSync(planPath)) {
+  if (planPath) {
     try {
       const content = readFileSync(planPath, 'utf-8');
       const lines = content.split('\n');
