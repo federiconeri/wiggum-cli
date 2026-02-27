@@ -1,5 +1,5 @@
 import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createMemoryEntry } from './types.js';
 import type { MemoryStore } from './store.js';
 
@@ -81,10 +81,12 @@ export async function readStrategicDoc(
   projectRoot: string,
   filename: string,
 ): Promise<string | null> {
-  const docsDir = join(projectRoot, '.ralph', 'strategic');
-  const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '');
+  const docsDir = resolve(projectRoot, '.ralph', 'strategic');
+  const resolved = resolve(docsDir, filename);
+  // Prevent path traversal: resolved path must stay within docsDir
+  if (!resolved.startsWith(docsDir + '/')) return null;
   try {
-    return await readFile(join(docsDir, safeName), 'utf-8');
+    return await readFile(resolved, 'utf-8');
   } catch {
     return null;
   }

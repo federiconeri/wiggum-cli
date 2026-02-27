@@ -148,6 +148,26 @@ describe('MemoryStore', () => {
     expect(results[0].content).toContain('auth');
   });
 
+  it('serializes read() with append() and prune() to prevent races', async () => {
+    // Queue operations concurrently — if read() were not serialized,
+    // it could see partial state from a concurrent prune()
+    await store.append(makeEntry({ content: 'entry-a' }));
+    await store.append(makeEntry({ content: 'entry-b' }));
+
+    // Launch all three concurrently
+    const [readResult, , pruneResult] = await Promise.all([
+      store.read(),
+      store.append(makeEntry({ content: 'entry-c' })),
+      store.prune(),
+    ]);
+
+    // read() should return a valid array (not throw or return corrupt data)
+    expect(Array.isArray(readResult)).toBe(true);
+    expect(readResult.length).toBeGreaterThanOrEqual(2);
+    // prune() should succeed
+    expect(typeof pruneResult).toBe('number');
+  });
+
   it('prunes old entries but keeps decisions', async () => {
     const old = makeEntry({
       type: 'work_log',

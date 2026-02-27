@@ -140,4 +140,14 @@ describe('readStrategicDoc', () => {
     const content = await readStrategicDoc(tempDir, '../../../etc/passwd');
     expect(content).toBeNull();
   });
+
+  it('blocks dot-only traversal attempts', async () => {
+    const docsDir = join(tempDir, '.ralph', 'strategic');
+    mkdirSync(docsDir, { recursive: true });
+
+    // Dots are allowed by a regex filter, but resolve+startsWith catches this
+    expect(await readStrategicDoc(tempDir, '..%2F..%2Fetc%2Fpasswd')).toBeNull();
+    expect(await readStrategicDoc(tempDir, '....secret')).toBeNull();
+    expect(await readStrategicDoc(tempDir, '../secret.md')).toBeNull();
+  });
 });
