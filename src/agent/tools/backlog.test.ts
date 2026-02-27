@@ -71,6 +71,19 @@ describe('createBacklogTools', () => {
       expect(search.match(/label:bug/g)).toHaveLength(1);
     });
 
+    it('returns issues sorted by number ascending', async () => {
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 5, title: 'Feature C', state: 'open', labels: [] },
+          { number: 1, title: 'Scaffolding', state: 'open', labels: [] },
+          { number: 3, title: 'Feature A', state: 'open', labels: [] },
+        ],
+      });
+
+      const result = await tools.listIssues.execute({ limit: 20 }, execCtx);
+      expect(result.issues.map((i: any) => i.number)).toEqual([1, 3, 5]);
+    });
+
     it('applies default labels when agent provides none', async () => {
       const scopedTools = createBacklogTools('testowner', 'testrepo', { defaultLabels: ['P0', 'P1'] });
       mockListRepoIssues.mockResolvedValue({ issues: [] });
@@ -95,8 +108,31 @@ describe('createBacklogTools', () => {
         title: 'Fix login',
         body: 'Login is broken',
         labels: ['bug'],
+        dependsOn: [],
       });
       expect(mockFetchGitHubIssue).toHaveBeenCalledWith('testowner', 'testrepo', 42);
+    });
+
+    it('extracts dependency hints from issue body', async () => {
+      mockFetchGitHubIssue.mockResolvedValue({
+        title: 'Add config module',
+        body: 'Implement config handling.\n\nDepends on #1\nBlocked by #3',
+        labels: ['feature'],
+      });
+
+      const result = await tools.readIssue.execute({ issueNumber: 2 }, execCtx);
+      expect(result.dependsOn).toEqual([1, 3]);
+    });
+
+    it('returns empty dependsOn when no dependency hints in body', async () => {
+      mockFetchGitHubIssue.mockResolvedValue({
+        title: 'Simple fix',
+        body: 'Just a fix',
+        labels: ['bug'],
+      });
+
+      const result = await tools.readIssue.execute({ issueNumber: 5 }, execCtx);
+      expect(result.dependsOn).toEqual([]);
     });
 
     it('returns error when issue not found', async () => {

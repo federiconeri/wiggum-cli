@@ -6,6 +6,14 @@ export interface BacklogToolsOptions {
   defaultLabels?: string[];
 }
 
+const DEPENDENCY_PATTERN = /\b(?:depends on|blocked by|requires|after)\s+#(\d+)/gi;
+
+function extractDependencyHints(body: string): number[] {
+  const matches = [...body.matchAll(DEPENDENCY_PATTERN)];
+  const numbers = matches.map(m => parseInt(m[1], 10));
+  return [...new Set(numbers)].sort((a, b) => a - b);
+}
+
 export function createBacklogTools(owner: string, repo: string, options: BacklogToolsOptions = {}) {
   const listIssues = tool({
     description: 'List open GitHub issues from the backlog, optionally filtered by labels or milestone.',
@@ -25,7 +33,9 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
 
       const result = await listRepoIssues(owner, repo, search, limit);
       if (result.error) return { issues: [], error: result.error };
-      return { issues: result.issues };
+      // Sort by issue number ascending — lower numbers are typically more foundational
+      const sorted = [...result.issues].sort((a, b) => a.number - b.number);
+      return { issues: sorted };
     },
   });
 
@@ -37,7 +47,9 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
     execute: async ({ issueNumber }) => {
       const detail = await fetchGitHubIssue(owner, repo, issueNumber);
       if (!detail) return { error: `Issue #${issueNumber} not found` };
-      return detail;
+      // Extract dependency hints from body (e.g. "depends on #1", "blocked by #3")
+      const dependsOn = extractDependencyHints(detail.body);
+      return { ...detail, dependsOn };
     },
   });
 
