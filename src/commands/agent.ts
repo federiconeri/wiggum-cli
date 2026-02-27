@@ -77,8 +77,17 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
     labels: options.labels,
     dryRun: options.dryRun,
     onStepUpdate: (event) => {
+      const log = options.stream
+        ? (msg: string) => process.stdout.write(`${msg}\n`)
+        : (msg: string) => logger.info(msg);
       for (const tc of event.toolCalls) {
-        logger.info(`[tool] ${tc.toolName}`);
+        log(`[tool] ${tc.toolName}`);
+      }
+      for (const tr of event.toolResults) {
+        const summary = typeof tr.result === 'object' && tr.result !== null
+          ? (tr.result as Record<string, unknown>).status ?? (tr.result as Record<string, unknown>).success ?? 'done'
+          : 'done';
+        log(`[tool:done] ${tr.toolName} → ${summary}`);
       }
     },
   };
