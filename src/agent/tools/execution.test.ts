@@ -146,6 +146,34 @@ describe('createExecutionTools', () => {
       expect(mockSpawn.mock.calls[0][2]?.env?.RALPH_AUTOMATED).toBe('1');
     });
 
+    it('passes --model and --provider flags when provided', async () => {
+      mockSpawn.mockReturnValue(createFakeProc(0, 'spec-path\n'));
+
+      await tools.generateSpec.execute(
+        { featureName: 'model-feat', issueNumber: 5, model: 'gpt-5.2-codex', provider: 'openai' },
+        execCtx,
+      );
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'wiggum',
+        ['new', 'model-feat', '--auto', '--issue', '5', '--model', 'gpt-5.2-codex', '--provider', 'openai'],
+        expect.any(Object),
+      );
+    });
+
+    it('omits --model and --provider when not provided', async () => {
+      mockSpawn.mockReturnValue(createFakeProc(0, 'spec-path\n'));
+
+      await tools.generateSpec.execute(
+        { featureName: 'no-model', issueNumber: 3 },
+        execCtx,
+      );
+
+      const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
+      expect(spawnArgs).not.toContain('--model');
+      expect(spawnArgs).not.toContain('--provider');
+    });
+
     it('returns error on spawn error', async () => {
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();

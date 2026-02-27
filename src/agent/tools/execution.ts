@@ -29,13 +29,17 @@ export function createExecutionTools(projectRoot: string) {
       featureName: FEATURE_NAME_SCHEMA,
       issueNumber: z.number().int().describe('GitHub issue number to use as context'),
       goals: z.string().optional().describe('Feature goals description'),
+      model: z.string().optional().describe('Model override (e.g. gpt-5.2-codex)'),
+      provider: z.string().optional().describe('Provider override (anthropic, openai, openrouter)'),
     })),
-    execute: async ({ featureName, issueNumber, goals }, { abortSignal }) => {
+    execute: async ({ featureName, issueNumber, goals, model, provider }, { abortSignal }) => {
       if (abortSignal?.aborted) return { success: false, error: 'Aborted' };
 
       return new Promise<{ success: boolean; specPath?: string; error?: string }>((resolve) => {
         const args = ['new', featureName, '--auto', '--issue', String(issueNumber)];
         if (goals) args.push('--goals', goals);
+        if (model) args.push('--model', model);
+        if (provider) args.push('--provider', provider);
 
         const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: 'pipe', env: { ...process.env, RALPH_AUTOMATED: '1' } });
         const { timer, didTimeout } = killWithTimeout(proc, SPEC_TIMEOUT_MS);
