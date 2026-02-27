@@ -92,6 +92,12 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
         log(`[tool:done] ${tr.toolName} → ${summary}`);
       }
     },
+    onProgress: (toolName, line) => {
+      const log = options.stream
+        ? (msg: string) => process.stdout.write(`${msg}\n`)
+        : (msg: string) => logger.info(msg);
+      log(`  [${toolName}] ${line}`);
+    },
   };
 
   const agent: AgentOrchestrator = createAgentOrchestrator(agentConfig);

@@ -104,7 +104,7 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
   const memory = createMemoryTools(store, projectRoot);
   const execution = config.dryRun
     ? createDryRunExecutionTools()
-    : createExecutionTools(projectRoot);
+    : createExecutionTools(projectRoot, { onProgress: config.onProgress });
   const reporting = config.dryRun
     ? createDryRunReportingTools()
     : createReportingTools(owner, repo);

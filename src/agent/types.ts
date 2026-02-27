@@ -12,6 +12,7 @@ export interface AgentConfig {
   labels?: string[];
   dryRun?: boolean;
   onStepUpdate?: (event: AgentStepEvent) => void;
+  onProgress?: (toolName: string, line: string) => void;
 }
 
 export interface AgentStepEvent {
