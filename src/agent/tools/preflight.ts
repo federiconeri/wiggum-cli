@@ -65,9 +65,10 @@ export async function runPreflightChecks(
     for (const wt of worktrees) {
       if (wt.branch === branchName || wt.branch === `refs/heads/${branchName}`) {
         // Branch is checked out in a worktree
-        if (!existsSync(wt.path) || !existsSync(`${wt.path}/.git`)) {
-          // Stale worktree — auto-fix
-          emitProgress?.('preflight', `Removing stale worktree at ${wt.path}`);
+        const isEphemeral = wt.path.includes('/.claude/worktrees/');
+        if (!existsSync(wt.path) || !existsSync(`${wt.path}/.git`) || isEphemeral) {
+          // Stale or ephemeral worktree — auto-fix
+          emitProgress?.('preflight', `Removing ${isEphemeral ? 'ephemeral' : 'stale'} worktree at ${wt.path}`);
           try {
             await execFileAsync('git', ['worktree', 'remove', '--force', wt.path], opts);
           } catch {
