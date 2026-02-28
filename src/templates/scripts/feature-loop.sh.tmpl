@@ -79,7 +79,7 @@ done
 set -- "${POSITIONAL[@]}"
 
 # Detect default branch dynamically
-DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||') || true
 if [ -z "$DEFAULT_BRANCH" ]; then
     if git rev-parse --verify main >/dev/null 2>&1; then
         DEFAULT_BRANCH="main"
