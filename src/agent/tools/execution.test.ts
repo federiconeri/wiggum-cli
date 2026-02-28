@@ -4,12 +4,17 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EventEmitter } from 'node:events';
 
-const { mockSpawn } = vi.hoisted(() => ({
+const { mockSpawn, mockRunPreflightChecks } = vi.hoisted(() => ({
   mockSpawn: vi.fn(),
+  mockRunPreflightChecks: vi.fn().mockResolvedValue({ ok: true, defaultBranch: 'main' }),
 }));
 
 vi.mock('node:child_process', () => ({
   spawn: mockSpawn,
+}));
+
+vi.mock('./preflight.js', () => ({
+  runPreflightChecks: mockRunPreflightChecks,
 }));
 
 import { createExecutionTools } from './execution.js';
@@ -396,6 +401,43 @@ describe('createExecutionTools', () => {
       await promise;
       expect(onProgress).toHaveBeenCalledWith('runLoop', 'Iteration 1: Planning');
       expect(onProgress).toHaveBeenCalledWith('runLoop', 'Iteration 1: Implementation');
+    });
+
+    it('proceeds to spawn when preflight passes', async () => {
+      mockRunPreflightChecks.mockResolvedValue({ ok: true, defaultBranch: 'main' });
+
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = tools.runLoop.execute(
+        { featureName: 'preflight-pass', worktree: false },
+        execCtx,
+      );
+
+      setTimeout(() => proc.emit('close', 0, null), 10);
+      const result = await promise;
+
+      expect(mockRunPreflightChecks).toHaveBeenCalledWith('/fake/root', 'preflight-pass', undefined);
+      expect(mockSpawn).toHaveBeenCalled();
+      expect(result.status).toBe('done');
+    });
+
+    it('returns preflight_failed without spawning when preflight fails', async () => {
+      mockRunPreflightChecks.mockResolvedValue({ ok: false, error: 'Branch locked by active worktree at /tmp/wt' });
+
+      const result = await tools.runLoop.execute(
+        { featureName: 'preflight-fail', worktree: true },
+        execCtx,
+      );
+
+      expect(result.status).toBe('preflight_failed');
+      expect(result.error).toContain('Branch locked');
+      expect(result.logPath).toMatch(/ralph-loop-preflight-fail/);
+      expect(mockSpawn).not.toHaveBeenCalled();
     });
 
   });
