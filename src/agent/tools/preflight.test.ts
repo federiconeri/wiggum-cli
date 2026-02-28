@@ -123,7 +123,7 @@ describe('runPreflightChecks', () => {
     expect(removeCall).toBeDefined();
   });
 
-  it('returns error when branch is locked by active worktree', async () => {
+  it('returns error when branch is locked by active non-ephemeral worktree', async () => {
     mockExistsSync.mockReturnValue(true); // directory exists → active worktree
 
     setupExecFile({
@@ -147,6 +147,42 @@ describe('runPreflightChecks', () => {
     expect(result.ok).toBe(false);
     expect(result.error).toContain('Branch locked by active worktree');
     expect(result.error).toContain('/tmp/active-wt');
+  });
+
+  it('auto-removes ephemeral .claude/worktrees even when directory exists', async () => {
+    mockExistsSync.mockReturnValue(true); // directory exists
+
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': {
+        stdout: [
+          'worktree /fake/root',
+          'HEAD abc123',
+          'branch refs/heads/main',
+          '',
+          'worktree /fake/root/.claude/worktrees/agent-a066e218',
+          'HEAD def456',
+          'branch refs/heads/feat/my-feature',
+          '',
+        ].join('\n'),
+      },
+      'worktree remove': { stdout: '' },
+    });
+
+    const emitProgress = vi.fn();
+    const result = await runPreflightChecks('/fake/root', 'my-feature', emitProgress);
+    expect(result.ok).toBe(true);
+
+    // Verify it was removed
+    const removeCall = mockExecFile.mock.calls.find(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes('remove'),
+    );
+    expect(removeCall).toBeDefined();
+    expect(emitProgress).toHaveBeenCalledWith(
+      'preflight',
+      expect.stringContaining('ephemeral'),
+    );
   });
 
   it('worktree prune failure is non-fatal', async () => {
