@@ -5,6 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { FEATURE_NAME_SCHEMA } from './schemas.js';
+import { runPreflightChecks } from './preflight.js';
 
 const SPEC_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const LOOP_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
@@ -114,14 +115,19 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
       reviewMode: z.enum(['manual', 'auto', 'merge']).optional().describe("Review mode: 'manual' (stop at PR), 'auto' (review, no merge), or 'merge' (review + merge)"),
     })),
     execute: async ({ featureName, worktree, reviewMode }, { abortSignal }) => {
-      if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath: join(tmpdir(), `ralph-loop-${featureName}.log`) };
+      const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
+      if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath };
+
+      // Pre-flight checks
+      const preflight = await runPreflightChecks(projectRoot, featureName, emitProgress);
+      if (!preflight.ok) {
+        return { status: 'preflight_failed', error: preflight.error, logPath };
+      }
 
       return new Promise<{ status: string; iterations?: number; error?: string; logPath: string }>((resolve) => {
         const args = ['run', featureName];
         if (worktree) args.push('--worktree');
         if (reviewMode) args.push('--review-mode', reviewMode);
-
-        const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
         // Only capture stderr; ignore stdout to prevent pipe backpressure blocking the child
         const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, RALPH_AUTOMATED: '1' } });
         const { timer, didTimeout } = killWithTimeout(proc, LOOP_TIMEOUT_MS);

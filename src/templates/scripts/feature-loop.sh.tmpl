@@ -78,6 +78,19 @@ while [[ $# -gt 0 ]]; do
 done
 set -- "${POSITIONAL[@]}"
 
+# Detect default branch dynamically
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')
+if [ -z "$DEFAULT_BRANCH" ]; then
+    if git rev-parse --verify main >/dev/null 2>&1; then
+        DEFAULT_BRANCH="main"
+    elif git rev-parse --verify master >/dev/null 2>&1; then
+        DEFAULT_BRANCH="master"
+    else
+        echo "ERROR: Cannot determine default branch" >&2
+        exit 1
+    fi
+fi
+
 # Resolve review mode from CLI > config > default
 if [ -z "$REVIEW_MODE" ]; then
     if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
@@ -391,6 +404,7 @@ if [ ! -f "$SPEC_FILE" ]; then
 fi
 
 # Phase 2: Create branch if not exists
+git worktree prune 2>/dev/null || true
 CURRENT_BRANCH=$(git branch --show-current)
 if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
     if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
@@ -399,11 +413,11 @@ if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
             git checkout "$BRANCH"
         else
             echo "Creating/switching to branch: $BRANCH"
-            git checkout -B "$BRANCH" main 2>/dev/null || git checkout -B "$BRANCH" master
+            git checkout -B "$BRANCH" "$DEFAULT_BRANCH"
         fi
     else
         echo "Creating branch: $BRANCH"
-        git checkout -b "$BRANCH" main 2>/dev/null || git checkout -b "$BRANCH" master
+        git checkout -b "$BRANCH" "$DEFAULT_BRANCH"
     fi
 else
     echo "Already on branch: $BRANCH"
@@ -613,7 +627,7 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            echo "Fix the issues found in the code review above. Run git diff main to see the current changes, then:
+            echo "Fix the issues found in the code review above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
 1. Fix each issue referenced in the review
 2. Run tests: npm test
 3. Commit and push the fixes
@@ -647,7 +661,7 @@ else
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            echo "Fix the issues found in the code review above. Run git diff main to see the current changes, then:
+            echo "Fix the issues found in the code review above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
 1. Fix each issue referenced in the review
 2. Run tests: npm test
 3. Commit and push the fixes
@@ -680,13 +694,13 @@ case "$CHOSEN_ACTION" in
         ;;
     merge_local)
         echo "Merging back to main locally..."
-        git checkout main 2>/dev/null || git checkout master
+        git checkout "$DEFAULT_BRANCH"
         git merge --squash "$BRANCH" && git commit -m "feat($FEATURE): squash merge from $BRANCH"
         echo "Merged. You can delete the branch with: git branch -D $BRANCH"
         ;;
     discard)
         echo "Discarding work on branch $BRANCH..."
-        git checkout main 2>/dev/null || git checkout master
+        git checkout "$DEFAULT_BRANCH"
         git branch -D "$BRANCH" 2>/dev/null || echo "Branch $BRANCH not found locally."
         ;;
     keep_branch|*)
