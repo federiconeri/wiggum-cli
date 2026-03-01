@@ -254,7 +254,7 @@ describe('runPreflightChecks', () => {
     expect(stashCall).toBeUndefined();
   });
 
-  it('stash failure is non-fatal', async () => {
+  it('returns error when dirty tree and stash fails', async () => {
     setupExecFile({
       'symbolic-ref': { stdout: 'origin/main\n' },
       'worktree prune': { stdout: '' },
@@ -264,7 +264,7 @@ describe('runPreflightChecks', () => {
     });
 
     const result = await runPreflightChecks('/fake/root', 'my-feature');
-    expect(result.ok).toBe(true);
-    expect(result.stashed).toBe(false);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('uncommitted changes');
   });
 });

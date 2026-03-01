@@ -87,17 +87,24 @@ export async function runPreflightChecks(
 
   // 3. Stash dirty working tree so branch switching succeeds
   let stashed = false;
+  let dirty = false;
   try {
     const { stdout } = await execFileAsync('git', ['status', '--porcelain'], opts);
-    if (stdout.trim()) {
-      emitProgress?.('preflight', 'Stashing uncommitted changes');
+    dirty = stdout.trim().length > 0;
+  } catch {
+    // status check failure — proceed optimistically
+  }
+
+  if (dirty) {
+    emitProgress?.('preflight', 'Stashing uncommitted changes');
+    try {
       await execFileAsync(
         'git', ['stash', 'push', '-m', `wiggum-preflight: auto-stash before ${branchName}`], opts,
       );
       stashed = true;
+    } catch {
+      return { ok: false, error: 'Working tree has uncommitted changes and git stash failed' };
     }
-  } catch {
-    // status/stash failure is non-fatal — the checkout will fail with a clear message
   }
 
   return { ok: true, defaultBranch, stashed };
