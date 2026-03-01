@@ -6,7 +6,8 @@ import { createMemoryTools, REFLECT_TOOL_NAME } from './tools/memory.js';
 import { createExecutionTools } from './tools/execution.js';
 import { createReportingTools } from './tools/reporting.js';
 import { createIntrospectionTools } from './tools/introspection.js';
-import { createDryRunExecutionTools, createDryRunReportingTools } from './tools/dry-run.js';
+import { createDryRunExecutionTools, createDryRunReportingTools, createDryRunFeatureStateTools } from './tools/dry-run.js';
+import { createFeatureStateTools } from './tools/feature-state.js';
 import type { AgentConfig } from './types.js';
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
@@ -23,10 +24,30 @@ export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agen
    - Consider: PM priority labels (P0 > P1 > P2), dependencies, strategic context
 3. For the chosen issue:
    a. Read the full issue details
-   b. Generate a spec using generateSpec (creates spec via the interview agent)
-   c. Run the development loop using runLoop (spawns Claude Code)
-   d. Monitor progress with checkLoopStatus and readLoopLog
-   e. Report results by commenting on the issue
+   b. Derive a featureName from the issue title (lowercase, hyphens, no spaces)
+   c. **Assess feature state** using assessFeatureState — MANDATORY before any action
+   d. Follow the Feature State Decision Tree based on the recommendation field
+   e. Monitor progress with checkLoopStatus and readLoopLog
+   f. Report results by commenting on the issue
+
+## Feature State Decision Tree
+
+After calling assessFeatureState, follow the recommendation:
+
+| recommendation | action |
+|---|---|
+| start_fresh | generateSpec → runLoop (fresh) |
+| generate_plan | runLoop without resume (spec exists, needs planning) |
+| resume_implementation | runLoop with resume: true (plan has pending tasks) |
+| resume_pr_phase | runLoop with resume: true (all tasks done, needs PR) |
+| pr_exists_open | Comment on issue, do NOT re-run loop |
+| pr_merged | Comment "already shipped", reflect, move on |
+| pr_closed | Decide: restart from scratch or skip |
+
+**Critical:**
+- When recommendation is resume_implementation or resume_pr_phase, you MUST pass resume: true to runLoop
+- When recommendation is generate_plan, do NOT pass resume (fresh branch needed)
+- When recommendation is start_fresh, generate a spec first, then run the loop without resume
 4. Reflect on the outcome:
    - Call reflectOnWork with structured observations
    - Note what worked, what failed, any patterns discovered
@@ -117,6 +138,9 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     ? createDryRunReportingTools()
     : createReportingTools(owner, repo);
   const introspection = createIntrospectionTools(projectRoot);
+  const featureState = config.dryRun
+    ? createDryRunFeatureStateTools()
+    : createFeatureStateTools(projectRoot);
 
   const tools = {
     ...backlog,
@@ -124,6 +148,7 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     ...execution,
     ...reporting,
     ...introspection,
+    ...featureState,
   };
 
   const constraints = buildConstraints(config);

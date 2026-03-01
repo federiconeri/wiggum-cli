@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createDryRunExecutionTools, createDryRunReportingTools } from './dry-run.js';
+import { createDryRunExecutionTools, createDryRunReportingTools, createDryRunFeatureStateTools } from './dry-run.js';
 
 describe('createDryRunExecutionTools', () => {
   const tools = createDryRunExecutionTools();
@@ -56,5 +56,22 @@ describe('createDryRunReportingTools', () => {
     expect(result.success).toBe(true);
     expect(result.dryRun).toBe(true);
     expect(result.wouldCreate).toEqual({ title: 'Fix auth' });
+  });
+});
+
+describe('createDryRunFeatureStateTools', () => {
+  const tools = createDryRunFeatureStateTools();
+  const execCtx = { toolCallId: 'test', messages: [] as any[], abortSignal: new AbortController().signal };
+
+  it('assessFeatureState returns simulated start_fresh recommendation', async () => {
+    const result = await tools.assessFeatureState.execute(
+      { featureName: 'test-feat' },
+      execCtx,
+    );
+    expect(result.recommendation).toBe('start_fresh');
+    expect(result.dryRun).toBe(true);
+    expect(result.featureName).toBe('test-feat');
+    expect(result.branch.exists).toBe(false);
+    expect(result.pr.exists).toBe(false);
   });
 });
