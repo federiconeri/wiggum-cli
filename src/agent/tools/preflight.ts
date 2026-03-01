@@ -7,6 +7,7 @@ const execFileAsync = promisify(execFile);
 export interface PreflightResult {
   ok: boolean;
   defaultBranch?: string;
+  stashed?: boolean;
   error?: string;
 }
 
@@ -84,7 +85,22 @@ export async function runPreflightChecks(
     // worktree list failure is non-fatal (may not be in a git repo with worktree support)
   }
 
-  return { ok: true, defaultBranch };
+  // 3. Stash dirty working tree so branch switching succeeds
+  let stashed = false;
+  try {
+    const { stdout } = await execFileAsync('git', ['status', '--porcelain'], opts);
+    if (stdout.trim()) {
+      emitProgress?.('preflight', 'Stashing uncommitted changes');
+      await execFileAsync(
+        'git', ['stash', 'push', '-m', `wiggum-preflight: auto-stash before ${branchName}`], opts,
+      );
+      stashed = true;
+    }
+  } catch {
+    // status/stash failure is non-fatal — the checkout will fail with a clear message
+  }
+
+  return { ok: true, defaultBranch, stashed };
 }
 
 interface WorktreeEntry {
