@@ -356,6 +356,49 @@ describe('createExecutionTools', () => {
       expect(spawnArgs).not.toContain('--review-mode');
     });
 
+    it('passes --resume flag when resume is true', async () => {
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = tools.runLoop.execute(
+        { featureName: 'resume-test', worktree: false, resume: true },
+        execCtx,
+      );
+
+      setTimeout(() => proc.emit('close', 0, null), 10);
+      await promise;
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'wiggum',
+        ['run', 'resume-test', '--resume'],
+        expect.any(Object),
+      );
+    });
+
+    it('omits --resume flag when resume is false or not provided', async () => {
+      const proc = new EventEmitter() as any;
+      proc.stdout = new EventEmitter();
+      proc.stderr = new EventEmitter();
+      proc.killed = false;
+      proc.kill = vi.fn();
+      mockSpawn.mockReturnValue(proc);
+
+      const promise = tools.runLoop.execute(
+        { featureName: 'no-resume-test', worktree: false },
+        execCtx,
+      );
+
+      setTimeout(() => proc.emit('close', 0, null), 10);
+      await promise;
+
+      const spawnArgs = mockSpawn.mock.calls[0][1] as string[];
+      expect(spawnArgs).not.toContain('--resume');
+    });
+
     it('does not forward model or provider to loop', async () => {
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();

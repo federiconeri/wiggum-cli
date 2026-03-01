@@ -63,6 +63,26 @@ describe('createAgentOrchestrator', () => {
     expect(AGENT_SYSTEM_PROMPT).toContain("'auto'");
     expect(AGENT_SYSTEM_PROMPT).toContain("'merge'");
   });
+
+  it('system prompt requires assessFeatureState before action', () => {
+    expect(AGENT_SYSTEM_PROMPT).toContain('assessFeatureState');
+    expect(AGENT_SYSTEM_PROMPT).toMatch(/MANDATORY/);
+  });
+
+  it('system prompt contains Feature State Decision Tree', () => {
+    expect(AGENT_SYSTEM_PROMPT).toContain('Feature State Decision Tree');
+    expect(AGENT_SYSTEM_PROMPT).toContain('start_fresh');
+    expect(AGENT_SYSTEM_PROMPT).toContain('resume_implementation');
+    expect(AGENT_SYSTEM_PROMPT).toContain('resume_pr_phase');
+    expect(AGENT_SYSTEM_PROMPT).toContain('pr_exists_open');
+    expect(AGENT_SYSTEM_PROMPT).toContain('pr_merged');
+    expect(AGENT_SYSTEM_PROMPT).toContain('pr_closed');
+    expect(AGENT_SYSTEM_PROMPT).toContain('generate_plan');
+  });
+
+  it('system prompt instructs resume: true for resume recommendations', () => {
+    expect(AGENT_SYSTEM_PROMPT).toMatch(/resume.*true/i);
+  });
 });
 
 describe('buildConstraints', () => {

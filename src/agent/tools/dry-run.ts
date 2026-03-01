@@ -25,6 +25,7 @@ export function createDryRunExecutionTools() {
       featureName: FEATURE_NAME_SCHEMA,
       worktree: z.boolean().default(true).describe('Use git worktree isolation'),
       reviewMode: z.enum(['manual', 'auto', 'merge']).optional().describe("Review mode: 'manual' (stop at PR), 'auto' (review, no merge), or 'merge' (review + merge)"),
+      resume: z.boolean().default(false).describe('Resume a previous loop session'),
     })),
     execute: async () => ({
       status: 'done',
@@ -78,4 +79,25 @@ export function createDryRunReportingTools() {
   });
 
   return { commentOnIssue, createTechDebtIssue };
+}
+
+export function createDryRunFeatureStateTools() {
+  const assessFeatureState = tool({
+    description: '[DRY RUN] Simulates assessing feature state — returns a mock start_fresh recommendation.',
+    inputSchema: zodSchema(z.object({
+      featureName: FEATURE_NAME_SCHEMA,
+    })),
+    execute: async ({ featureName }) => ({
+      featureName,
+      branch: { exists: false, commitsAhead: 0 },
+      spec: { exists: false },
+      plan: { exists: false, totalTasks: 0, completedTasks: 0, completionPercent: 0 },
+      pr: { exists: false },
+      loopStatus: { hasStatusFiles: false },
+      recommendation: 'start_fresh' as const,
+      dryRun: true,
+    }),
+  });
+
+  return { assessFeatureState };
 }

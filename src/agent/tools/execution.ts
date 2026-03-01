@@ -113,8 +113,9 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
       featureName: FEATURE_NAME_SCHEMA,
       worktree: z.boolean().default(true).describe('Use git worktree isolation'),
       reviewMode: z.enum(['manual', 'auto', 'merge']).optional().describe("Review mode: 'manual' (stop at PR), 'auto' (review, no merge), or 'merge' (review + merge)"),
+      resume: z.boolean().default(false).describe('Resume a previous loop session instead of starting fresh'),
     })),
-    execute: async ({ featureName, worktree, reviewMode }, { abortSignal }) => {
+    execute: async ({ featureName, worktree, reviewMode, resume }, { abortSignal }) => {
       const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
       if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath };
 
@@ -128,6 +129,7 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
         const args = ['run', featureName];
         if (worktree) args.push('--worktree');
         if (reviewMode) args.push('--review-mode', reviewMode);
+        if (resume) args.push('--resume');
         // Only capture stderr; ignore stdout to prevent pipe backpressure blocking the child
         const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, RALPH_AUTOMATED: '1' } });
         const { timer, didTimeout } = killWithTimeout(proc, LOOP_TIMEOUT_MS);
