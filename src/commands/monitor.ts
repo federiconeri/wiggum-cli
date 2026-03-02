@@ -26,6 +26,9 @@ interface LoopStatus {
   maxIterations: number;
   tokensInput: number;
   tokensOutput: number;
+  cacheCreate: number;
+  cacheRead: number;
+  tokensUpdatedAt?: number;
   tasksDone: number;
   tasksPending: number;
   e2eDone: number;
@@ -109,15 +112,24 @@ function readStatus(feature: string): LoopStatus {
     }
   }
 
-  // Read tokens file
+  // Read tokens file (format: input|output|cache_create|cache_read|timestamp)
   let tokensInput = 0;
   let tokensOutput = 0;
+  let cacheCreate = 0;
+  let cacheRead = 0;
+  let tokensUpdatedAt: number | undefined;
   if (existsSync(tokensFile)) {
     try {
       const content = readFileSync(tokensFile, 'utf-8').trim();
       const parts = content.split('|');
       tokensInput = parseInt(parts[0]) || 0;
       tokensOutput = parseInt(parts[1]) || 0;
+      cacheCreate = parseInt(parts[2] || '0') || 0;
+      cacheRead = parseInt(parts[3] || '0') || 0;
+      if (parts[4]) {
+        const epoch = parseInt(parts[4]);
+        if (epoch > 0) tokensUpdatedAt = epoch * 1000; // convert to ms
+      }
     } catch {
       // Ignore errors
     }
@@ -130,6 +142,9 @@ function readStatus(feature: string): LoopStatus {
     maxIterations,
     tokensInput,
     tokensOutput,
+    cacheCreate,
+    cacheRead,
+    tokensUpdatedAt,
     tasksDone: 0,
     tasksPending: 0,
     e2eDone: 0,
@@ -176,7 +191,7 @@ function findImplementationPlan(projectRoot: string, specsRelPath: string, featu
 async function parseImplementationPlan(
   projectRoot: string,
   feature: string
-): Promise<{ tasksDone: number; tasksPending: number; e2eDone: number; e2ePending: number }> {
+): Promise<{ tasksDone: number; tasksPending: number; e2eDone: number; e2ePending: number; planExists: boolean }> {
   const config = await loadConfigWithDefaults(projectRoot);
   const planPath = findImplementationPlan(projectRoot, config.paths.specs, feature);
 
@@ -184,6 +199,7 @@ async function parseImplementationPlan(
   let tasksPending = 0;
   let e2eDone = 0;
   let e2ePending = 0;
+  const planExists = planPath !== null;
 
   if (planPath) {
     try {
@@ -236,7 +252,7 @@ async function parseImplementationPlan(
     }
   }
 
-  return { tasksDone, tasksPending, e2eDone, e2ePending };
+  return { tasksDone, tasksPending, e2eDone, e2ePending, planExists };
 }
 
 /**
@@ -334,20 +350,35 @@ async function displayDashboard(feature: string, projectRoot: string, interval: 
       `  |  Branch: ${pc.cyan(branch)}`
   );
 
-  const totalTokens = status.tokensInput + status.tokensOutput;
+  const totalTokens = status.tokensInput + status.tokensOutput + status.cacheCreate + status.cacheRead;
+  let tokensSuffix = '';
+  if (status.tokensUpdatedAt) {
+    const agoMs = Date.now() - status.tokensUpdatedAt;
+    const agoSec = Math.floor(agoMs / 1000);
+    if (agoSec >= 60) {
+      tokensSuffix = pc.dim(` updated ${Math.floor(agoSec / 60)}m ago`);
+    }
+  }
   console.log(
     `  Tokens: ${pc.magenta(formatNumber(totalTokens))}` +
-      pc.dim(` (in:${formatNumber(status.tokensInput)} out:${formatNumber(status.tokensOutput)})`)
+      pc.dim(` (in:${formatNumber(status.tokensInput)} out:${formatNumber(status.tokensOutput)} cache:${formatNumber(status.cacheRead)})`) +
+      tokensSuffix
   );
 
   console.log(pc.dim('  ' + '-'.repeat(74)));
 
   // Progress
   console.log('');
-  console.log(
-    `  ${pc.bold('Implementation:')} ${progressBar(percentTasks)} ${pc.bold(percentTasks + '%')}` +
-      `  ${pc.green('\u2713 ' + tasks.tasksDone)} / ${pc.yellow('\u25cb ' + tasks.tasksPending)}`
-  );
+  if (!tasks.planExists && status.running) {
+    console.log(
+      `  ${pc.bold('Implementation:')} ${pc.dim('[waiting for plan...]')}`
+    );
+  } else {
+    console.log(
+      `  ${pc.bold('Implementation:')} ${progressBar(percentTasks)} ${pc.bold(percentTasks + '%')}` +
+        `  ${pc.green('\u2713 ' + tasks.tasksDone)} / ${pc.yellow('\u25cb ' + tasks.tasksPending)}`
+    );
+  }
 
   if (totalE2e > 0) {
     console.log(

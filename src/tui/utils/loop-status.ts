@@ -17,6 +17,7 @@ export interface LoopStatus {
   tokensOutput: number;
   cacheCreate: number;
   cacheRead: number;
+  tokensUpdatedAt?: number;
 }
 
 export interface TaskCounts {
@@ -24,6 +25,7 @@ export interface TaskCounts {
   tasksPending: number;
   e2eDone: number;
   e2ePending: number;
+  planExists: boolean;
 }
 
 /**
@@ -36,12 +38,24 @@ export interface PhaseInfo {
   /** Human-readable phase label */
   label: string;
   /** Phase completion status */
-  status: 'success' | 'skipped' | 'failed';
+  status: 'success' | 'skipped' | 'failed' | 'started';
   /** Duration in milliseconds, if available */
   durationMs?: number;
   /** Number of iterations in this phase (e.g., for implementation) */
   iterations?: number;
 }
+
+/**
+ * Phase ID to human-readable label mapping.
+ * Matches the phase IDs written by feature-loop.sh.
+ */
+const PHASE_LABELS: Record<string, string> = {
+  planning: 'Planning',
+  implementation: 'Implementation',
+  e2e_testing: 'E2E Testing',
+  verification: 'Verification',
+  pr_review: 'PR & Review',
+};
 
 /**
  * Track whether pgrep is available to avoid repeated failed calls.
@@ -100,6 +114,52 @@ export function detectPhase(feature: string): string {
 }
 
 /**
+ * Read the current phase from the `.phases` file written by feature-loop.sh.
+ * Returns the human-readable label of the active phase, or null if unavailable.
+ *
+ * The file format is: phase_id|status|start_timestamp|end_timestamp
+ * A line with status "started" and no end timestamp indicates the active phase.
+ */
+export function readCurrentPhase(feature: string): string | null {
+  const phasesFile = `/tmp/ralph-loop-${feature}.phases`;
+
+  let content: string;
+  try {
+    content = readFileSync(phasesFile, 'utf-8').trim();
+  } catch {
+    return null;
+  }
+
+  if (!content) return null;
+
+  const lines = content.split('\n');
+  let lastStartedPhase: string | null = null;
+  let lastCompletedPhase: string | null = null;
+
+  for (const line of lines) {
+    const parts = line.split('|');
+    if (parts.length < 2) continue;
+    const [id, status] = parts;
+    if (status === 'started') {
+      lastStartedPhase = id;
+    } else if (status === 'success' || status === 'failed' || status === 'skipped') {
+      lastCompletedPhase = id;
+    }
+  }
+
+  if (lastStartedPhase) {
+    return PHASE_LABELS[lastStartedPhase] || lastStartedPhase;
+  }
+
+  if (lastCompletedPhase) {
+    const label = PHASE_LABELS[lastCompletedPhase] || lastCompletedPhase;
+    return `post-${label}`;
+  }
+
+  return null;
+}
+
+/**
  * Read loop status from temp files written by feature-loop.sh.
  *
  * Reads `ralph-loop-<feature>.status` (or `.final`) for iteration progress
@@ -136,6 +196,7 @@ export function readLoopStatus(feature: string): LoopStatus {
   let tokensOutput = 0;
   let cacheCreate = 0;
   let cacheRead = 0;
+  let tokensUpdatedAt: number | undefined;
   if (existsSync(tokensFile)) {
     try {
       const content = readFileSync(tokensFile, 'utf-8').trim();
@@ -144,20 +205,34 @@ export function readLoopStatus(feature: string): LoopStatus {
       tokensOutput = parseInt(parts[1] || '0', 10) || 0;
       cacheCreate = parseInt(parts[2] || '0', 10) || 0;
       cacheRead = parseInt(parts[3] || '0', 10) || 0;
+      if (parts[4]) {
+        const epoch = parseInt(parts[4], 10);
+        if (epoch > 0) tokensUpdatedAt = epoch * 1000; // convert to ms
+      }
     } catch (err) {
       logger.debug(`Failed to parse tokens file: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
+  const running = isProcessRunning(`feature-loop.sh.*${feature}`);
+  let phase = detectPhase(feature);
+
+  // Use .phases file as fallback when pgrep-based detection is too vague
+  if (phase === 'Idle' || phase === 'Running') {
+    const phaseFromFile = readCurrentPhase(feature);
+    if (phaseFromFile) phase = phaseFromFile;
+  }
+
   return {
-    running: isProcessRunning(`feature-loop.sh.*${feature}`),
-    phase: detectPhase(feature),
+    running,
+    phase,
     iteration,
     maxIterations,
     tokensInput,
     tokensOutput,
     cacheCreate,
     cacheRead,
+    tokensUpdatedAt,
   };
 }
 
@@ -190,7 +265,9 @@ export async function parseImplementationPlan(
   let e2eDone = 0;
   let e2ePending = 0;
 
-  if (existsSync(planPath)) {
+  const planExists = existsSync(planPath);
+
+  if (planExists) {
     try {
       const content = readFileSync(planPath, 'utf-8');
       const lines = content.split('\n');
@@ -216,7 +293,7 @@ export async function parseImplementationPlan(
     }
   }
 
-  return { tasksDone, tasksPending, e2eDone, e2ePending };
+  return { tasksDone, tasksPending, e2eDone, e2ePending, planExists };
 }
 
 /**
@@ -433,31 +510,30 @@ export function parsePhaseChanges(
     return { events: [] };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawContent);
-    if (!Array.isArray(parsed)) {
-      logger.debug(`parsePhaseChanges: expected array in ${phasesFile}, got ${typeof parsed}`);
-      return { events: [], currentPhases: lastKnownPhases };
-    }
-  } catch (err) {
-    logger.debug(`parsePhaseChanges: invalid JSON in ${phasesFile}: ${err instanceof Error ? err.message : String(err)}`);
+  const content = rawContent.trim();
+  if (!content) {
     return { events: [], currentPhases: lastKnownPhases };
   }
 
-  // Validate each phase has required fields
-  const currentPhases: PhaseInfo[] = [];
-  for (const item of parsed as unknown[]) {
-    if (
-      typeof item === 'object' && item !== null &&
-      'id' in item && typeof (item as PhaseInfo).id === 'string' &&
-      'label' in item && typeof (item as PhaseInfo).label === 'string' &&
-      'status' in item && typeof (item as PhaseInfo).status === 'string'
-    ) {
-      currentPhases.push(item as PhaseInfo);
-    }
+  // Parse pipe-delimited format: phase_id|status|start_timestamp|end_timestamp
+  const VALID_STATUSES = new Set(['success', 'skipped', 'failed', 'started']);
+  const phaseMap = new Map<string, PhaseInfo>();
+
+  for (const line of content.split('\n')) {
+    const parts = line.split('|');
+    if (parts.length < 2) continue;
+
+    const [id, status] = parts;
+    if (!id || !VALID_STATUSES.has(status)) continue;
+
+    const label = PHASE_LABELS[id] || id;
+    const validStatus = status as PhaseInfo['status'];
+
+    // Last status wins for each phase id
+    phaseMap.set(id, { id, label, status: validStatus });
   }
 
+  const currentPhases = Array.from(phaseMap.values());
   const events: ActivityEvent[] = [];
   const now = Date.now();
 

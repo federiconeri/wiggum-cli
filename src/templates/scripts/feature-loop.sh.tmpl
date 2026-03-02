@@ -269,8 +269,8 @@ print(f\"{totals['input']}|{totals['output']}|{totals['cache_create']}|{totals['
         c_input=0; c_output=0; c_cache_create=0; c_cache_read=0
     fi
 
-    # Accumulate
-    echo "$((c_input + s_input))|$((c_output + s_output))|$((c_cache_create + s_cache_create))|$((c_cache_read + s_cache_read))" > "$TOKENS_FILE"
+    # Accumulate (5-field format: input|output|cache_create|cache_read|timestamp)
+    echo "$((c_input + s_input))|$((c_output + s_output))|$((c_cache_create + s_cache_create))|$((c_cache_read + s_cache_read))|$(date +%s)" > "$TOKENS_FILE"
 }
 
 # Action inbox: write request file if not already present
