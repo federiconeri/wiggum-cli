@@ -90,6 +90,12 @@ describe('createAgentOrchestrator', () => {
   it('system prompt instructs resume: true for resume recommendations', () => {
     expect(AGENT_SYSTEM_PROMPT).toMatch(/resume.*true/i);
   });
+
+  it('system prompt instructs closing issues and using skipped outcome', () => {
+    expect(AGENT_SYSTEM_PROMPT).toContain('closeIssue');
+    expect(AGENT_SYSTEM_PROMPT).toContain('"skipped"');
+    expect(AGENT_SYSTEM_PROMPT).toContain('maxItems');
+  });
 });
 
 describe('buildConstraints', () => {

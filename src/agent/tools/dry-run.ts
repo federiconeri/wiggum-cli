@@ -78,7 +78,20 @@ export function createDryRunReportingTools() {
     }),
   });
 
-  return { commentOnIssue, createTechDebtIssue };
+  const closeIssue = tool({
+    description: '[DRY RUN] Simulates closing a GitHub issue without actually closing it.',
+    inputSchema: zodSchema(z.object({
+      issueNumber: z.number().int().describe('Issue number'),
+      comment: z.string().optional().describe('Closing comment'),
+    })),
+    execute: async ({ issueNumber }) => ({
+      success: true,
+      dryRun: true,
+      wouldClose: { issueNumber },
+    }),
+  });
+
+  return { commentOnIssue, createTechDebtIssue, closeIssue };
 }
 
 export function createDryRunFeatureStateTools() {

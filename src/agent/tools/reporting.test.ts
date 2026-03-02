@@ -68,4 +68,58 @@ describe('createReportingTools', () => {
       expect(result.issueNumber).toBe(99);
     });
   });
+
+  describe('closeIssue', () => {
+    it('closes an issue via gh CLI', async () => {
+      mockExecFile.mockImplementation((_cmd: any, _args: any, _opts: any, cb: any) => {
+        cb(null, '', '');
+        return {} as any;
+      });
+
+      const result = await tools.closeIssue.execute(
+        { issueNumber: 7 },
+        execCtx,
+      );
+      expect(result).toEqual({ success: true });
+      expect(mockExecFile).toHaveBeenCalledWith(
+        'gh',
+        ['issue', 'close', '7', '--repo', 'testowner/testrepo'],
+        expect.any(Object),
+        expect.any(Function),
+      );
+    });
+
+    it('passes --comment when provided', async () => {
+      mockExecFile.mockImplementation((_cmd: any, _args: any, _opts: any, cb: any) => {
+        cb(null, '', '');
+        return {} as any;
+      });
+
+      const result = await tools.closeIssue.execute(
+        { issueNumber: 7, comment: 'Shipped via PR #14' },
+        execCtx,
+      );
+      expect(result).toEqual({ success: true });
+      expect(mockExecFile).toHaveBeenCalledWith(
+        'gh',
+        ['issue', 'close', '7', '--repo', 'testowner/testrepo', '--comment', 'Shipped via PR #14'],
+        expect.any(Object),
+        expect.any(Function),
+      );
+    });
+
+    it('returns error on failure', async () => {
+      mockExecFile.mockImplementation((_cmd: any, _args: any, _opts: any, cb: any) => {
+        cb(new Error('not found'), '', '');
+        return {} as any;
+      });
+
+      const result = await tools.closeIssue.execute(
+        { issueNumber: 999 },
+        execCtx,
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('not found');
+    });
+  });
 });

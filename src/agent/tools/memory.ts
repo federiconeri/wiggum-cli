@@ -43,7 +43,7 @@ export function createMemoryTools(store: MemoryStore, projectRoot?: string) {
     description: 'Reflect on completed work to extract learnings and patterns. Call after each issue.',
     inputSchema: zodSchema(z.object({
       issueNumber: z.number().int().describe('The issue that was worked on'),
-      outcome: z.enum(['success', 'partial', 'failure']).describe('How did it go?'),
+      outcome: z.enum(['success', 'partial', 'failure', 'skipped']).describe('How did it go? Use "skipped" when the issue was already complete or requires no work.'),
       whatWorked: z.string().describe('What went well'),
       whatFailed: z.string().describe('What went wrong or was difficult'),
       patternDiscovered: z.string().optional().describe('Any reusable pattern discovered'),
