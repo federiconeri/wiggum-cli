@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { writeFileSync, mkdirSync, unlinkSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { EventEmitter } from 'node:events';
@@ -227,7 +227,26 @@ describe('createExecutionTools', () => {
   });
 
   describe('runLoop', () => {
+    // runLoop checks for spec file existence, so use a real temp dir
+    const loopRoot = join(tmpdir(), 'exec-test-runloop');
+    const specsDir = join(loopRoot, '.ralph', 'specs');
+    let loopTools: ReturnType<typeof createExecutionTools>;
+
+    beforeEach(() => {
+      mkdirSync(specsDir, { recursive: true });
+      loopTools = createExecutionTools(loopRoot);
+    });
+
+    afterEach(() => {
+      if (existsSync(loopRoot)) rmSync(loopRoot, { recursive: true, force: true });
+    });
+
+    function writeSpec(featureName: string) {
+      writeFileSync(join(specsDir, `${featureName}.md`), `# ${featureName} spec`);
+    }
+
     it('returns status from .final file on success', async () => {
+      writeSpec('run-test');
       const finalPath = join(tmpdir(), 'ralph-loop-run-test.final');
       writeFileSync(finalPath, '5|10|2026-02-25T12:00:00Z|done');
 
@@ -238,7 +257,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'run-test', worktree: true },
         execCtx,
       );
@@ -253,6 +272,7 @@ describe('createExecutionTools', () => {
     });
 
     it('passes RALPH_AUTOMATED=1 env to subprocess', async () => {
+      writeSpec('env-test');
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
@@ -260,7 +280,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'env-test', worktree: false },
         execCtx,
       );
@@ -272,6 +292,7 @@ describe('createExecutionTools', () => {
     });
 
     it('returns logPath in result', async () => {
+      writeSpec('log-path-test');
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
@@ -279,7 +300,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'log-path-test', worktree: false },
         execCtx,
       );
@@ -291,6 +312,7 @@ describe('createExecutionTools', () => {
     });
 
     it('passes --worktree flag', async () => {
+      writeSpec('flag-test');
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
@@ -298,7 +320,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'flag-test', worktree: true },
         execCtx,
       );
@@ -314,6 +336,7 @@ describe('createExecutionTools', () => {
     });
 
     it('passes --review-mode flag when provided', async () => {
+      writeSpec('review-test');
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
@@ -321,7 +344,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'review-test', worktree: true, reviewMode: 'auto' },
         execCtx,
       );
@@ -337,6 +360,7 @@ describe('createExecutionTools', () => {
     });
 
     it('omits --review-mode when not provided', async () => {
+      writeSpec('no-review-test');
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
@@ -344,7 +368,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'no-review-test', worktree: false },
         execCtx,
       );
@@ -357,6 +381,7 @@ describe('createExecutionTools', () => {
     });
 
     it('passes --resume flag when resume is true', async () => {
+      writeSpec('resume-test');
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
@@ -364,7 +389,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'resume-test', worktree: false, resume: true },
         execCtx,
       );
@@ -380,6 +405,7 @@ describe('createExecutionTools', () => {
     });
 
     it('omits --resume flag when resume is false or not provided', async () => {
+      writeSpec('no-resume-test');
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
@@ -387,7 +413,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'no-resume-test', worktree: false },
         execCtx,
       );
@@ -400,6 +426,7 @@ describe('createExecutionTools', () => {
     });
 
     it('does not forward model or provider to loop', async () => {
+      writeSpec('no-model-test');
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
       proc.stderr = new EventEmitter();
@@ -407,7 +434,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'no-model-test', worktree: false },
         execCtx,
       );
@@ -421,8 +448,9 @@ describe('createExecutionTools', () => {
     });
 
     it('calls onProgress with stderr lines', async () => {
+      writeSpec('loop-progress');
       const onProgress = vi.fn();
-      const toolsWithProgress = createExecutionTools('/fake/root', { onProgress });
+      const toolsWithProgress = createExecutionTools(loopRoot, { onProgress });
 
       const proc = new EventEmitter() as any;
       proc.stdout = new EventEmitter();
@@ -447,6 +475,7 @@ describe('createExecutionTools', () => {
     });
 
     it('proceeds to spawn when preflight passes', async () => {
+      writeSpec('preflight-pass');
       mockRunPreflightChecks.mockResolvedValue({ ok: true, defaultBranch: 'main' });
 
       const proc = new EventEmitter() as any;
@@ -456,7 +485,7 @@ describe('createExecutionTools', () => {
       proc.kill = vi.fn();
       mockSpawn.mockReturnValue(proc);
 
-      const promise = tools.runLoop.execute(
+      const promise = loopTools.runLoop.execute(
         { featureName: 'preflight-pass', worktree: false },
         execCtx,
       );
@@ -464,15 +493,31 @@ describe('createExecutionTools', () => {
       setTimeout(() => proc.emit('close', 0, null), 10);
       const result = await promise;
 
-      expect(mockRunPreflightChecks).toHaveBeenCalledWith('/fake/root', 'preflight-pass', undefined);
+      expect(mockRunPreflightChecks).toHaveBeenCalledWith(loopRoot, 'preflight-pass', undefined);
       expect(mockSpawn).toHaveBeenCalled();
       expect(result.status).toBe('done');
     });
 
+    it('returns spec_missing without spawning when spec file does not exist', async () => {
+      // Deliberately do NOT call writeSpec
+      const result = await loopTools.runLoop.execute(
+        { featureName: 'no-spec-test', worktree: false },
+        execCtx,
+      );
+
+      expect(result.status).toBe('spec_missing');
+      expect(result.error).toContain('Spec file not found');
+      expect(result.error).toContain('generateSpec');
+      expect(result.logPath).toMatch(/ralph-loop-no-spec-test/);
+      expect(mockSpawn).not.toHaveBeenCalled();
+      expect(mockRunPreflightChecks).not.toHaveBeenCalled();
+    });
+
     it('returns preflight_failed without spawning when preflight fails', async () => {
+      writeSpec('preflight-fail');
       mockRunPreflightChecks.mockResolvedValue({ ok: false, error: 'Branch locked by active worktree at /tmp/wt' });
 
-      const result = await tools.runLoop.execute(
+      const result = await loopTools.runLoop.execute(
         { featureName: 'preflight-fail', worktree: true },
         execCtx,
       );
