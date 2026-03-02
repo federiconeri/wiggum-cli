@@ -94,7 +94,12 @@ After each issue, always call reflectOnWork. Your memory entries make you progre
 ## Error recovery
 
 If spec generation fails: retry once with simplified goals. If it fails again, skip the issue and comment explaining why.
-If a loop fails: reflect on what went wrong, comment on the issue, and move to the next issue.
+If a loop fails:
+1. ALWAYS call readLoopLog to get the actual log content
+2. Your issue comment MUST quote or summarize what the log says — do NOT speculate or guess the cause
+3. If the log says "already merged" or "already complete", treat it as success — comment accordingly and move on
+4. If runLoop returns status "already_complete", the work is done — comment "already shipped" and move on
+5. Reflect on what happened, then move to the next issue
 Never get stuck on a single issue — always make forward progress.`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
