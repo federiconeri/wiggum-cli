@@ -423,6 +423,27 @@ else
     echo "Already on branch: $BRANCH"
 fi
 
+# Guard A: Already-complete detection
+# If the plan exists with ALL tasks checked and there is no diff to the default branch,
+# the work was already merged (e.g. via a different branch name). Skip everything.
+if [ -f "$PLAN_FILE" ]; then
+    _UNCHECKED=$({ grep "^- \[ \]" "$PLAN_FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
+    _CHECKED=$({ grep -i "^- \[x\]" "$PLAN_FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
+    _DIFF_STAT=$(git diff "$DEFAULT_BRANCH..HEAD" --stat 2>/dev/null || echo "")
+    if [ "$_CHECKED" -gt 0 ] && [ "$_UNCHECKED" -eq 0 ] && [ -z "$_DIFF_STAT" ]; then
+        echo "All plan tasks are complete and branch has no diff to $DEFAULT_BRANCH — work already merged."
+        > "$PHASES_FILE"
+        for _phase in planning implementation e2e_testing verification pr_review; do
+            echo "${_phase}|skipped|$(date +%s)|$(date +%s)" >> "$PHASES_FILE"
+        done
+        echo "0|0|$(date +%s)|already_complete" > "$FINAL_STATUS_FILE"
+        echo "=========================================="
+        echo "Ralph loop: $FEATURE — already complete, nothing to do."
+        echo "=========================================="
+        exit 0
+    fi
+fi
+
 # Create output file for monitoring
 touch "$CLAUDE_OUTPUT"
 
@@ -567,6 +588,21 @@ fi
 extract_session_result "${CLAUDE_OUTPUT}.raw"
 accumulate_tokens_from_session "$LAST_SESSION_ID"
 write_phase_end "verification" "$VERIFY_STATUS"
+
+# Guard B: Skip PR phase if branch has no diff to default branch
+# Safety net for cases where implementation ran but produced no net diff.
+_PR_DIFF_STAT=$(git diff "$DEFAULT_BRANCH..HEAD" --stat 2>/dev/null || echo "")
+if [ -z "$_PR_DIFF_STAT" ]; then
+    echo "No diff between $BRANCH and $DEFAULT_BRANCH — skipping PR phase."
+    write_phase_start "pr_review"
+    write_phase_end "pr_review" "skipped"
+    echo "0|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE"
+    rm -f "$STATUS_FILE" 2>/dev/null || true
+    echo "=========================================="
+    echo "Ralph loop completed (no diff): $FEATURE"
+    echo "=========================================="
+    exit 0
+fi
 
 # Phase 7: PR and Review
 echo "======================== PR & REVIEW PHASE ========================"

@@ -43,11 +43,15 @@ After calling assessFeatureState, follow the recommendation:
 | pr_exists_open | Comment on issue, do NOT re-run loop |
 | pr_merged | Comment "already shipped", reflect, move on |
 | pr_closed | Decide: restart from scratch or skip |
+| linked_pr_merged | Work shipped under a different branch — comment "already shipped via PR #N", reflect, move on |
+| linked_pr_open | Work in progress under a different branch — comment "in progress via PR #N", do NOT re-run loop |
 
 **Critical:**
 - When recommendation is resume_implementation or resume_pr_phase, you MUST pass resume: true to runLoop
 - When recommendation is generate_plan, do NOT pass resume (fresh branch needed)
 - When recommendation is start_fresh, generate a spec first, then run the loop without resume
+- ALWAYS pass issueNumber to assessFeatureState so it can detect work shipped under a different branch name
+- Derive short, stable feature names (2-4 words, kebab-case) from the issue title — e.g. "config-module" not "config-module-toml-read-write-with-secret-masking"
 4. Reflect on the outcome:
    - Call reflectOnWork with structured observations
    - Note what worked, what failed, any patterns discovered
