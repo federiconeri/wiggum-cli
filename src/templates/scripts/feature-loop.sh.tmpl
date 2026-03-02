@@ -424,14 +424,14 @@ else
 fi
 
 # Guard A: Already-complete detection
-# If the plan exists with ALL tasks checked and there is no diff to the default branch,
-# the work was already merged (e.g. via a different branch name). Skip everything.
+# If the plan exists AND there is no diff to the default branch, the work was already
+# merged (e.g. via a different branch name). Skip everything. We don't require all
+# tasks to be checked — the checkboxes may be stale if the work shipped under a
+# different branch name that never updated this plan file.
 if [ -f "$PLAN_FILE" ]; then
-    _UNCHECKED=$({ grep "^- \[ \]" "$PLAN_FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
-    _CHECKED=$({ grep -i "^- \[x\]" "$PLAN_FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
     _DIFF_STAT=$(git diff "$DEFAULT_BRANCH..HEAD" --stat 2>/dev/null || echo "")
-    if [ "$_CHECKED" -gt 0 ] && [ "$_UNCHECKED" -eq 0 ] && [ -z "$_DIFF_STAT" ]; then
-        echo "All plan tasks are complete and branch has no diff to $DEFAULT_BRANCH — work already merged."
+    if [ -z "$_DIFF_STAT" ]; then
+        echo "Plan exists but branch has no diff to $DEFAULT_BRANCH — work already merged."
         > "$PHASES_FILE"
         for _phase in planning implementation e2e_testing verification pr_review; do
             echo "${_phase}|skipped|$(date +%s)|$(date +%s)" >> "$PHASES_FILE"
