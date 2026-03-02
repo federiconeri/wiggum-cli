@@ -119,6 +119,16 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
       const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
       if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath };
 
+      // Spec existence check — catch "forgot to call generateSpec" before spawning
+      const specPath = join(projectRoot, '.ralph', 'specs', `${featureName}.md`);
+      if (!existsSync(specPath)) {
+        return {
+          status: 'spec_missing',
+          error: `Spec file not found: ${specPath}. Call generateSpec first.`,
+          logPath,
+        };
+      }
+
       // Pre-flight checks
       const preflight = await runPreflightChecks(projectRoot, featureName, emitProgress);
       if (!preflight.ok) {
