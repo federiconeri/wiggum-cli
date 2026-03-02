@@ -1,7 +1,7 @@
 import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { FEATURE_NAME_SCHEMA } from './schemas.js';
 import { runPreflightChecks } from './preflight.js';
@@ -139,8 +139,11 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
         if (worktree) args.push('--worktree');
         if (reviewMode) args.push('--review-mode', reviewMode);
         if (resume) args.push('--resume');
-        // Only capture stderr; ignore stdout to prevent pipe backpressure blocking the child
-        const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: ['ignore', 'ignore', 'pipe'], env: { ...process.env, RALPH_AUTOMATED: '1' } });
+        // Route stdout to log file so echo statements from the shell script populate the activity feed.
+        // stderr is piped for progress reporting; stdin is ignored.
+        const logFd = openSync(logPath, 'a');
+        const proc = spawn('wiggum', args, { cwd: projectRoot, stdio: ['ignore', logFd, 'pipe'], env: { ...process.env, RALPH_AUTOMATED: '1' } });
+        closeSync(logFd); // close parent's copy; child inherits its own fd
         const { timer, didTimeout } = killWithTimeout(proc, LOOP_TIMEOUT_MS);
         let stderr = '';
         let aborted = false;

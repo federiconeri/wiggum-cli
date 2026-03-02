@@ -99,7 +99,7 @@ const stoppedStatus: LoopStatus = {
   running: false,
 };
 
-const defaultTasks = { tasksDone: 2, tasksPending: 1, e2eDone: 0, e2ePending: 0 };
+const defaultTasks = { tasksDone: 2, tasksPending: 1, e2eDone: 0, e2ePending: 0, planExists: true };
 
 const sampleActionRequest: ActionRequest = {
   id: 'post_pr_choice',

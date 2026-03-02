@@ -293,6 +293,7 @@ export function RunScreen({
     tasksPending: 0,
     e2eDone: 0,
     e2ePending: 0,
+    planExists: false,
   });
   const [branch, setBranch] = useState<string>('-');
   const [error, setError] = useState<string | null>(null);
@@ -635,7 +636,7 @@ export function RunScreen({
             } catch (err) {
               logger.error(`Failed to read final run status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
               latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0, cacheCreate: 0, cacheRead: 0 };
-              latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0 };
+              latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0, planExists: false };
             }
 
             const tasksDone = latestTasks.tasksDone + latestTasks.e2eDone;
