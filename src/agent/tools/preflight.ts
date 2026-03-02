@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -63,9 +63,30 @@ export async function runPreflightChecks(
     const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], opts);
     const worktrees = parseWorktreeList(stdout);
 
+    // Resolve projectRoot to compare with worktree paths
+    let resolvedRoot: string;
+    try {
+      resolvedRoot = realpathSync(projectRoot);
+    } catch {
+      resolvedRoot = projectRoot;
+    }
+
     for (const wt of worktrees) {
       if (wt.branch === branchName || wt.branch === `refs/heads/${branchName}`) {
-        // Branch is checked out in a worktree
+        // Branch is checked out in the main worktree (projectRoot itself) —
+        // the loop script handles this case (it detects CURRENT_BRANCH == BRANCH).
+        let resolvedWtPath: string;
+        try {
+          resolvedWtPath = realpathSync(wt.path);
+        } catch {
+          resolvedWtPath = wt.path;
+        }
+        if (resolvedWtPath === resolvedRoot) {
+          emitProgress?.('preflight', `Branch ${branchName} already checked out in project root`);
+          continue;
+        }
+
+        // Branch is checked out in a different worktree
         const isEphemeral = wt.path.includes('/.claude/worktrees/');
         if (!existsSync(wt.path) || !existsSync(`${wt.path}/.git`) || isEphemeral) {
           // Stale or ephemeral worktree — auto-fix
