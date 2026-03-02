@@ -96,6 +96,11 @@ describe('createAgentOrchestrator', () => {
     expect(AGENT_SYSTEM_PROMPT).toContain('"skipped"');
     expect(AGENT_SYSTEM_PROMPT).toContain('maxItems');
   });
+
+  it('system prompt instructs checking acceptance criteria and housekeeping', () => {
+    expect(AGENT_SYSTEM_PROMPT).toContain('checkAllBoxes');
+    expect(AGENT_SYSTEM_PROMPT).toContain('Housekeeping');
+  });
 });
 
 describe('buildConstraints', () => {
