@@ -8,6 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { logger } from '../utils/logger.js';
 import { loadConfigWithDefaults, hasConfig } from '../utils/config.js';
+import { findImplementationPlan } from '../tui/utils/loop-status.js';
 import pc from 'picocolors';
 
 export interface MonitorOptions {
@@ -152,37 +153,6 @@ function readStatus(feature: string): LoopStatus {
     branch: '',
     elapsed: '',
   };
-}
-
-/**
- * Find the implementation plan file, checking main project and worktrees.
- */
-function findImplementationPlan(projectRoot: string, specsRelPath: string, feature: string): string | null {
-  // 1. Check main project
-  const mainPath = join(projectRoot, specsRelPath, `${feature}-implementation-plan.md`);
-  if (existsSync(mainPath)) return mainPath;
-
-  // 2. Check git worktrees for the feature branch
-  try {
-    const output = execFileSync('git', ['worktree', 'list', '--porcelain'], {
-      cwd: projectRoot,
-      encoding: 'utf-8',
-    });
-    const worktrees = output.split('\n\n').filter(Boolean);
-    for (const wt of worktrees) {
-      const pathMatch = wt.match(/^worktree (.+)$/m);
-      const escapedFeature = feature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const branchMatch = wt.match(new RegExp(`^branch .+/feat/${escapedFeature}$`, 'm'));
-      if (pathMatch && branchMatch) {
-        const wtPlan = join(pathMatch[1], specsRelPath, `${feature}-implementation-plan.md`);
-        if (existsSync(wtPlan)) return wtPlan;
-      }
-    }
-  } catch {
-    // git worktree list failed — ignore
-  }
-
-  return null;
 }
 
 /**

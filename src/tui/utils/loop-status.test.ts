@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 
 vi.mock('node:fs');
 
-import { formatRelativeTime, parseLoopLog, parsePhaseChanges, readCurrentPhase, readLoopStatus } from './loop-status.js';
+import { findImplementationPlan, formatRelativeTime, parseImplementationPlan, parseLoopLog, parsePhaseChanges, readCurrentPhase, readLoopStatus } from './loop-status.js';
 import * as child_process from 'node:child_process';
 
 vi.mock('node:child_process');
@@ -529,5 +529,126 @@ describe('readLoopStatus', () => {
     expect(status.tokensOutput).toBe(500);
     expect(status.cacheCreate).toBe(0);
     expect(status.cacheRead).toBe(0);
+  });
+});
+
+describe('findImplementationPlan', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns main project path when plan exists there', () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      return String(p) === '/project/.ralph/specs/my-feature-implementation-plan.md';
+    });
+
+    const result = findImplementationPlan('/project', '.ralph/specs', 'my-feature');
+    expect(result).toBe('/project/.ralph/specs/my-feature-implementation-plan.md');
+  });
+
+  it('returns null when plan does not exist in main or worktrees', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(child_process.execFileSync).mockReturnValue('');
+
+    const result = findImplementationPlan('/project', '.ralph/specs', 'my-feature');
+    expect(result).toBeNull();
+  });
+
+  it('searches worktrees when main path does not have the plan', () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/my-feature-implementation-plan.md') return false;
+      if (path === '/worktrees/my-feature/.ralph/specs/my-feature-implementation-plan.md') return true;
+      return false;
+    });
+    vi.mocked(child_process.execFileSync).mockReturnValue(
+      'worktree /worktrees/my-feature\nHEAD abc123\nbranch refs/heads/feat/my-feature\n\n'
+    );
+
+    const result = findImplementationPlan('/project', '.ralph/specs', 'my-feature');
+    expect(result).toBe('/worktrees/my-feature/.ralph/specs/my-feature-implementation-plan.md');
+  });
+});
+
+describe('parseImplementationPlan — header fallback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('counts header-based tasks when no checkboxes found', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/hdr-feature-implementation-plan.md') return true;
+      if (path === '/tmp/ralph-loop-hdr-feature.phases') return false;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/hdr-feature-implementation-plan.md') {
+        return '# Implementation Plan\n\n#### Task 1: Setup\nDo setup.\n\n#### Task 2: Build\nBuild it.\n\n#### Task 3: Test\nTest it.\n';
+      }
+      throw new Error(`Unexpected read: ${path}`);
+    });
+
+    const result = await parseImplementationPlan('/project', 'hdr-feature', '.ralph/specs');
+    expect(result.planExists).toBe(true);
+    expect(result.tasksPending).toBe(3);
+    expect(result.tasksDone).toBe(0);
+  });
+
+  it('marks header tasks as done when implementation phase succeeded', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/hdr-done-implementation-plan.md') return true;
+      if (path === '/tmp/ralph-loop-hdr-done.phases') return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/hdr-done-implementation-plan.md') {
+        return '#### Task 1: A\n\n#### Task 2: B\n';
+      }
+      if (path === '/tmp/ralph-loop-hdr-done.phases') {
+        return 'planning|success|1700000000|1700000060\nimplementation|success|1700000060|1700000120\n';
+      }
+      throw new Error(`Unexpected read: ${path}`);
+    });
+
+    const result = await parseImplementationPlan('/project', 'hdr-done', '.ralph/specs');
+    expect(result.tasksDone).toBe(2);
+    expect(result.tasksPending).toBe(0);
+  });
+
+  it('prefers checkbox counts over header fallback when checkboxes exist', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/mixed-feature-implementation-plan.md') return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/mixed-feature-implementation-plan.md') {
+        return '#### Task 1: Setup\n- [x] Subtask A\n- [ ] Subtask B\n#### Task 2: Build\n- [x] Subtask C\n';
+      }
+      throw new Error(`Unexpected read: ${path}`);
+    });
+
+    const result = await parseImplementationPlan('/project', 'mixed-feature', '.ralph/specs');
+    // Checkboxes take precedence — 2 done, 1 pending
+    expect(result.tasksDone).toBe(2);
+    expect(result.tasksPending).toBe(1);
+  });
+});
+
+describe('parseLoopLog — JSON filter', () => {
+  it('filters lines starting with JSON objects (Claude result, log entries)', () => {
+    vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1000 } as fs.Stats);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      '{"type":"result","session_id":"abc123"}\n{"level":"warn","msg":"something"}\nActual progress\n'
+    );
+
+    const events = parseLoopLog('/tmp/test.log');
+    expect(events).toHaveLength(1);
+    expect(events[0].message).toBe('Actual progress');
   });
 });

@@ -8,6 +8,44 @@ import { join } from 'node:path';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 
+/**
+ * Find the implementation plan file, checking main project and git worktrees.
+ *
+ * Shared between loop-status.ts and monitor.ts to avoid duplicating the
+ * worktree search logic.
+ */
+export function findImplementationPlan(
+  projectRoot: string,
+  specsRelPath: string,
+  feature: string,
+): string | null {
+  // 1. Check main project
+  const mainPath = join(projectRoot, specsRelPath, `${feature}-implementation-plan.md`);
+  if (existsSync(mainPath)) return mainPath;
+
+  // 2. Check git worktrees for the feature branch
+  try {
+    const output = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: projectRoot,
+      encoding: 'utf-8',
+    });
+    const worktrees = output.split('\n\n').filter(Boolean);
+    for (const wt of worktrees) {
+      const pathMatch = wt.match(/^worktree (.+)$/m);
+      const escapedFeature = feature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const branchMatch = wt.match(new RegExp(`^branch .+/feat/${escapedFeature}$`, 'm'));
+      if (pathMatch && branchMatch) {
+        const wtPlan = join(pathMatch[1], specsRelPath, `${feature}-implementation-plan.md`);
+        if (existsSync(wtPlan)) return wtPlan;
+      }
+    }
+  } catch {
+    // git worktree list failed — ignore
+  }
+
+  return null;
+}
+
 export interface LoopStatus {
   running: boolean;
   phase: string;
@@ -258,16 +296,16 @@ export async function parseImplementationPlan(
     }
   }
   const specsDir = specsDirOverride || config?.paths.specs || '.ralph/specs';
-  const planPath = join(projectRoot, specsDir, `${feature}-implementation-plan.md`);
+  const planPath = findImplementationPlan(projectRoot, specsDir, feature);
 
   let tasksDone = 0;
   let tasksPending = 0;
   let e2eDone = 0;
   let e2ePending = 0;
 
-  const planExists = existsSync(planPath);
+  const planExists = planPath !== null;
 
-  if (planExists) {
+  if (planPath) {
     try {
       const content = readFileSync(planPath, 'utf-8');
       const lines = content.split('\n');
@@ -285,6 +323,30 @@ export async function parseImplementationPlan(
             e2ePending++;
           } else {
             tasksPending++;
+          }
+        }
+      }
+
+      // Fallback: if no checkboxes found, count "#### Task N:" headers
+      if (tasksDone === 0 && tasksPending === 0 && e2eDone === 0 && e2ePending === 0) {
+        let headerTaskCount = 0;
+        for (const line of lines) {
+          if (line.match(/^#{1,4}\s+Task\s+\d+/i)) {
+            headerTaskCount++;
+          }
+        }
+        if (headerTaskCount > 0) {
+          // Check phases file to determine completion
+          const phasesPath = `/tmp/ralph-loop-${feature}.phases`;
+          let implDone = false;
+          if (existsSync(phasesPath)) {
+            const phases = readFileSync(phasesPath, 'utf-8');
+            implDone = phases.includes('implementation|success');
+          }
+          if (implDone) {
+            tasksDone = headerTaskCount;
+          } else {
+            tasksPending = headerTaskCount;
           }
         }
       }
@@ -389,7 +451,7 @@ const SKIP_LINE_PATTERNS: RegExp[] = [
   /^Baseline commit:/,
   /^Creating branch:/,
   // Misc noise
-  /^\{"level"/,                            // JSON log lines (BashTool warnings etc.)
+  /^\{"/,                                  // Any line starting with JSON object (Claude result, log entries)
   /^Pending implementation tasks: \d+$/,   // raw task count (redundant with progress bar)
   /^Ready for feedback\.?$/i,              // Conversational filler
 ];
