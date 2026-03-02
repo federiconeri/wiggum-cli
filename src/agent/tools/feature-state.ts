@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { execFile } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { FEATURE_NAME_SCHEMA } from './schemas.js';
 
@@ -185,7 +184,7 @@ export async function assessFeatureStateImpl(
     try {
       const { stdout } = await execFileAsync('gh', [
         'pr', 'list',
-        '--search', `issue:${issueNumber}`,
+        '--search', `in:body "closes #${issueNumber}" OR in:body "fixes #${issueNumber}" OR in:body "resolves #${issueNumber}"`,
         '--state', 'all',
         '--json', 'number,state,url,headRefName',
         '--limit', '1',
@@ -205,7 +204,7 @@ export async function assessFeatureStateImpl(
   }
 
   // 6. Check loop status files
-  const prefix = join(tmpdir(), `ralph-loop-${featureName}`);
+  const prefix = join('/tmp', `ralph-loop-${featureName}`);
   const hasStatusFiles = existsSync(`${prefix}.final`) || existsSync(`${prefix}.phases`) || existsSync(`${prefix}.log`);
 
   const partial: Omit<FeatureState, 'recommendation'> = {

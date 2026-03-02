@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { FEATURE_NAME_SCHEMA } from './schemas.js';
 import { runPreflightChecks } from './preflight.js';
 
@@ -116,7 +115,7 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
       resume: z.boolean().default(false).describe('Resume a previous loop session instead of starting fresh'),
     })),
     execute: async ({ featureName, worktree, reviewMode, resume }, { abortSignal }) => {
-      const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
+      const logPath = join('/tmp', `ralph-loop-${featureName}.log`);
       if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath };
 
       // Spec existence check — catch "forgot to call generateSpec" before spawning
@@ -170,7 +169,7 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
           resolved = true;
           clearTimeout(timer);
           abortSignal?.removeEventListener('abort', onAbort);
-          const finalPath = join(tmpdir(), `ralph-loop-${featureName}.final`);
+          const finalPath = join('/tmp', `ralph-loop-${featureName}.final`);
           if (aborted) {
             resolve({ status: 'aborted', error: 'Aborted', logPath });
           } else if (didTimeout()) {
@@ -208,7 +207,7 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
       featureName: FEATURE_NAME_SCHEMA,
     })),
     execute: async ({ featureName }) => {
-      const prefix = join(tmpdir(), `ralph-loop-${featureName}`);
+      const prefix = join('/tmp', `ralph-loop-${featureName}`);
       const logPath = `${prefix}.log`;
 
       const finalPath = `${prefix}.final`;

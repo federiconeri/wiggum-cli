@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 
 const { mockSyncProjectContext } = vi.hoisted(() => ({
   mockSyncProjectContext: vi.fn(),
@@ -16,7 +15,7 @@ import { createIntrospectionTools } from './introspection.js';
 describe('createIntrospectionTools', () => {
   const tools = createIntrospectionTools('/fake/root');
   const execCtx = { toolCallId: 'test', messages: [] as any[], abortSignal: new AbortController().signal };
-  const testLogPath = join(tmpdir(), 'ralph-loop-intro-test.log');
+  const testLogPath = join('/tmp', 'ralph-loop-intro-test.log');
 
   afterEach(() => {
     vi.clearAllMocks();
