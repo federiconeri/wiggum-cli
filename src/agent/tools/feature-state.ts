@@ -16,7 +16,9 @@ export type Recommendation =
   | 'resume_pr_phase'
   | 'pr_exists_open'
   | 'pr_merged'
-  | 'pr_closed';
+  | 'pr_closed'
+  | 'linked_pr_merged'
+  | 'linked_pr_open';
 
 export interface FeatureState {
   featureName: string;
@@ -41,6 +43,13 @@ export interface FeatureState {
     number?: number;
     url?: string;
   };
+  linkedPr: {
+    exists: boolean;
+    state?: 'OPEN' | 'MERGED' | 'CLOSED';
+    number?: number;
+    url?: string;
+    headRefName?: string;
+  };
   loopStatus: {
     hasStatusFiles: boolean;
   };
@@ -53,6 +62,12 @@ function computeRecommendation(state: Omit<FeatureState, 'recommendation'>): Rec
     if (state.pr.state === 'MERGED') return 'pr_merged';
     if (state.pr.state === 'CLOSED') return 'pr_closed';
     if (state.pr.state === 'OPEN') return 'pr_exists_open';
+  }
+
+  // Linked PR (found via issue search, different branch name)
+  if (state.linkedPr.exists) {
+    if (state.linkedPr.state === 'MERGED') return 'linked_pr_merged';
+    if (state.linkedPr.state === 'OPEN') return 'linked_pr_open';
   }
 
   // Plan with all tasks done but no PR → resume to PR phase
@@ -76,6 +91,7 @@ function computeRecommendation(state: Omit<FeatureState, 'recommendation'>): Rec
 export async function assessFeatureStateImpl(
   projectRoot: string,
   featureName: string,
+  issueNumber?: number,
 ): Promise<FeatureState> {
   const opts = { cwd: projectRoot };
   const branchName = `feat/${featureName}`;
@@ -115,7 +131,7 @@ export async function assessFeatureStateImpl(
   const specExists = existsSync(specPath);
 
   // 3. Check implementation plan
-  const planPath = join(projectRoot, '.ralph', 'plans', `${featureName}.md`);
+  const planPath = join(projectRoot, '.ralph', 'specs', `${featureName}-implementation-plan.md`);
   const planExists = existsSync(planPath);
   let totalTasks = 0;
   let completedTasks = 0;
@@ -158,7 +174,37 @@ export async function assessFeatureStateImpl(
     // gh failure is non-fatal — tool works without GitHub CLI
   }
 
-  // 5. Check loop status files
+  // 5. Linked PR search (only when issueNumber provided and no branch-name PR found)
+  let linkedPrExists = false;
+  let linkedPrState: 'OPEN' | 'MERGED' | 'CLOSED' | undefined;
+  let linkedPrNumber: number | undefined;
+  let linkedPrUrl: string | undefined;
+  let linkedPrHeadRefName: string | undefined;
+
+  if (issueNumber != null && !prExists) {
+    try {
+      const { stdout } = await execFileAsync('gh', [
+        'pr', 'list',
+        '--search', `issue:${issueNumber}`,
+        '--state', 'all',
+        '--json', 'number,state,url,headRefName',
+        '--limit', '1',
+      ], { ...opts, timeout: 15000 });
+
+      const prs = JSON.parse(stdout.trim() || '[]');
+      if (prs.length > 0) {
+        linkedPrExists = true;
+        linkedPrState = prs[0].state as 'OPEN' | 'MERGED' | 'CLOSED';
+        linkedPrNumber = prs[0].number;
+        linkedPrUrl = prs[0].url;
+        linkedPrHeadRefName = prs[0].headRefName;
+      }
+    } catch {
+      // gh failure is non-fatal
+    }
+  }
+
+  // 6. Check loop status files
   const prefix = join(tmpdir(), `ralph-loop-${featureName}`);
   const hasStatusFiles = existsSync(`${prefix}.final`) || existsSync(`${prefix}.phases`) || existsSync(`${prefix}.log`);
 
@@ -168,6 +214,7 @@ export async function assessFeatureStateImpl(
     spec: { exists: specExists, path: specExists ? specPath : undefined },
     plan: { exists: planExists, path: planExists ? planPath : undefined, totalTasks, completedTasks, completionPercent: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0 },
     pr: { exists: prExists, state: prState, number: prNumber, url: prUrl },
+    linkedPr: { exists: linkedPrExists, state: linkedPrState, number: linkedPrNumber, url: linkedPrUrl, headRefName: linkedPrHeadRefName },
     loopStatus: { hasStatusFiles },
   };
 
@@ -179,9 +226,10 @@ export function createFeatureStateTools(projectRoot: string) {
     description: 'Assess the current state of a feature: branch, spec, plan, PR, loop status. Returns a recommendation for what action to take next. MUST be called before generateSpec or runLoop.',
     inputSchema: zodSchema(z.object({
       featureName: FEATURE_NAME_SCHEMA,
+      issueNumber: z.number().int().optional().describe('GitHub issue number — enables linked PR detection when the feature was shipped under a different branch name'),
     })),
-    execute: async ({ featureName }) => {
-      return assessFeatureStateImpl(projectRoot, featureName);
+    execute: async ({ featureName, issueNumber }) => {
+      return assessFeatureStateImpl(projectRoot, featureName, issueNumber);
     },
   });
 

@@ -78,6 +78,13 @@ describe('createAgentOrchestrator', () => {
     expect(AGENT_SYSTEM_PROMPT).toContain('pr_merged');
     expect(AGENT_SYSTEM_PROMPT).toContain('pr_closed');
     expect(AGENT_SYSTEM_PROMPT).toContain('generate_plan');
+    expect(AGENT_SYSTEM_PROMPT).toContain('linked_pr_merged');
+    expect(AGENT_SYSTEM_PROMPT).toContain('linked_pr_open');
+  });
+
+  it('system prompt instructs passing issueNumber and using stable feature names', () => {
+    expect(AGENT_SYSTEM_PROMPT).toContain('issueNumber');
+    expect(AGENT_SYSTEM_PROMPT).toMatch(/kebab-case/);
   });
 
   it('system prompt instructs resume: true for resume recommendations', () => {

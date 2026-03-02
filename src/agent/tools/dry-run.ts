@@ -86,6 +86,7 @@ export function createDryRunFeatureStateTools() {
     description: '[DRY RUN] Simulates assessing feature state — returns a mock start_fresh recommendation.',
     inputSchema: zodSchema(z.object({
       featureName: FEATURE_NAME_SCHEMA,
+      issueNumber: z.number().int().optional().describe('GitHub issue number — enables linked PR detection when the feature was shipped under a different branch name'),
     })),
     execute: async ({ featureName }) => ({
       featureName,
@@ -93,6 +94,7 @@ export function createDryRunFeatureStateTools() {
       spec: { exists: false },
       plan: { exists: false, totalTasks: 0, completedTasks: 0, completionPercent: 0 },
       pr: { exists: false },
+      linkedPr: { exists: false },
       loopStatus: { hasStatusFiles: false },
       recommendation: 'start_fresh' as const,
       dryRun: true,

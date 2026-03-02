@@ -73,5 +73,6 @@ describe('createDryRunFeatureStateTools', () => {
     expect(result.featureName).toBe('test-feat');
     expect(result.branch.exists).toBe(false);
     expect(result.pr.exists).toBe(false);
+    expect(result.linkedPr.exists).toBe(false);
   });
 });
