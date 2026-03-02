@@ -130,8 +130,8 @@ describe('buildRuntimeConfig', () => {
   });
 
   it('includes model when provided', () => {
-    const result = buildRuntimeConfig({ ...base, modelId: 'gpt-5.2-codex' });
-    expect(result).toContain('model: gpt-5.2-codex');
+    const result = buildRuntimeConfig({ ...base, modelId: 'gpt-5.3-codex' });
+    expect(result).toContain('model: gpt-5.3-codex');
     expect(result).toContain('Runtime Config');
   });
 

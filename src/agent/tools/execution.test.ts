@@ -155,13 +155,13 @@ describe('createExecutionTools', () => {
       mockSpawn.mockReturnValue(createFakeProc(0, 'spec-path\n'));
 
       await tools.generateSpec.execute(
-        { featureName: 'model-feat', issueNumber: 5, model: 'gpt-5.2-codex', provider: 'openai' },
+        { featureName: 'model-feat', issueNumber: 5, model: 'gpt-5.3-codex', provider: 'openai' },
         execCtx,
       );
 
       expect(mockSpawn).toHaveBeenCalledWith(
         'wiggum',
-        ['new', 'model-feat', '--auto', '--issue', '5', '--model', 'gpt-5.2-codex', '--provider', 'openai'],
+        ['new', 'model-feat', '--auto', '--issue', '5', '--model', 'gpt-5.3-codex', '--provider', 'openai'],
         expect.any(Object),
       );
     });
