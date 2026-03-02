@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockExecFile, mockExistsSync } = vi.hoisted(() => ({
+const { mockExecFile, mockExistsSync, mockRealpathSync } = vi.hoisted(() => ({
   mockExecFile: vi.fn(),
   mockExistsSync: vi.fn(),
+  mockRealpathSync: vi.fn((p: string) => p),
 }));
 
 vi.mock('node:child_process', () => ({
@@ -11,6 +12,7 @@ vi.mock('node:child_process', () => ({
 
 vi.mock('node:fs', () => ({
   existsSync: mockExistsSync,
+  realpathSync: mockRealpathSync,
 }));
 
 import { runPreflightChecks } from './preflight.js';
@@ -187,6 +189,32 @@ describe('runPreflightChecks', () => {
     expect(emitProgress).toHaveBeenCalledWith(
       'preflight',
       expect.stringContaining('ephemeral'),
+    );
+  });
+
+  it('allows branch checked out in the project root (main worktree)', async () => {
+    mockExistsSync.mockReturnValue(true); // directory exists
+
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': {
+        stdout: [
+          'worktree /fake/root',
+          'HEAD def456',
+          'branch refs/heads/feat/my-feature',
+          '',
+        ].join('\n'),
+      },
+      'status --porcelain': { stdout: '' },
+    });
+
+    const emitProgress = vi.fn();
+    const result = await runPreflightChecks('/fake/root', 'my-feature', emitProgress);
+    expect(result.ok).toBe(true);
+    expect(emitProgress).toHaveBeenCalledWith(
+      'preflight',
+      expect.stringContaining('already checked out in project root'),
     );
   });
 
