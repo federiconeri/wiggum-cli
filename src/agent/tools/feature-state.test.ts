@@ -24,7 +24,7 @@ describe('assessFeatureStateImpl', () => {
     // Clean up temp files
     if (existsSync(projectRoot)) rmSync(projectRoot, { recursive: true, force: true });
     // Clean up loop status files
-    const prefix = join(tmpdir(), 'ralph-loop-test-feat');
+    const prefix = join('/tmp', 'ralph-loop-test-feat');
     for (const ext of ['.final', '.phases', '.log']) {
       const p = `${prefix}${ext}`;
       if (existsSync(p)) rmSync(p);
@@ -207,7 +207,7 @@ describe('assessFeatureStateImpl', () => {
   it('detects loop status files', async () => {
     setupDirs();
     mockGitAndGh();
-    const finalPath = join(tmpdir(), 'ralph-loop-test-feat.final');
+    const finalPath = join('/tmp', 'ralph-loop-test-feat.final');
     writeFileSync(finalPath, '3|10|2026-03-01T12:00:00Z|done');
 
     const state = await assessFeatureStateImpl(projectRoot, 'test-feat');

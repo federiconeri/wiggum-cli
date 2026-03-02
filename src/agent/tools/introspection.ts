@@ -3,7 +3,6 @@ import { z } from 'zod';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { FEATURE_NAME_SCHEMA } from './schemas.js';
 
 export function createIntrospectionTools(projectRoot: string) {
@@ -14,7 +13,7 @@ export function createIntrospectionTools(projectRoot: string) {
       tailLines: z.number().int().min(1).max(500).default(100).describe('Number of lines from the end'),
     })),
     execute: async ({ featureName, tailLines }) => {
-      const logPath = join(tmpdir(), `ralph-loop-${featureName}.log`);
+      const logPath = join('/tmp', `ralph-loop-${featureName}.log`);
       if (!existsSync(logPath)) {
         return { error: `No log found at ${logPath} — verify featureName matches exactly what runLoop used` };
       }

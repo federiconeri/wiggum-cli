@@ -23,7 +23,7 @@ describe('createExecutionTools', () => {
   const tools = createExecutionTools('/fake/root');
   const execCtx = { toolCallId: 'test', messages: [] as any[], abortSignal: new AbortController().signal };
 
-  const testFinalPath = join(tmpdir(), 'ralph-loop-exec-test-feat.final');
+  const testFinalPath = join('/tmp', 'ralph-loop-exec-test-feat.final');
 
   afterEach(() => {
     vi.clearAllMocks();
@@ -53,7 +53,7 @@ describe('createExecutionTools', () => {
     });
 
     it('returns possibly_running when only log file exists', async () => {
-      const logPath = join(tmpdir(), 'ralph-loop-log-detect-test.log');
+      const logPath = join('/tmp', 'ralph-loop-log-detect-test.log');
       writeFileSync(logPath, 'some log output\n');
 
       try {
@@ -247,7 +247,7 @@ describe('createExecutionTools', () => {
 
     it('returns status from .final file on success', async () => {
       writeSpec('run-test');
-      const finalPath = join(tmpdir(), 'ralph-loop-run-test.final');
+      const finalPath = join('/tmp', 'ralph-loop-run-test.final');
       writeFileSync(finalPath, '5|10|2026-02-25T12:00:00Z|done');
 
       const proc = new EventEmitter() as any;
