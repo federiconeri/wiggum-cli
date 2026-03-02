@@ -64,5 +64,26 @@ export function createReportingTools(owner: string, repo: string) {
     },
   });
 
-  return { commentOnIssue, createTechDebtIssue };
+  const closeIssue = tool({
+    description: 'Close a GitHub issue. Use after verifying the work is actually shipped (PR merged, code on main).',
+    inputSchema: zodSchema(z.object({
+      issueNumber: z.number().int().describe('Issue number to close'),
+      comment: z.string().optional().describe('Optional closing comment'),
+    })),
+    execute: async ({ issueNumber, comment }) => {
+      try {
+        const args = [
+          'issue', 'close', String(issueNumber),
+          '--repo', `${owner}/${repo}`,
+        ];
+        if (comment) args.push('--comment', comment);
+        await ghExec(args);
+        return { success: true };
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+
+  return { commentOnIssue, createTechDebtIssue, closeIssue };
 }

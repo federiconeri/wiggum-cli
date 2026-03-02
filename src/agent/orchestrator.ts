@@ -41,9 +41,9 @@ After calling assessFeatureState, follow the recommendation:
 | resume_implementation | runLoop with resume: true (plan has pending tasks) |
 | resume_pr_phase | runLoop with resume: true (all tasks done, needs PR) |
 | pr_exists_open | Comment on issue, do NOT re-run loop |
-| pr_merged | Comment "already shipped", reflect, move on |
+| pr_merged | Verify PR is merged, close issue with closeIssue, reflect with outcome "skipped", move on |
 | pr_closed | Decide: restart from scratch or skip |
-| linked_pr_merged | Work shipped under a different branch — comment "already shipped via PR #N", reflect, move on |
+| linked_pr_merged | Verify the linked PR is merged, close issue with closeIssue (comment "shipped via PR #N"), reflect with outcome "skipped", move on |
 | linked_pr_open | Work in progress under a different branch — comment "in progress via PR #N", do NOT re-run loop |
 
 **Critical:**
@@ -52,11 +52,15 @@ After calling assessFeatureState, follow the recommendation:
 - When recommendation is start_fresh, generate a spec first, then run the loop without resume
 - ALWAYS pass issueNumber to assessFeatureState so it can detect work shipped under a different branch name
 - Derive short, stable feature names (2-4 words, kebab-case) from the issue title — e.g. "config-module" not "config-module-toml-read-write-with-secret-masking"
-4. Reflect on the outcome:
+4. After the loop completes successfully:
+   - If the loop shipped work (PR merged or already_complete), close the issue with closeIssue
+   - Use assessFeatureState again to verify the PR is actually merged if unsure
+5. Reflect on the outcome:
    - Call reflectOnWork with structured observations
+   - Use outcome "skipped" for issues that were already complete (no real work done) — these do NOT count against maxItems
+   - Use outcome "success"/"partial"/"failure" for issues where real work was performed
    - Note what worked, what failed, any patterns discovered
-   - Write additional project_knowledge entries if needed
-5. Repeat from step 2 with enriched memory
+6. Repeat from step 2 with enriched memory
 
 ## Model forwarding
 
@@ -97,8 +101,8 @@ If spec generation fails: retry once with simplified goals. If it fails again, s
 If a loop fails:
 1. ALWAYS call readLoopLog to get the actual log content
 2. Your issue comment MUST quote or summarize what the log says — do NOT speculate or guess the cause
-3. If the log says "already merged" or "already complete", treat it as success — comment accordingly and move on
-4. If runLoop returns status "already_complete", the work is done — comment "already shipped" and move on
+3. If the log says "already merged" or "already complete", treat it as success — close the issue and move on
+4. If runLoop returns status "already_complete", the work is done — close the issue with closeIssue and reflect with outcome "skipped"
 5. Reflect on what happened, then move to the next issue
 Never get stuck on a single issue — always make forward progress.`;
 
@@ -223,9 +227,9 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
       try {
         for (const tc of toolCalls) {
           if (tc.toolName === REFLECT_TOOL_NAME) {
-            const issueNumber = (tc.input as { issueNumber?: number })?.issueNumber;
-            if (issueNumber != null) {
-              completedIssues.add(issueNumber);
+            const input = tc.input as { issueNumber?: number; outcome?: string };
+            if (input.issueNumber != null && input.outcome !== 'skipped') {
+              completedIssues.add(input.issueNumber);
             }
           }
         }

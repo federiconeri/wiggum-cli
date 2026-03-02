@@ -57,6 +57,16 @@ describe('createDryRunReportingTools', () => {
     expect(result.dryRun).toBe(true);
     expect(result.wouldCreate).toEqual({ title: 'Fix auth' });
   });
+
+  it('closeIssue returns simulated success without closing', async () => {
+    const result = await tools.closeIssue.execute(
+      { issueNumber: 42, comment: 'Shipped' },
+      execCtx,
+    );
+    expect(result.success).toBe(true);
+    expect(result.dryRun).toBe(true);
+    expect(result.wouldClose).toEqual({ issueNumber: 42 });
+  });
 });
 
 describe('createDryRunFeatureStateTools', () => {
