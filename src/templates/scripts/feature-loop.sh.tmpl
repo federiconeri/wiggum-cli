@@ -456,6 +456,9 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
     fi
 fi
 
+# Write initial .status so TUI shows iteration info during planning
+echo "0|$MAX_ITERATIONS|$(date +%s)" > "$STATUS_FILE"
+
 # Phase 3: Planning (if no implementation plan exists)
 if [ ! -f "$PLAN_FILE" ]; then
     echo "======================== PLANNING PHASE ========================"
@@ -495,6 +498,16 @@ while true; do
 
     # Check if implementation tasks are done
     PENDING_IMPL=$({ grep "^- \[ \]" "$PLAN_FILE" 2>/dev/null || true; } | { grep -v "E2E:" || true; } | wc -l | tr -d ' ')
+
+    # Fallback: header-based format (#### Task N:)
+    if [ "$PENDING_IMPL" -eq 0 ]; then
+        HEADER_TASKS=$(grep -ciE "^#{1,4} Task [0-9]+" "$PLAN_FILE" 2>/dev/null || echo "0")
+        DONE_CHECKBOXES=$(grep -c "^- \[x\]" "$PLAN_FILE" 2>/dev/null || echo "0")
+        if [ "$HEADER_TASKS" -gt 0 ] && [ "$DONE_CHECKBOXES" -lt "$HEADER_TASKS" ]; then
+            PENDING_IMPL=$((HEADER_TASKS - DONE_CHECKBOXES))
+        fi
+    fi
+
     if [ "$PENDING_IMPL" -eq 0 ]; then
         echo "All implementation tasks completed!"
         break
@@ -509,6 +522,16 @@ while true; do
 
     # Check if any progress was made
     TASKS_AFTER=$({ grep "^- \[ \]" "$PLAN_FILE" 2>/dev/null || true; } | { grep -v "E2E:" || true; } | wc -l | tr -d ' ')
+
+    # Fallback: header-based format
+    if [ "$TASKS_AFTER" -eq 0 ]; then
+        _HEADER_TASKS=$(grep -ciE "^#{1,4} Task [0-9]+" "$PLAN_FILE" 2>/dev/null || echo "0")
+        _DONE_CHECKBOXES=$(grep -c "^- \[x\]" "$PLAN_FILE" 2>/dev/null || echo "0")
+        if [ "$_HEADER_TASKS" -gt 0 ] && [ "$_DONE_CHECKBOXES" -lt "$_HEADER_TASKS" ]; then
+            TASKS_AFTER=$((_HEADER_TASKS - _DONE_CHECKBOXES))
+        fi
+    fi
+
     if [ "$TASKS_AFTER" -ge "$TASKS_BEFORE" ]; then
         CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
         # Capture last few lines of output for error detection
@@ -528,6 +551,21 @@ while true; do
 
     sleep 2
 done
+if [ "$IMPL_SUCCESS" = true ]; then
+    # Guard C: Verify implementation produced actual code changes
+    if [ -f "$BASELINE_FILE" ]; then
+        _IMPL_BASELINE=$(cat "$BASELINE_FILE")
+        _IMPL_DIFF=$(git diff --stat "${_IMPL_BASELINE}..HEAD" -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.py' '*.rb' '*.go' '*.rs' '*.java' '*.swift' '*.kt' 2>/dev/null || echo "")
+        if [ -z "$_IMPL_DIFF" ]; then
+            echo "WARNING: Implementation phase completed but no source files were changed."
+            echo "Expected code changes between ${_IMPL_BASELINE:0:7} and HEAD."
+            # Don't exit — let verification phase catch and possibly fix this
+            # But mark implementation as failed so the monitor shows the truth
+            write_phase_end "implementation" "failed"
+            IMPL_SUCCESS=false
+        fi
+    fi
+fi
 if [ "$IMPL_SUCCESS" = true ]; then
     write_phase_end "implementation" "success"
 fi

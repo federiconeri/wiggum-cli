@@ -318,6 +318,8 @@ export function RunScreen({
   const handledActionIdRef = useRef<string | null>(null);
   const lastLogLineCountRef = useRef<number>(0);
   const lastKnownPhasesRef = useRef<PhaseInfo[] | undefined>(undefined);
+  const lastActivityTimeRef = useRef<number>(Date.now());
+  const lastCommitForEventRef = useRef<string | null>(null);
 
   // Read baseline commit once on mount
   useEffect(() => {
@@ -392,10 +394,32 @@ export function RunScreen({
       lastKnownPhasesRef.current = currentPhases;
     }
 
+    // Emit a commit activity event when HEAD changes
+    if (head && head !== lastCommitForEventRef.current && lastCommitForEventRef.current !== null) {
+      newLogEvents.push({
+        timestamp: Date.now(),
+        message: `New commit: ${head.slice(0, 7)}`,
+        status: 'success',
+      });
+    }
+    lastCommitForEventRef.current = head ?? null;
+
     const MAX_STORED_EVENTS = 100;
     const newEvents = [...newLogEvents, ...phaseEvents];
     if (newEvents.length > 0 && isMountedRef.current) {
+      lastActivityTimeRef.current = Date.now();
       setActivityEvents((prev) => [...prev, ...newEvents].slice(-MAX_STORED_EVENTS));
+    } else if (
+      nextStatus.running &&
+      nextStatus.phase !== 'Idle' &&
+      Date.now() - lastActivityTimeRef.current > 30_000 &&
+      isMountedRef.current
+    ) {
+      // Inject a synthetic "session in progress" event when stale
+      setActivityEvents((prev) => [
+        ...prev,
+        { timestamp: Date.now(), message: `${nextStatus.phase} session in progress...`, status: 'in-progress' as const },
+      ].slice(-MAX_STORED_EVENTS));
     }
 
     // Check for pending action request (loop waiting for user input)

@@ -124,8 +124,14 @@ After review is complete (approved or max iterations reached):
 1. Post a summary comment on the PR with the review outcome
 2. Do NOT merge — the user will review and merge manually
 
+## IMPORTANT: Review scope
+If you discover that no implementation code exists (empty diff, no source files changed),
+do NOT implement the feature yourself. Instead, report "VERDICT: NOT APPROVED —
+no implementation found" so the harness can trigger a new implementation iteration.
+
 ## Rules
 - Do NOT merge the PR — auto mode only reviews, the user merges
+- Do NOT implement missing features — only review and fix minor issues
 - Address ALL review comments before marking as approved
 - If gh CLI fails, check authentication: `gh auth status`
 - Keep review conversation focused and professional

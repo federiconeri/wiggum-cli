@@ -156,8 +156,14 @@ cd {{appDir}} && gh pr merge --squash --delete-branch
 
 Note: Spec status updates are handled in the Spec Verification phase before PR creation.
 
+## IMPORTANT: Review scope
+If you discover that no implementation code exists (empty diff, no source files changed),
+do NOT implement the feature yourself. Instead, report "VERDICT: NOT APPROVED —
+no implementation found" so the harness can trigger a new implementation iteration.
+
 ## Rules
 - Do NOT merge without Claude Code approval
+- Do NOT implement missing features — only review and fix minor issues
 - Address ALL review comments before merging
 - Use squash merge to keep history clean
 - If gh CLI fails, check authentication: `gh auth status`

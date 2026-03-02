@@ -142,6 +142,16 @@ export async function assessFeatureStateImpl(
       const unchecked = content.match(/- \[ \]/g);
       completedTasks = checked?.length ?? 0;
       totalTasks = completedTasks + (unchecked?.length ?? 0);
+
+      // Fallback: if no checkboxes found, count "#### Task N:" headers
+      if (totalTasks === 0) {
+        const headerMatches = content.match(/^#{1,4}\s+Task\s+\d+/gim);
+        if (headerMatches && headerMatches.length > 0) {
+          totalTasks = headerMatches.length;
+          // All header tasks are pending (no checkbox = no completion signal)
+          completedTasks = 0;
+        }
+      }
     } catch {
       // read failure is non-fatal
     }
