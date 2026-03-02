@@ -85,5 +85,34 @@ export function createReportingTools(owner: string, repo: string) {
     },
   });
 
-  return { commentOnIssue, createTechDebtIssue, closeIssue };
+  const checkAllBoxes = tool({
+    description: 'Check all acceptance-criteria checkboxes in a GitHub issue body. Use after verifying all criteria are met.',
+    inputSchema: zodSchema(z.object({
+      issueNumber: z.number().int().describe('Issue number to update'),
+    })),
+    execute: async ({ issueNumber }) => {
+      try {
+        const body = await ghExec([
+          'issue', 'view', String(issueNumber),
+          '--repo', `${owner}/${repo}`,
+          '--json', 'body', '--jq', '.body',
+        ]);
+        const updated = body.replace(/- \[ \]/g, '- [x]');
+        if (updated === body) {
+          return { success: true, changed: false, message: 'No unchecked boxes found' };
+        }
+        await ghExec([
+          'issue', 'edit', String(issueNumber),
+          '--repo', `${owner}/${repo}`,
+          '--body', updated,
+        ]);
+        const checked = (updated.match(/- \[x\]/gi) ?? []).length;
+        return { success: true, changed: true, totalChecked: checked };
+      } catch (err) {
+        return { success: false, error: err instanceof Error ? err.message : String(err) };
+      }
+    },
+  });
+
+  return { commentOnIssue, createTechDebtIssue, closeIssue, checkAllBoxes };
 }

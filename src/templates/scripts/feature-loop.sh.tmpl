@@ -616,18 +616,29 @@ MAX_REVIEW_ATTEMPTS=3
 check_review_approved() {
     local output_file="$1"
 
+    # Strip ANSI escape codes for reliable matching
+    local clean_output
+    clean_output=$(sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' "$output_file" 2>/dev/null || cat "$output_file" 2>/dev/null || echo "")
+
     # Primary: check stdout for explicit verdict line
-    if grep -qi "VERDICT:.*APPROVED" "$output_file" 2>/dev/null; then
+    if echo "$clean_output" | grep -qi "VERDICT:.*APPROVED" 2>/dev/null; then
         # Make sure it's not "NOT APPROVED"
-        if ! grep -qi "VERDICT:.*NOT APPROVED" "$output_file" 2>/dev/null; then
+        if ! echo "$clean_output" | grep -qi "VERDICT:.*NOT APPROVED" 2>/dev/null; then
             return 0
         fi
     fi
 
-    # Fallback: check the latest PR comment for approval signal
+    # Secondary: check if PR was already merged (Claude may merge before verdict is captured)
+    local pr_state
+    pr_state=$(gh pr view "$BRANCH" --json state --jq '.state' 2>/dev/null || echo "")
+    if [ "$pr_state" = "MERGED" ]; then
+        return 0
+    fi
+
+    # Tertiary: check the latest PR comment for approval signal
     local latest_comment
     latest_comment=$(gh pr view "$BRANCH" --json comments --jq '.comments[-1].body' 2>/dev/null || echo "")
-    if echo "$latest_comment" | grep -qi "VERDICT:.*APPROVED\|Verdict:.*APPROVED" 2>/dev/null; then
+    if echo "$latest_comment" | grep -qi "VERDICT:.*APPROVED" 2>/dev/null; then
         if ! echo "$latest_comment" | grep -qi "NOT APPROVED" 2>/dev/null; then
             return 0
         fi

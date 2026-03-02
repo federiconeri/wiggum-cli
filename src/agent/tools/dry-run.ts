@@ -91,7 +91,19 @@ export function createDryRunReportingTools() {
     }),
   });
 
-  return { commentOnIssue, createTechDebtIssue, closeIssue };
+  const checkAllBoxes = tool({
+    description: '[DRY RUN] Simulates checking all acceptance-criteria checkboxes.',
+    inputSchema: zodSchema(z.object({
+      issueNumber: z.number().int().describe('Issue number'),
+    })),
+    execute: async ({ issueNumber }) => ({
+      success: true,
+      dryRun: true,
+      wouldCheck: { issueNumber },
+    }),
+  });
+
+  return { commentOnIssue, createTechDebtIssue, closeIssue, checkAllBoxes };
 }
 
 export function createDryRunFeatureStateTools() {

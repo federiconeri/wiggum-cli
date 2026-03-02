@@ -89,16 +89,26 @@ Review the git diff against main and check:
 
 Run: git diff main
 
-Respond with:
-- APPROVED if everything looks good
-- Or list specific issues with file:line references that need to be fixed
-
-IMPORTANT: After posting any PR review comment, you MUST print your final verdict as the LAST line of your output. Print exactly one of:
-  VERDICT: APPROVED
-  VERDICT: NOT APPROVED
-This line is parsed by the automation — do not omit it."
+Then:
+1. Post your complete review as a comment on the PR using:
+   gh pr comment --body '<your review in markdown>'
+   Format the comment with: a summary, specific issues with file:line refs (if any), and the verdict.
+2. Print your final verdict as the LAST line of stdout. Print exactly one of:
+   VERDICT: APPROVED
+   VERDICT: NOT APPROVED
+   This line is parsed by the automation — do not omit it."
 fi
 ```
+
+After the review completes, check its output:
+- If it contains "VERDICT: APPROVED", echo that line so the automation detects it:
+  ```bash
+  echo "VERDICT: APPROVED"
+  ```
+- If issues were found, echo:
+  ```bash
+  echo "VERDICT: NOT APPROVED"
+  ```
 
 **Handle review feedback:**
 - If Claude outputs "VERDICT: APPROVED" -> Done. The PR is ready for manual merge by the user.
