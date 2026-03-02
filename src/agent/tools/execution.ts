@@ -38,7 +38,7 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
       featureName: FEATURE_NAME_SCHEMA,
       issueNumber: z.number().int().describe('GitHub issue number to use as context'),
       goals: z.string().optional().describe('Feature goals description'),
-      model: z.string().optional().describe('Model override (e.g. gpt-5.2-codex)'),
+      model: z.string().optional().describe('Model override (e.g. gpt-5.3-codex)'),
       provider: z.string().optional().describe('Provider override (anthropic, openai, openrouter)'),
     })),
     execute: async ({ featureName, issueNumber, goals, model, provider }, { abortSignal }) => {

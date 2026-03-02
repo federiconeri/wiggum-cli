@@ -71,7 +71,7 @@ export const AVAILABLE_MODELS: Record<AIProvider, ModelOption[]> = {
   ],
   openai: [
     { value: 'gpt-5.2', label: 'GPT-5.2', hint: 'most capable' },
-    { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', hint: 'best for code' },
+    { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', hint: 'best for code' },
     { value: 'gpt-5.1', label: 'GPT-5.1', hint: 'previous gen' },
     { value: 'gpt-5.1-codex-max', label: 'GPT-5.1 Codex Max', hint: 'previous codex' },
     { value: 'gpt-5-mini', label: 'GPT-5 Mini', hint: 'fastest' },
@@ -228,7 +228,7 @@ const REASONING_MODELS = [
   'o3', 'o3-mini',
   'gpt-5', 'gpt-5.1', 'gpt-5-mini',
   'gpt-5.1-codex', 'gpt-5.1-codex-max',
-  'gpt-5.2', 'gpt-5.2-codex',
+  'gpt-5.2', 'gpt-5.3-codex',
 ];
 
 /**

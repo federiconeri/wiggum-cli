@@ -50,7 +50,7 @@ vi.mock('../ai/providers.js', () => ({
     anthropic: [{ value: 'claude-sonnet-4-6', label: 'Sonnet 4.6', hint: 'recommended' }],
     openai: [
       { value: 'gpt-5.2', label: 'GPT-5.2', hint: 'most capable' },
-      { value: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', hint: 'best for code' },
+      { value: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', hint: 'best for code' },
     ],
   },
   normalizeModelId: vi.fn((_provider: string, modelId: string) => modelId),
