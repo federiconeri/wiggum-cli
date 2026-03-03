@@ -451,6 +451,10 @@ export function RunScreen({
       const tasksTotal = tasksDone + nextTasks.tasksPending + nextTasks.e2ePending;
       const errorTail = exitCode !== 0 ? readLogTail(logPath, ERROR_TAIL_LINES) || undefined : undefined;
 
+      // Use feat/<feature> as the branch name for summary. getGitBranch() returns
+      // "main" after squash-merge + worktree cleanup, which breaks PR/issue detection.
+      const summaryBranch = `feat/${featureName}`;
+
       const basicSummary: RunSummary = {
         feature: featureName,
         iterations: nextStatus.iteration,
@@ -463,7 +467,7 @@ export function RunScreen({
         cacheRead: nextStatus.cacheRead,
         exitCode,
         exitCodeInferred: true,
-        branch: getGitBranch(projectRoot),
+        branch: summaryBranch,
         logPath,
         errorTail,
       };
@@ -681,7 +685,7 @@ export function RunScreen({
               cacheCreate: latestStatus.cacheCreate,
               cacheRead: latestStatus.cacheRead,
               exitCode,
-              branch: getGitBranch(projectRoot),
+              branch: `feat/${featureName}`,
               logPath,
               errorTail,
             };
