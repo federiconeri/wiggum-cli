@@ -22,7 +22,8 @@ export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agen
    - Use readStrategicDoc to read full documents relevant to the current task (architecture, design, implementation plans)
 2. List open issues and cross-reference with memory
    - Consider: PM priority labels (P0 > P1 > P2), dependencies, strategic context
-   - **Housekeeping:** If memory says an issue was already completed (outcome "success" or "skipped") but it's still open, close it immediately with closeIssue before picking new work. Reflect with outcome "skipped" for each. This does NOT count against maxItems.
+   - **Housekeeping — close completed issues:** If memory says an issue was already completed (outcome "success" or "skipped") but it's still open, close it immediately with closeIssue before picking new work. Reflect with outcome "skipped" for each. This does NOT count against maxItems.
+   - **Housekeeping — recover incomplete closures:** If memory says an issue was completed but assessFeatureState shows no merged PR (recommendation is NOT "pr_merged" or "linked_pr_merged"), the issue was closed prematurely. Reopen it with commentOnIssue explaining why, and prioritize it as your next work item. Run the loop with resume: true to complete the PR phase.
 3. For the chosen issue (one NOT already completed):
    a. Read the full issue details
    b. Derive a featureName from the issue title (lowercase, hyphens, no spaces)
@@ -53,9 +54,12 @@ After calling assessFeatureState, follow the recommendation:
 - When recommendation is start_fresh, generate a spec first, then run the loop without resume
 - ALWAYS pass issueNumber to assessFeatureState so it can detect work shipped under a different branch name
 - Derive short, stable feature names (2-4 words, kebab-case) from the issue title — e.g. "config-module" not "config-module-toml-read-write-with-secret-masking"
-4. After the loop completes successfully:
-   - If the loop shipped work (PR merged or already_complete), check off acceptance criteria with checkAllBoxes, then close the issue with closeIssue
-   - Use assessFeatureState again to verify the PR is actually merged if unsure
+4. After the loop completes (successfully or with failure):
+   - Call assessFeatureState to check the actual state — do NOT rely solely on loop log output
+   - Only close the issue if assessFeatureState confirms a PR was merged (recommendation: "pr_merged" or "linked_pr_merged")
+   - When closing: check off acceptance criteria with checkAllBoxes, then close with closeIssue
+   - If the loop produced code but no PR was created/merged, run the loop again with resume: true to trigger the PR phase
+   - If the loop failed and code exists on the branch without a PR, this is incomplete work — do NOT close the issue
 5. Reflect on the outcome:
    - Call reflectOnWork with structured observations
    - Use outcome "skipped" for issues that were already complete (no real work done) — these do NOT count against maxItems
@@ -102,10 +106,13 @@ If spec generation fails: retry once with simplified goals. If it fails again, s
 If a loop fails:
 1. ALWAYS call readLoopLog to get the actual log content
 2. Your issue comment MUST quote or summarize what the log says — do NOT speculate or guess the cause
-3. If the log says "already merged" or "already complete", treat it as success — close the issue and move on
-4. If runLoop returns status "already_complete", the work is done — close the issue with closeIssue and reflect with outcome "skipped"
-5. Reflect on what happened, then move to the next issue
-Never get stuck on a single issue — always make forward progress.`;
+3. Call assessFeatureState to check if a PR was merged despite the loop failure
+4. If assessFeatureState shows "pr_merged" or "linked_pr_merged" → close the issue (the work shipped)
+5. If assessFeatureState shows "resume_pr_phase" → the code exists but no PR was created. Run the loop again with resume: true to create and merge the PR. Do NOT close the issue yet.
+6. If the log says "already complete" but no PR is merged, the work is stranded on a branch — resume the loop to ship it
+7. If runLoop returns status "already_complete", verify with assessFeatureState before closing
+8. Reflect on what happened, then move to the next issue
+Never close an issue without verifying the code is merged to main. Loop log evidence alone is not sufficient.`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AgentOrchestrator = ToolLoopAgent<never, any, any>;
