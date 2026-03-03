@@ -54,7 +54,7 @@ If any check fails, fix before committing.
 
 ## Completion
 When ALL validations pass:
-1. Update @.ralph/specs/$FEATURE-implementation-plan.md - mark task done with commit hash
+1. Update @.ralph/specs/$FEATURE-implementation-plan.md — change the task's `- [ ]` to `- [x]` and append the commit hash (e.g., `- [x] Task description - abc1234`). The harness tracks progress by counting checkboxes, so this step is mandatory.
 2. `git -C {{appDir}} add -A`
 3. `git -C {{appDir}} commit -m "type(scope): description"`
 4. `git -C {{appDir}} push origin feat/$FEATURE`
