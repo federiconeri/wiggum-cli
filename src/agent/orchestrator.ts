@@ -22,8 +22,10 @@ export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agen
    - Use readStrategicDoc to read full documents relevant to the current task (architecture, design, implementation plans)
 2. List open issues and cross-reference with memory
    - Consider: PM priority labels (P0 > P1 > P2), dependencies, strategic context
-   - **Housekeeping — close completed issues:** If memory says an issue was already completed (outcome "success" or "skipped") but it's still open, close it immediately with closeIssue before picking new work. Reflect with outcome "skipped" for each. This does NOT count against maxItems.
-   - **Housekeeping — recover incomplete closures:** If memory says an issue was completed but assessFeatureState shows no merged PR (recommendation is NOT "pr_merged" or "linked_pr_merged"), the issue was closed prematurely. Reopen it with commentOnIssue explaining why, and prioritize it as your next work item. Run the loop with resume: true to complete the PR phase.
+   - **Housekeeping:** If memory says an issue was already completed (outcome "success" or "skipped") but it's still open:
+     1. Call assessFeatureState with the featureName and issueNumber
+     2. If recommendation is "pr_merged" or "linked_pr_merged": close it with closeIssue. Reflect with outcome "skipped". Does NOT count against maxItems.
+     3. If recommendation is anything else (e.g., "resume_implementation", "start_fresh", "resume_pr_phase"): the issue was NOT actually shipped. Do NOT close it. Instead, prioritize it as your next work item and follow the Feature State Decision Tree. This counts against maxItems.
 3. For the chosen issue (one NOT already completed):
    a. Read the full issue details
    b. Derive a featureName from the issue title (lowercase, hyphens, no spaces)
