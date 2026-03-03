@@ -352,7 +352,7 @@ count_pending_tasks() {
 
     # Check if all checkboxes are checked (= all done)
     local checkbox_done
-    checkbox_done=$(grep -c "^- \[x\]" "$plan_file" 2>/dev/null || echo "0")
+    checkbox_done=$(grep -c "^- \[x\]" "$plan_file" 2>/dev/null) || checkbox_done=0
     if [ "$checkbox_done" -gt 0 ]; then
         echo "0"
         return
@@ -360,7 +360,7 @@ count_pending_tasks() {
 
     # Format B: heading-style tasks (#### Task N:)
     local total_heading_tasks
-    total_heading_tasks=$(grep -ciE "^#{1,4}\s+Task\s+[0-9]" "$plan_file" 2>/dev/null || echo "0")
+    total_heading_tasks=$(grep -ciE "^#{1,4}\s+Task\s+[0-9]" "$plan_file" 2>/dev/null) || total_heading_tasks=0
     if [ "$total_heading_tasks" -gt 0 ]; then
         echo "$total_heading_tasks"
         return
@@ -380,7 +380,7 @@ count_source_file_changes() {
     fi
     local count
     count=$(git diff --stat "${baseline}..HEAD" 2>/dev/null \
-      | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s' || echo "0")
+      | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s') || count=0
     echo "$count"
 }
 
