@@ -212,7 +212,8 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
         } else {
           logger.error(`Feature loop exited with code: ${code}`);
           logger.info('Use --resume to continue from where you left off');
-          reject(new Error(`Feature loop exited with code: ${code || 1}`));
+          process.exitCode = code || 1;
+          resolve();
         }
       });
     } catch (error) {

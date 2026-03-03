@@ -580,6 +580,15 @@ while true; do
     # Check if any progress was made
     TASKS_AFTER=$(count_pending_tasks "$PLAN_FILE")
     if [ "$TASKS_AFTER" -ge "$TASKS_BEFORE" ]; then
+        # Before declaring "no progress", check if source files already exist.
+        # If code was implemented in a prior run but plan checkboxes weren't checked,
+        # the loop sees "pending tasks" but Claude correctly does nothing → treat as already complete.
+        _EXISTING_SOURCE=$(count_source_file_changes "$BASELINE_COMMIT")
+        if [ "$_EXISTING_SOURCE" -gt 0 ]; then
+            echo "No plan progress but source files exist ($_EXISTING_SOURCE changed). Treating as already complete."
+            break
+        fi
+
         CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
         # Capture last few lines of output for error detection
         CURRENT_ERROR=$(tail -5 "${CLAUDE_OUTPUT}.raw" 2>/dev/null | head -c 200 || echo "unknown")
