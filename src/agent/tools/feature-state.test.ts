@@ -279,6 +279,20 @@ describe('assessFeatureStateImpl', () => {
     expect(state.recommendation).toBe('pr_merged');
   });
 
+  it('returns resume_implementation when branch has commits but no local spec/plan', async () => {
+    // Simulates checking from main where spec/plan files exist on the feature branch
+    setupDirs();
+    mockGitAndGh({ branchExists: true, commitsAhead: 9 });
+
+    const state = await assessFeatureStateImpl(projectRoot, 'test-feat');
+
+    expect(state.recommendation).toBe('resume_implementation');
+    expect(state.branch.exists).toBe(true);
+    expect(state.branch.commitsAhead).toBe(9);
+    expect(state.spec.exists).toBe(false);
+    expect(state.plan.exists).toBe(false);
+  });
+
   it('handles gh search failure gracefully during linked PR search', async () => {
     setupDirs();
     mockGitAndGh({ branchExists: false, ghFails: true });

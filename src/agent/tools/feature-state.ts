@@ -84,6 +84,13 @@ function computeRecommendation(state: Omit<FeatureState, 'recommendation'>): Rec
     return 'generate_plan';
   }
 
+  // Branch has commits but no spec/plan found locally — the files likely
+  // exist on the feature branch while we're checking from main.
+  // Recommend resume so the loop switches to the branch and picks up the work.
+  if (state.branch.exists && state.branch.commitsAhead > 0) {
+    return 'resume_implementation';
+  }
+
   return 'start_fresh';
 }
 
