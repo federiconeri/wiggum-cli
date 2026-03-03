@@ -335,6 +335,73 @@ poll_action_reply() {
     echo "$default_choice"
 }
 
+# Count pending implementation tasks across multiple plan formats.
+# Format A: - [ ] Task description (checkbox) — primary
+# Format B: #### Task N: Title (heading-based) — fallback
+# Returns 1 when no recognizable format found (safe default: forces implementation).
+count_pending_tasks() {
+    local plan_file="$1"
+
+    # Format A: unchecked checkboxes (exclude E2E tasks)
+    local checkbox_pending
+    checkbox_pending=$({ grep "^- \[ \]" "$plan_file" 2>/dev/null || true; } | { grep -v "E2E:" || true; } | wc -l | tr -d ' ')
+    if [ "$checkbox_pending" -gt 0 ]; then
+        echo "$checkbox_pending"
+        return
+    fi
+
+    # Check if all checkboxes are checked (= all done)
+    local checkbox_done
+    checkbox_done=$(grep -c "^- \[x\]" "$plan_file" 2>/dev/null || echo "0")
+    if [ "$checkbox_done" -gt 0 ]; then
+        echo "0"
+        return
+    fi
+
+    # Format B: heading-style tasks (#### Task N:)
+    local total_heading_tasks
+    total_heading_tasks=$(grep -ciE "^#{1,4}\s+Task\s+[0-9]" "$plan_file" 2>/dev/null || echo "0")
+    if [ "$total_heading_tasks" -gt 0 ]; then
+        echo "$total_heading_tasks"
+        return
+    fi
+
+    # No recognizable format — assume tasks pending (safer than skipping)
+    echo "1"
+}
+
+# Check if any source files were changed since baseline.
+# Returns count of changed source files.
+count_source_file_changes() {
+    local baseline="$1"
+    if [ -z "$baseline" ]; then
+        echo "0"
+        return
+    fi
+    local count
+    count=$(git diff --stat "${baseline}..HEAD" 2>/dev/null \
+      | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s' || echo "0")
+    echo "$count"
+}
+
+# Extract review findings text from a Claude JSON output file.
+# Returns the result text from the last result entry.
+extract_review_findings() {
+    local raw_file="$1"
+    python3 -c "
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    if not isinstance(data, list): data = [data]
+    for entry in reversed(data):
+        if isinstance(entry, dict) and entry.get('type') == 'result':
+            print(entry.get('result', ''))
+            break
+except Exception:
+    pass
+" "$raw_file" 2>/dev/null || echo "No review output available"
+}
+
 # Initialize tokens
 init_tokens
 
@@ -497,17 +564,7 @@ while true; do
     echo "------------------------ Iteration $ITERATION ------------------------"
 
     # Check if implementation tasks are done
-    PENDING_IMPL=$({ grep "^- \[ \]" "$PLAN_FILE" 2>/dev/null || true; } | { grep -v "E2E:" || true; } | wc -l | tr -d ' ')
-
-    # Fallback: header-based format (#### Task N:)
-    if [ "$PENDING_IMPL" -eq 0 ]; then
-        HEADER_TASKS=$(grep -ciE "^#{1,4} Task [0-9]+" "$PLAN_FILE" 2>/dev/null || echo "0")
-        DONE_CHECKBOXES=$(grep -c "^- \[x\]" "$PLAN_FILE" 2>/dev/null || echo "0")
-        if [ "$HEADER_TASKS" -gt 0 ] && [ "$DONE_CHECKBOXES" -lt "$HEADER_TASKS" ]; then
-            PENDING_IMPL=$((HEADER_TASKS - DONE_CHECKBOXES))
-        fi
-    fi
-
+    PENDING_IMPL=$(count_pending_tasks "$PLAN_FILE")
     if [ "$PENDING_IMPL" -eq 0 ]; then
         echo "All implementation tasks completed!"
         break
@@ -521,17 +578,7 @@ while true; do
     accumulate_tokens_from_session "$LAST_SESSION_ID"
 
     # Check if any progress was made
-    TASKS_AFTER=$({ grep "^- \[ \]" "$PLAN_FILE" 2>/dev/null || true; } | { grep -v "E2E:" || true; } | wc -l | tr -d ' ')
-
-    # Fallback: header-based format
-    if [ "$TASKS_AFTER" -eq 0 ]; then
-        _HEADER_TASKS=$(grep -ciE "^#{1,4} Task [0-9]+" "$PLAN_FILE" 2>/dev/null || echo "0")
-        _DONE_CHECKBOXES=$(grep -c "^- \[x\]" "$PLAN_FILE" 2>/dev/null || echo "0")
-        if [ "$_HEADER_TASKS" -gt 0 ] && [ "$_DONE_CHECKBOXES" -lt "$_HEADER_TASKS" ]; then
-            TASKS_AFTER=$((_HEADER_TASKS - _DONE_CHECKBOXES))
-        fi
-    fi
-
+    TASKS_AFTER=$(count_pending_tasks "$PLAN_FILE")
     if [ "$TASKS_AFTER" -ge "$TASKS_BEFORE" ]; then
         CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
         # Capture last few lines of output for error detection
@@ -551,23 +598,17 @@ while true; do
 
     sleep 2
 done
+# Guard C: Verify implementation produced actual code changes
 if [ "$IMPL_SUCCESS" = true ]; then
-    # Guard C: Verify implementation produced actual code changes
-    if [ -f "$BASELINE_FILE" ]; then
-        _IMPL_BASELINE=$(cat "$BASELINE_FILE")
-        _IMPL_DIFF=$(git diff --stat "${_IMPL_BASELINE}..HEAD" -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.py' '*.rb' '*.go' '*.rs' '*.java' '*.swift' '*.kt' 2>/dev/null || echo "")
-        if [ -z "$_IMPL_DIFF" ]; then
-            echo "WARNING: Implementation phase completed but no source files were changed."
-            echo "Expected code changes between ${_IMPL_BASELINE:0:7} and HEAD."
-            # Don't exit — let verification phase catch and possibly fix this
-            # But mark implementation as failed so the monitor shows the truth
-            write_phase_end "implementation" "failed"
-            IMPL_SUCCESS=false
-        fi
+    SOURCE_CHANGES=$(count_source_file_changes "$BASELINE_COMMIT")
+    if [ "$SOURCE_CHANGES" -eq 0 ]; then
+        echo "WARNING: Implementation phase completed but no source files were changed."
+        echo "Expected code changes between ${BASELINE_COMMIT:0:7} and HEAD."
+        IMPL_SUCCESS=false
+        write_phase_end "implementation" "failed"
+    else
+        write_phase_end "implementation" "success"
     fi
-fi
-if [ "$IMPL_SUCCESS" = true ]; then
-    write_phase_end "implementation" "success"
 fi
 
 # Phase 5: E2E Testing
@@ -649,6 +690,14 @@ export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 PR_STATUS="success"
 MAX_REVIEW_ATTEMPTS=3
 
+# Short-circuit: skip review if no source files exist in diff
+_REVIEW_SOURCE_CHANGES=$(count_source_file_changes "$BASELINE_COMMIT")
+if [ "$_REVIEW_SOURCE_CHANGES" -eq 0 ]; then
+    echo "No source files in diff — skipping PR & review phase."
+    PR_STATUS="failed"
+    write_phase_end "pr_review" "skipped"
+else
+
 # Check for review approval in stdout or latest PR comment.
 # Returns 0 (true) if approved, 1 (false) otherwise.
 check_review_approved() {
@@ -712,11 +761,22 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            echo "Fix the issues found in the code review above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
+            REVIEW_FINDINGS=$(extract_review_findings "${CLAUDE_OUTPUT}.raw")
+            cat <<FIXEOF | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+## Code Review Findings
+
+The following issues were found during code review:
+
+${REVIEW_FINDINGS}
+
+## Task
+
+Fix each issue listed above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
 1. Fix each issue referenced in the review
-2. Run tests: npm test
+2. Run tests to verify fixes
 3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push.
+FIXEOF
             extract_session_result "${CLAUDE_OUTPUT}.raw"
             accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
@@ -746,11 +806,22 @@ else
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            echo "Fix the issues found in the code review above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
+            REVIEW_FINDINGS=$(extract_review_findings "${CLAUDE_OUTPUT}.raw")
+            cat <<FIXEOF | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+## Code Review Findings
+
+The following issues were found during code review:
+
+${REVIEW_FINDINGS}
+
+## Task
+
+Fix each issue listed above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
 1. Fix each issue referenced in the review
-2. Run tests: npm test
+2. Run tests to verify fixes
 3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push.
+FIXEOF
             extract_session_result "${CLAUDE_OUTPUT}.raw"
             accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
@@ -760,6 +831,8 @@ Do NOT propose completion options or ask interactive questions. Just fix, test, 
     fi
 fi
 write_phase_end "pr_review" "$PR_STATUS"
+
+fi  # end short-circuit check for source files
 
 # Phase 7.5: Post-completion action request
 echo "======================== ACTION REQUEST PHASE ========================"
@@ -793,8 +866,23 @@ case "$CHOSEN_ACTION" in
         ;;
 esac
 
+# Determine final status from phase outcomes
+FINAL_STATUS="done"
+if [ "$IMPL_SUCCESS" != true ]; then
+    FINAL_STATUS="failed"
+    echo "Loop ending with status 'failed': implementation did not produce source files."
+elif [ "$PR_STATUS" = "failed" ]; then
+    if [ "$(count_source_file_changes "$BASELINE_COMMIT")" -eq 0 ]; then
+        FINAL_STATUS="failed"
+        echo "Loop ending with status 'failed': no source files and review not approved."
+    else
+        FINAL_STATUS="review_failed"
+        echo "Loop ending with status 'review_failed': code exists but review not approved."
+    fi
+fi
+
 # Persist final status for TUI summaries
-if ! echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE"; then
+if ! echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|$FINAL_STATUS" > "$FINAL_STATUS_FILE"; then
     echo "WARNING: Failed to write final status file: $FINAL_STATUS_FILE" >&2
 fi
 

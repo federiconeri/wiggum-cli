@@ -416,6 +416,8 @@ export function RunScreen({
       isMountedRef.current
     ) {
       // Inject a synthetic "session in progress" event when stale
+      // Update lastActivityTimeRef so this doesn't fire every poll cycle
+      lastActivityTimeRef.current = Date.now();
       setActivityEvents((prev) => [
         ...prev,
         { timestamp: Date.now(), message: `${nextStatus.phase} session in progress...`, status: 'in-progress' as const },

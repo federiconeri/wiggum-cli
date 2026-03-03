@@ -98,6 +98,10 @@ Example E2E scenario:
 
 ## Rules
 - Plan only in this phase, do NOT implement
+- You MUST use `- [ ]` checkbox syntax for every task in the plan
+- Do NOT use heading-based task formats (e.g., `#### Task 1:`) for individual tasks
+- The harness parses `- [ ]` lines to track progress — other formats will break automation
+- Use `### Phase N:` headings only for phase grouping, not for individual tasks
 - One task = one commit-sized unit of work (but tasks can be grouped into phases for batch implementation)
 - Every implementation task needs a corresponding test task
 - Use Supabase MCP to check existing schema
