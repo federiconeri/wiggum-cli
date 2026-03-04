@@ -96,16 +96,30 @@ describe('assessFeatureStateImpl', () => {
     expect(state.linkedPr.exists).toBe(false);
   });
 
-  it('returns generate_plan when spec exists but no plan', async () => {
+  it('returns generate_plan when spec exists but no plan and no branch work', async () => {
     setupDirs();
     writeFileSync(join(specsDir, 'test-feat.md'), '# Spec\nSome spec content');
-    mockGitAndGh({ branchExists: true, commitsAhead: 1 });
+    mockGitAndGh({ branchExists: false });
 
     const state = await assessFeatureStateImpl(projectRoot, 'test-feat');
 
     expect(state.recommendation).toBe('generate_plan');
     expect(state.spec.exists).toBe(true);
     expect(state.plan.exists).toBe(false);
+  });
+
+  it('returns resume_implementation over generate_plan when branch has commits', async () => {
+    setupDirs();
+    writeFileSync(join(specsDir, 'test-feat.md'), '# Spec\nSome spec content');
+    mockGitAndGh({ branchExists: true, commitsAhead: 1 });
+
+    const state = await assessFeatureStateImpl(projectRoot, 'test-feat');
+
+    // Branch with commits takes priority — plan may exist on the branch
+    // and generate_plan would reset the branch via git checkout -B
+    expect(state.recommendation).toBe('resume_implementation');
+    expect(state.spec.exists).toBe(true);
+    expect(state.branch.exists).toBe(true);
   });
 
   it('returns resume_implementation when plan has pending tasks', async () => {

@@ -81,16 +81,18 @@ function computeRecommendation(state: Omit<FeatureState, 'recommendation'>): Rec
     return 'resume_implementation';
   }
 
-  // Spec exists but no plan → generate plan (fresh loop)
-  if (state.spec.exists) {
-    return 'generate_plan';
-  }
-
-  // Branch has commits but no spec/plan found locally — the files likely
-  // exist on the feature branch while we're checking from main.
+  // Branch has commits but no plan found locally — the plan likely
+  // exists on the feature branch while we're checking from main.
   // Recommend resume so the loop switches to the branch and picks up the work.
+  // This MUST come before the generate_plan check to prevent branch reset
+  // via `git checkout -B` which would destroy existing work.
   if (state.branch.exists && state.branch.commitsAhead > 0) {
     return 'resume_implementation';
+  }
+
+  // Spec exists but no plan → generate plan (fresh loop, no branch work to lose)
+  if (state.spec.exists) {
+    return 'generate_plan';
   }
 
   return 'start_fresh';
