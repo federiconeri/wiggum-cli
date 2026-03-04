@@ -87,7 +87,7 @@ export interface PhaseInfo {
  * Phase ID to human-readable label mapping.
  * Matches the phase IDs written by feature-loop.sh.
  */
-const PHASE_LABELS: Record<string, string> = {
+export const PHASE_LABELS: Record<string, string> = {
   planning: 'Planning',
   implementation: 'Implementation',
   e2e_testing: 'E2E Testing',
@@ -223,8 +223,13 @@ export function readLoopStatus(feature: string): LoopStatus {
     try {
       const content = readFileSync(fileToRead, 'utf-8').trim();
       const parts = content.split('|');
-      iteration = parseInt(parts[0] || '0', 10) || 0;
-      maxIterations = parseInt(parts[1] || '0', 10) || 0;
+      // Require at least 2 fields (iteration|maxIterations); skip partial writes
+      if (parts.length >= 2) {
+        iteration = parseInt(parts[0] || '0', 10) || 0;
+        maxIterations = parseInt(parts[1] || '0', 10) || 0;
+      } else {
+        logger.debug(`Status file has fewer than 2 fields, using defaults: ${content}`);
+      }
     } catch (err) {
       logger.debug(`Failed to parse status file: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -239,13 +244,18 @@ export function readLoopStatus(feature: string): LoopStatus {
     try {
       const content = readFileSync(tokensFile, 'utf-8').trim();
       const parts = content.split('|');
-      tokensInput = parseInt(parts[0] || '0', 10) || 0;
-      tokensOutput = parseInt(parts[1] || '0', 10) || 0;
-      cacheCreate = parseInt(parts[2] || '0', 10) || 0;
-      cacheRead = parseInt(parts[3] || '0', 10) || 0;
-      if (parts[4]) {
-        const epoch = parseInt(parts[4], 10);
-        if (epoch > 0) tokensUpdatedAt = epoch * 1000; // convert to ms
+      // Require at least 2 fields (input|output); cache fields are optional (legacy format)
+      if (parts.length >= 2) {
+        tokensInput = parseInt(parts[0] || '0', 10) || 0;
+        tokensOutput = parseInt(parts[1] || '0', 10) || 0;
+        cacheCreate = parts.length >= 3 ? (parseInt(parts[2] || '0', 10) || 0) : 0;
+        cacheRead = parts.length >= 4 ? (parseInt(parts[3] || '0', 10) || 0) : 0;
+        if (parts[4]) {
+          const epoch = parseInt(parts[4], 10);
+          if (epoch > 0) tokensUpdatedAt = epoch * 1000; // convert to ms
+        }
+      } else {
+        logger.debug(`Tokens file has fewer than 2 fields, using defaults: ${content}`);
       }
     } catch (err) {
       logger.debug(`Failed to parse tokens file: ${err instanceof Error ? err.message : String(err)}`);
@@ -620,4 +630,81 @@ export function parsePhaseChanges(
   }
 
   return { events, currentPhases };
+}
+
+/**
+ * Parse phase information from the phases file written by feature-loop.sh.
+ *
+ * Format: phase_id|status|start_timestamp|end_timestamp
+ * Accepts both 3-field lines (started: phase_id|started|timestamp) and
+ * 4-field lines (completed: phase_id|status|start_ts|end_ts).
+ *
+ * The parser handles duplicate phase entries defensively (last status wins,
+ * durations aggregate), though feature-loop.sh normally writes one final
+ * line per phase.
+ *
+ * Used by build-run-summary.ts for completion summaries.
+ */
+export function parsePhases(phasesFilePath: string): PhaseInfo[] {
+  if (!existsSync(phasesFilePath)) {
+    return [];
+  }
+
+  try {
+    const content = readFileSync(phasesFilePath, 'utf-8').trim();
+    if (!content) {
+      return [];
+    }
+
+    const lines = content.split('\n');
+    const VALID_STATUSES = new Set(['success', 'skipped', 'failed', 'started']);
+    const phaseMap = new Map<string, PhaseInfo>();
+
+    for (const line of lines) {
+      const parts = line.split('|');
+      if (parts.length < 2) continue;
+
+      const [id, status] = parts;
+      if (!id || !VALID_STATUSES.has(status)) {
+        logger.warn(`Unknown phase status "${status}" for phase "${id}", treating as failed`);
+        // Still process with 'failed' status
+      }
+
+      const validatedStatus: PhaseInfo['status'] = VALID_STATUSES.has(status)
+        ? (status as PhaseInfo['status'])
+        : 'failed';
+
+      // Parse timestamps (may be absent for 3-field 'started' lines)
+      const startTime = parts.length >= 3 ? (parseInt(parts[2], 10) || 0) : 0;
+      const endTime = parts.length >= 4 ? (parseInt(parts[3], 10) || 0) : 0;
+
+      // Calculate duration (end - start) in milliseconds
+      const durationMs = endTime > 0 && startTime > 0 ? (endTime - startTime) * 1000 : undefined;
+
+      // Get or create phase entry
+      let phase = phaseMap.get(id);
+      if (!phase) {
+        phase = {
+          id,
+          label: PHASE_LABELS[id] || id,
+          status: validatedStatus,
+          durationMs: 0,
+        };
+        phaseMap.set(id, phase);
+      }
+
+      // Update status (last status wins)
+      phase.status = validatedStatus;
+
+      // Aggregate duration
+      if (durationMs !== undefined) {
+        phase.durationMs = (phase.durationMs || 0) + durationMs;
+      }
+    }
+
+    return Array.from(phaseMap.values());
+  } catch (err) {
+    logger.warn(`Failed to parse phases file: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
 }

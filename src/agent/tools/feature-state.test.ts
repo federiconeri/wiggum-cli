@@ -13,6 +13,13 @@ vi.mock('node:child_process', () => {
   return { execFile };
 });
 
+vi.mock('../../utils/config.js', () => ({
+  loadConfigWithDefaults: vi.fn().mockResolvedValue({
+    paths: { root: '.ralph', specs: '.ralph/specs', scripts: '.ralph/scripts', prompts: '.ralph/prompts' },
+    loop: { maxIterations: 10, maxE2eAttempts: 5 },
+  }),
+}));
+
 import { assessFeatureStateImpl, createFeatureStateTools } from './feature-state.js';
 
 describe('assessFeatureStateImpl', () => {

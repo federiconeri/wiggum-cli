@@ -474,7 +474,7 @@ export function RunScreen({
 
       let enhancedSummary: RunSummary;
       try {
-        enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+        enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName, baselineCommit);
       } catch (err) {
         logger.error(`Failed to build enhanced summary for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
         enhancedSummary = basicSummary;
@@ -486,7 +486,7 @@ export function RunScreen({
         logger.error(`Failed to persist summary file for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
-  }, [featureName, projectRoot, monitorOnly]);
+  }, [featureName, projectRoot, monitorOnly, baselineCommit]);
 
   // Keep a stable ref to the latest refreshStatus so the spawn effect
   // can schedule polls without re-running when refreshStatus changes.
@@ -658,6 +658,10 @@ export function RunScreen({
             if (!logFdClosed) { closeSync(logFd); logFdClosed = true; }
             if (!isMountedRef.current) return;
 
+            // Wait for bash to flush state files (.phases, .tokens, .final)
+            await new Promise((r) => setTimeout(r, 200));
+            if (!isMountedRef.current) return;
+
             let latestStatus: LoopStatus;
             let latestTasks: TaskCounts;
             try {
@@ -693,7 +697,7 @@ export function RunScreen({
             // Build enhanced summary with phases, git stats, PR/issue metadata
             let enhancedSummary: RunSummary;
             try {
-              enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+              enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName, baselineCommit);
             } catch (err) {
               logger.error(`Failed to build enhanced summary for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
               enhancedSummary = basicSummary;

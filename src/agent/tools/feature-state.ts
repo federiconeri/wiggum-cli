@@ -1,10 +1,12 @@
 import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
 import { execFile } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { FEATURE_NAME_SCHEMA } from './schemas.js';
+import { loadConfigWithDefaults } from '../../utils/config.js';
+import { findImplementationPlan, parseImplementationPlan } from '../../tui/utils/loop-status.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -132,39 +134,36 @@ export async function assessFeatureStateImpl(
     // branch doesn't exist
   }
 
-  // 2. Check spec
-  const specPath = join(projectRoot, '.ralph', 'specs', `${featureName}.md`);
+  // 2. Load config for correct paths
+  let specsDir = '.ralph/specs';
+  try {
+    const config = await loadConfigWithDefaults(projectRoot);
+    specsDir = config.paths.specs;
+  } catch {
+    // Config load failure is non-fatal — use default paths
+  }
+
+  // 3. Check spec
+  const specPath = join(projectRoot, specsDir, `${featureName}.md`);
   const specExists = existsSync(specPath);
 
-  // 3. Check implementation plan
-  const planPath = join(projectRoot, '.ralph', 'specs', `${featureName}-implementation-plan.md`);
-  const planExists = existsSync(planPath);
+  // 4. Check implementation plan using shared utility (handles worktrees too)
+  const planPath = findImplementationPlan(projectRoot, specsDir, featureName);
+  const planExists = planPath !== null;
   let totalTasks = 0;
   let completedTasks = 0;
 
   if (planExists) {
     try {
-      const content = readFileSync(planPath, 'utf-8');
-      const checked = content.match(/- \[x\]/gi);
-      const unchecked = content.match(/- \[ \]/g);
-      completedTasks = checked?.length ?? 0;
-      totalTasks = completedTasks + (unchecked?.length ?? 0);
-
-      // Fallback: if no checkboxes found, count "#### Task N:" headers
-      if (totalTasks === 0) {
-        const headerMatches = content.match(/^#{1,4}\s+Task\s+\d+/gim);
-        if (headerMatches && headerMatches.length > 0) {
-          totalTasks = headerMatches.length;
-          // All header tasks are pending (no checkbox = no completion signal)
-          completedTasks = 0;
-        }
-      }
+      const taskCounts = await parseImplementationPlan(projectRoot, featureName, specsDir);
+      completedTasks = taskCounts.tasksDone + taskCounts.e2eDone;
+      totalTasks = completedTasks + taskCounts.tasksPending + taskCounts.e2ePending;
     } catch {
-      // read failure is non-fatal
+      // parse failure is non-fatal
     }
   }
 
-  // 4. Check PR via gh CLI
+  // 5. Check PR via gh CLI
   let prExists = false;
   let prState: 'OPEN' | 'MERGED' | 'CLOSED' | undefined;
   let prNumber: number | undefined;
@@ -190,7 +189,7 @@ export async function assessFeatureStateImpl(
     // gh failure is non-fatal — tool works without GitHub CLI
   }
 
-  // 5. Linked PR search (only when issueNumber provided and no branch-name PR found)
+  // 6. Linked PR search (only when issueNumber provided and no branch-name PR found)
   let linkedPrExists = false;
   let linkedPrState: 'OPEN' | 'MERGED' | 'CLOSED' | undefined;
   let linkedPrNumber: number | undefined;
@@ -220,7 +219,7 @@ export async function assessFeatureStateImpl(
     }
   }
 
-  // 6. Check loop status files
+  // 7. Check loop status files
   const prefix = join('/tmp', `ralph-loop-${featureName}`);
   const hasStatusFiles = existsSync(`${prefix}.final`) || existsSync(`${prefix}.phases`) || existsSync(`${prefix}.log`);
 
@@ -228,7 +227,7 @@ export async function assessFeatureStateImpl(
     featureName,
     branch: { exists: branchExists, commitsAhead },
     spec: { exists: specExists, path: specExists ? specPath : undefined },
-    plan: { exists: planExists, path: planExists ? planPath : undefined, totalTasks, completedTasks, completionPercent: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0 },
+    plan: { exists: planExists, path: planPath ?? undefined, totalTasks, completedTasks, completionPercent: totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0 },
     pr: { exists: prExists, state: prState, number: prNumber, url: prUrl },
     linkedPr: { exists: linkedPrExists, state: linkedPrState, number: linkedPrNumber, url: linkedPrUrl, headRefName: linkedPrHeadRefName },
     loopStatus: { hasStatusFiles },
