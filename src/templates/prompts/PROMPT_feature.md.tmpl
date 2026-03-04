@@ -96,8 +96,17 @@ Example E2E scenario:
 - [x] E2E: Scenario name - PASSED
 ```
 
+## CRITICAL CONSTRAINT — PLANNING ONLY
+**You are in the PLANNING phase. Your ONLY job is to produce an implementation plan.**
+- Do NOT write any source code, test code, or configuration files
+- Do NOT create, modify, or touch any files outside `.ralph/specs/`
+- Do NOT run build, test, or lint commands
+- Do NOT make git commits
+- If you feel the urge to "just implement a small piece", STOP — that is a phase violation
+- The implementation phase runs AFTER this session ends, in a separate session
+- Violation of this constraint wastes tokens and breaks the harness automation
+
 ## Rules
-- Plan only in this phase, do NOT implement
 - You MUST use `- [ ]` checkbox syntax for every task in the plan
 - Do NOT use heading-based task formats (e.g., `#### Task 1:`) for individual tasks
 - The harness parses `- [ ]` lines to track progress — other formats will break automation
