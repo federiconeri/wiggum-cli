@@ -609,6 +609,13 @@ while true; do
         # If code was implemented in a prior run but plan checkboxes weren't checked,
         # the loop sees "pending tasks" but Claude correctly does nothing → treat as already complete.
         _EXISTING_SOURCE=$(count_source_file_changes "$BASELINE_COMMIT")
+        # Also check against default branch for work done in prior runs (resume mode).
+        # When baseline == HEAD (no new commits this run), the above returns 0 even
+        # though the branch has real implementation work from a previous run.
+        if [ "$_EXISTING_SOURCE" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
+            _EXISTING_SOURCE=$(git diff --stat "${DEFAULT_BRANCH}..HEAD" 2>/dev/null \
+                | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s') || _EXISTING_SOURCE=0
+        fi
         if [ "$_EXISTING_SOURCE" -gt 0 ]; then
             echo "No plan progress but source files exist ($_EXISTING_SOURCE changed). Treating as already complete."
             break
