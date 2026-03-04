@@ -5,6 +5,7 @@ import { existsSync, readFileSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import { FEATURE_NAME_SCHEMA } from './schemas.js';
 import { runPreflightChecks } from './preflight.js';
+import { loadConfigWithDefaults } from '../../utils/config.js';
 
 const SPEC_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 const LOOP_TIMEOUT_MS = 60 * 60 * 1000; // 60 minutes
@@ -119,7 +120,12 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
       if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath };
 
       // Spec existence check — catch "forgot to call generateSpec" before spawning
-      const specPath = join(projectRoot, '.ralph', 'specs', `${featureName}.md`);
+      let specsDir = '.ralph/specs';
+      try {
+        const config = await loadConfigWithDefaults(projectRoot);
+        specsDir = config.paths.specs;
+      } catch { /* non-fatal, use default */ }
+      const specPath = join(projectRoot, specsDir, `${featureName}.md`);
       if (!existsSync(specPath)) {
         return {
           status: 'spec_missing',
