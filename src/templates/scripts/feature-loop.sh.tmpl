@@ -487,14 +487,8 @@ echo "Max iterations: $MAX_ITERATIONS"
 echo "Max E2E attempts: $MAX_E2E_ATTEMPTS"
 echo "=========================================="
 
-# Phase 1: Validate spec exists
-if [ ! -f "$SPEC_FILE" ]; then
-    echo "ERROR: Spec file not found: $SPEC_FILE"
-    echo "Create the spec first: ralph new $FEATURE"
-    exit 1
-fi
-
-# Phase 2: Create branch if not exists
+# Phase 1: Create/switch to branch before validating files
+# (spec and plan may only exist on the feature branch when resuming)
 git worktree prune 2>/dev/null || true
 CURRENT_BRANCH=$(git branch --show-current)
 if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
@@ -512,6 +506,13 @@ if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
     fi
 else
     echo "Already on branch: $BRANCH"
+fi
+
+# Phase 2: Validate spec exists (after branch checkout so resume finds branch-only files)
+if [ ! -f "$SPEC_FILE" ]; then
+    echo "ERROR: Spec file not found: $SPEC_FILE"
+    echo "Create the spec first: ralph new $FEATURE"
+    exit 1
 fi
 
 # Guard A: Already-complete detection
