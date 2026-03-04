@@ -13,6 +13,7 @@ import type {
   PrSummary,
   IssueSummary,
 } from '../screens/RunScreen.js';
+import { execFileSync } from 'node:child_process';
 import { getCurrentCommitHash, getDiffStats, getCommitList } from './git-summary.js';
 import { getPrForBranch, getLinkedIssue, type PrInfo } from './pr-summary.js';
 
@@ -245,8 +246,8 @@ export function buildEnhancedRunSummary(
           created: true,
         };
 
-        // Try to get linked issue, passing prInfo to avoid redundant gh call
-        const issueInfo = getLinkedIssue(projectRoot, basicSummary.branch, prInfo);
+        // Try to get linked issue, passing prInfo and feature name for fallback detection
+        const issueInfo = getLinkedIssue(projectRoot, basicSummary.branch, prInfo, feature);
         if (issueInfo) {
           issue = {
             number: issueInfo.number,
@@ -257,6 +258,35 @@ export function buildEnhancedRunSummary(
           };
         } else {
           issue = { available: true, linked: false };
+        }
+        // Enrich commits from PR when squash-merge detected (1 local commit + merged PR)
+        if (
+          prInfo.state === 'MERGED' &&
+          commits.available &&
+          commits.commitList &&
+          commits.commitList.length <= 1
+        ) {
+          try {
+            const prCommitsOutput = execFileSync(
+              'gh',
+              ['pr', 'view', String(prInfo.number), '--json', 'commits'],
+              { cwd: projectRoot, encoding: 'utf-8', timeout: 10_000 },
+            ).trim();
+            const prCommitsData = JSON.parse(prCommitsOutput);
+            const prCommits = prCommitsData.commits;
+            if (Array.isArray(prCommits) && prCommits.length > 1) {
+              commits = {
+                ...commits,
+                commitList: prCommits.map((c: { oid: string; messageHeadline: string }) => ({
+                  hash: c.oid?.substring(0, 7) ?? '',
+                  title: c.messageHeadline ?? '',
+                })),
+                mergeType: 'squash',
+              };
+            }
+          } catch (err) {
+            logger.debug(`Failed to fetch PR commits: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
       } else {
         pr = { available: true, created: false };

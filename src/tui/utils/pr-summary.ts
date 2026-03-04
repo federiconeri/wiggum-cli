@@ -3,6 +3,8 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { logger } from '../../utils/logger.js';
 
 export interface PrInfo {
@@ -61,18 +63,61 @@ export function getPrForBranch(
 }
 
 /**
+ * Extract issue number from PR body closing keywords or fallback strategies.
+ */
+function findIssueNumber(body: string, featureName?: string, projectRoot?: string): number | null {
+  // Strategy 1: Closing keywords in PR body (Closes/Fixes/Resolves #N)
+  const issueMatch = body.match(/(?:closes|fixes|resolves)\s+#(\d+)/i);
+  if (issueMatch) {
+    return parseInt(issueMatch[1], 10);
+  }
+
+  // Strategy 2: Bare "#N" references in the body (e.g., "Closes #7" without keyword before it)
+  // Look for "# N" patterns that are likely issue references (not markdown headers)
+  const hashRefMatch = body.match(/(?:^|\s)#(\d+)\b/m);
+  if (hashRefMatch) {
+    return parseInt(hashRefMatch[1], 10);
+  }
+
+  // Strategy 3: Read spec file for issue reference
+  if (featureName && projectRoot) {
+    try {
+      const specPath = join(projectRoot, '.ralph', 'specs', `${featureName}.md`);
+      if (existsSync(specPath)) {
+        const specContent = readFileSync(specPath, 'utf-8');
+        // Look for "Issue: #N", "Source Issue: #N", "GitHub Issue: #N", or issue URLs
+        const specIssueMatch = specContent.match(
+          /(?:issue|source|github)[:\s]*#(\d+)/i
+        ) || specContent.match(
+          /github\.com\/[^/]+\/[^/]+\/issues\/(\d+)/i
+        );
+        if (specIssueMatch) {
+          return parseInt(specIssueMatch[1], 10);
+        }
+      }
+    } catch {
+      // spec read failure is non-fatal
+    }
+  }
+
+  return null;
+}
+
+/**
  * Get linked issue for a branch by parsing the PR body for closing keywords
- * (Closes/Fixes/Resolves #N).
+ * (Closes/Fixes/Resolves #N), with fallbacks for spec file and feature name search.
  *
  * @param projectRoot - Root directory of the git repository
  * @param branchName - Branch name to look up
  * @param prInfo - Optional pre-fetched PR info to avoid redundant gh call
+ * @param featureName - Optional feature name for fallback issue detection
  * @returns Issue info object, or null if not found or gh not available
  */
 export function getLinkedIssue(
   projectRoot: string,
   branchName: string,
-  prInfo?: PrInfo | null
+  prInfo?: PrInfo | null,
+  featureName?: string,
 ): IssueInfo | null {
   try {
     // Use provided PR info or fetch it
@@ -95,13 +140,10 @@ export function getLinkedIssue(
     const prData = JSON.parse(prBody);
     const body = prData.body || '';
 
-    // Look for issue references in PR body (e.g., "Closes #123", "Fixes #456")
-    const issueMatch = body.match(/(?:closes|fixes|resolves)\s+#(\d+)/i);
-    if (!issueMatch) {
+    const issueNumber = findIssueNumber(body, featureName, projectRoot);
+    if (!issueNumber) {
       return null;
     }
-
-    const issueNumber = parseInt(issueMatch[1], 10);
 
     // Fetch the issue details
     const issueOutput = execFileSync(
