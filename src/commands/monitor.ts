@@ -8,7 +8,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { logger } from '../utils/logger.js';
 import { loadConfigWithDefaults, hasConfig } from '../utils/config.js';
-import { findImplementationPlan } from '../tui/utils/loop-status.js';
+import { findImplementationPlan, readCurrentPhase } from '../tui/utils/loop-status.js';
 import pc from 'picocolors';
 
 export interface MonitorOptions {
@@ -136,9 +136,13 @@ function readStatus(feature: string): LoopStatus {
     }
   }
 
+  // Prefer .phases file over pgrep-based detection (same fix as loop-status.ts)
+  const phaseFromFile = readCurrentPhase(feature);
+  const phase = phaseFromFile ?? detectPhase(feature);
+
   return {
     running: isProcessRunning(`feature-loop.sh.*${feature}`),
-    phase: detectPhase(feature),
+    phase,
     iteration,
     maxIterations,
     tokensInput,

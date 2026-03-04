@@ -253,13 +253,13 @@ export function readLoopStatus(feature: string): LoopStatus {
   }
 
   const running = isProcessRunning(`feature-loop.sh.*${feature}`);
-  let phase = detectPhase(feature);
 
-  // Use .phases file as fallback when pgrep-based detection is too vague
-  if (phase === 'Idle' || phase === 'Running') {
-    const phaseFromFile = readCurrentPhase(feature);
-    if (phaseFromFile) phase = phaseFromFile;
-  }
+  // Prefer .phases file (written by feature-loop.sh on transitions) over process
+  // detection. pgrep-based detection can return stale results when old Claude
+  // sessions linger, causing the phase to appear stuck (e.g., "Planning" during
+  // Verification). The .phases file is the authoritative source of phase transitions.
+  const phaseFromFile = readCurrentPhase(feature);
+  let phase = phaseFromFile ?? detectPhase(feature);
 
   return {
     running,

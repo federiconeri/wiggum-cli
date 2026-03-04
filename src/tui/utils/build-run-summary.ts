@@ -249,10 +249,17 @@ export function buildEnhancedRunSummary(
         // Try to get linked issue, passing prInfo and feature name for fallback detection
         const issueInfo = getLinkedIssue(projectRoot, basicSummary.branch, prInfo, feature);
         if (issueInfo) {
+          // When PR is merged with "Closes #N", GitHub auto-closes the issue.
+          // The summary may be built before GitHub processes the webhook, so
+          // infer closure from PR state to avoid showing stale "OPEN" status.
+          const inferredState =
+            prInfo.state === 'MERGED' && issueInfo.state === 'OPEN'
+              ? 'CLOSED'
+              : issueInfo.state;
           issue = {
             number: issueInfo.number,
             url: issueInfo.url,
-            status: issueInfo.state,
+            status: inferredState,
             available: true,
             linked: true,
           };
