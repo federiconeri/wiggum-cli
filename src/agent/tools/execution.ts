@@ -119,19 +119,24 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
       const logPath = join('/tmp', `ralph-loop-${featureName}.log`);
       if (abortSignal?.aborted) return { status: 'aborted', error: 'Aborted', logPath };
 
-      // Spec existence check — catch "forgot to call generateSpec" before spawning
-      let specsDir = '.ralph/specs';
-      try {
-        const config = await loadConfigWithDefaults(projectRoot);
-        specsDir = config.paths.specs;
-      } catch { /* non-fatal, use default */ }
-      const specPath = join(projectRoot, specsDir, `${featureName}.md`);
-      if (!existsSync(specPath)) {
-        return {
-          status: 'spec_missing',
-          error: `Spec file not found: ${specPath}. Call generateSpec first.`,
-          logPath,
-        };
+      // Spec existence check — catch "forgot to call generateSpec" before spawning.
+      // Skip when resuming: the spec lives on the feature branch and the shell
+      // script validates it after checkout. Checking here would fail because
+      // the agent runs on main where the spec doesn't exist yet.
+      if (!resume) {
+        let specsDir = '.ralph/specs';
+        try {
+          const config = await loadConfigWithDefaults(projectRoot);
+          specsDir = config.paths.specs;
+        } catch { /* non-fatal, use default */ }
+        const specPath = join(projectRoot, specsDir, `${featureName}.md`);
+        if (!existsSync(specPath)) {
+          return {
+            status: 'spec_missing',
+            error: `Spec file not found: ${specPath}. Call generateSpec first.`,
+            logPath,
+          };
+        }
       }
 
       // Pre-flight checks
