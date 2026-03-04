@@ -642,6 +642,11 @@ done
 # Guard C: Verify implementation produced actual code changes
 if [ "$IMPL_SUCCESS" = true ]; then
     SOURCE_CHANGES=$(count_source_file_changes "$BASELINE_COMMIT")
+    # Also check against default branch for work done in prior runs (resume mode)
+    if [ "$SOURCE_CHANGES" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
+        SOURCE_CHANGES=$(git diff --stat "${DEFAULT_BRANCH}..HEAD" 2>/dev/null \
+            | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s') || SOURCE_CHANGES=0
+    fi
     if [ "$SOURCE_CHANGES" -eq 0 ]; then
         echo "WARNING: Implementation phase completed but no source files were changed."
         echo "Expected code changes between ${BASELINE_COMMIT:0:7} and HEAD."
@@ -733,6 +738,11 @@ MAX_REVIEW_ATTEMPTS=3
 
 # Short-circuit: skip review if no source files exist in diff
 _REVIEW_SOURCE_CHANGES=$(count_source_file_changes "$BASELINE_COMMIT")
+# Also check against default branch for work done in prior runs (resume mode)
+if [ "$_REVIEW_SOURCE_CHANGES" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
+    _REVIEW_SOURCE_CHANGES=$(git diff --stat "${DEFAULT_BRANCH}..HEAD" 2>/dev/null \
+        | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s') || _REVIEW_SOURCE_CHANGES=0
+fi
 if [ "$_REVIEW_SOURCE_CHANGES" -eq 0 ]; then
     echo "No source files in diff — skipping PR & review phase."
     PR_STATUS="failed"
