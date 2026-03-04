@@ -36,7 +36,8 @@ If any validation fails, fix the issue before proceeding.
 Before committing, review your changes against @.ralph/guides/SECURITY.md:
 1. **Quick scan**: Input validation, injection prevention, auth checks, data exposure
 2. **Run**: `cd {{appDir}} && {{packageManager}} audit` (check for vulnerable dependencies)
-3. **Check**: `mcp__supabase__get_advisors` with type "security" (RLS policies)
+{{#if hasSupabase}}3. **Check**: `mcp__supabase__get_advisors` with type "security" (RLS policies)
+{{/if}}
 4. **Red team**: Can auth be bypassed? Can other users' data be accessed?
 
 Flag any security issues in the implementation plan and fix before committing.
@@ -74,5 +75,6 @@ Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
 - Tests are mandatory - no task is complete without tests
 - Search codebase before assuming something doesn't exist
 - If blocked on a task, document in implementation plan and move to the next task
-- Use Supabase MCP for database operations
-- Use PostHog MCP for analytics queries
+{{#if hasSupabase}}- Use Supabase MCP for database operations
+{{/if}}{{#if hasPosthog}}- Use PostHog MCP for analytics queries
+{{/if}}

@@ -298,8 +298,13 @@ describe('buildEnhancedRunSummary', () => {
     it('should handle parse errors gracefully', () => {
       const result = buildEnhancedRunSummary(basicSummary, projectRoot, feature);
 
-      // Should not crash, just return empty phases
-      expect(result.phases).toEqual([]);
+      // Should not crash; 2-field lines are now accepted (unknown status → failed)
+      // "invalid|data" has unknown status "data" → coerced to "failed"
+      // "malformed" has <2 fields → skipped
+      expect(result.phases).toHaveLength(1);
+      expect(result.phases![0]).toEqual(
+        expect.objectContaining({ id: 'invalid', status: 'failed' }),
+      );
       expect(result.totalDurationMs).toBeUndefined();
     });
   });

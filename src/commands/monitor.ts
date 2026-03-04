@@ -3,12 +3,19 @@
  * Display real-time status of a feature loop
  */
 
-import { spawn, execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { logger } from '../utils/logger.js';
-import { loadConfigWithDefaults, hasConfig } from '../utils/config.js';
-import { findImplementationPlan, readCurrentPhase } from '../tui/utils/loop-status.js';
+import { loadConfigWithDefaults } from '../utils/config.js';
+import {
+  readLoopStatus,
+  parseImplementationPlan,
+  getGitBranch,
+  formatNumber,
+  type LoopStatus,
+  type TaskCounts,
+} from '../tui/utils/loop-status.js';
 import pc from 'picocolors';
 
 export interface MonitorOptions {
@@ -18,24 +25,6 @@ export interface MonitorOptions {
   python?: boolean;
   /** Refresh interval in seconds */
   interval?: number;
-}
-
-interface LoopStatus {
-  running: boolean;
-  phase: string;
-  iteration: number;
-  maxIterations: number;
-  tokensInput: number;
-  tokensOutput: number;
-  cacheCreate: number;
-  cacheRead: number;
-  tokensUpdatedAt?: number;
-  tasksDone: number;
-  tasksPending: number;
-  e2eDone: number;
-  e2ePending: number;
-  branch: string;
-  elapsed: string;
 }
 
 /**
@@ -64,207 +53,6 @@ function findMonitorScript(projectRoot: string): string | null {
 }
 
 /**
- * Check if a process matching pattern is running
- * Uses pgrep with -f flag for full command line matching
- */
-function isProcessRunning(pattern: string): boolean {
-  try {
-    // Use execFileSync for safer execution
-    const result = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf-8' });
-    return result.trim().length > 0;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Detect current phase of the loop
- */
-function detectPhase(feature: string): string {
-  if (isProcessRunning('PROMPT_feature.md')) return 'Planning';
-  if (isProcessRunning('PROMPT_e2e.md')) return 'E2E Testing';
-  if (isProcessRunning('PROMPT_verify.md')) return 'Verification';
-  if (isProcessRunning('PROMPT_review_manual.md')) return 'PR Review';
-  if (isProcessRunning('PROMPT_review_auto.md')) return 'PR Review';
-  if (isProcessRunning('PROMPT.md')) return 'Implementation';
-  if (isProcessRunning(`feature-loop.sh.*${feature}`)) return 'Running';
-  return 'Idle';
-}
-
-/**
- * Read status from temp files
- */
-function readStatus(feature: string): LoopStatus {
-  const statusFile = `/tmp/ralph-loop-${feature}.status`;
-  const tokensFile = `/tmp/ralph-loop-${feature}.tokens`;
-
-  let iteration = 0;
-  let maxIterations = 50;
-
-  // Read status file
-  if (existsSync(statusFile)) {
-    try {
-      const content = readFileSync(statusFile, 'utf-8').trim();
-      const parts = content.split('|');
-      iteration = parseInt(parts[0]) || 0;
-      maxIterations = parseInt(parts[1]) || 50;
-    } catch {
-      // Ignore errors
-    }
-  }
-
-  // Read tokens file (format: input|output|cache_create|cache_read|timestamp)
-  let tokensInput = 0;
-  let tokensOutput = 0;
-  let cacheCreate = 0;
-  let cacheRead = 0;
-  let tokensUpdatedAt: number | undefined;
-  if (existsSync(tokensFile)) {
-    try {
-      const content = readFileSync(tokensFile, 'utf-8').trim();
-      const parts = content.split('|');
-      tokensInput = parseInt(parts[0]) || 0;
-      tokensOutput = parseInt(parts[1]) || 0;
-      cacheCreate = parseInt(parts[2] || '0') || 0;
-      cacheRead = parseInt(parts[3] || '0') || 0;
-      if (parts[4]) {
-        const epoch = parseInt(parts[4]);
-        if (epoch > 0) tokensUpdatedAt = epoch * 1000; // convert to ms
-      }
-    } catch {
-      // Ignore errors
-    }
-  }
-
-  // Prefer .phases file over pgrep-based detection (same fix as loop-status.ts)
-  const phaseFromFile = readCurrentPhase(feature);
-  const phase = phaseFromFile ?? detectPhase(feature);
-
-  return {
-    running: isProcessRunning(`feature-loop.sh.*${feature}`),
-    phase,
-    iteration,
-    maxIterations,
-    tokensInput,
-    tokensOutput,
-    cacheCreate,
-    cacheRead,
-    tokensUpdatedAt,
-    tasksDone: 0,
-    tasksPending: 0,
-    e2eDone: 0,
-    e2ePending: 0,
-    branch: '',
-    elapsed: '',
-  };
-}
-
-/**
- * Parse implementation plan for task counts
- */
-async function parseImplementationPlan(
-  projectRoot: string,
-  feature: string
-): Promise<{ tasksDone: number; tasksPending: number; e2eDone: number; e2ePending: number; planExists: boolean }> {
-  const config = await loadConfigWithDefaults(projectRoot);
-  const planPath = findImplementationPlan(projectRoot, config.paths.specs, feature);
-
-  let tasksDone = 0;
-  let tasksPending = 0;
-  let e2eDone = 0;
-  let e2ePending = 0;
-  const planExists = planPath !== null;
-
-  if (planPath) {
-    try {
-      const content = readFileSync(planPath, 'utf-8');
-      const lines = content.split('\n');
-
-      // Primary: count checkbox-style tasks (- [x] / - [ ])
-      for (const line of lines) {
-        if (line.match(/^- \[x\]/)) {
-          if (line.includes('E2E:')) {
-            e2eDone++;
-          } else {
-            tasksDone++;
-          }
-        } else if (line.match(/^- \[ \]/)) {
-          if (line.includes('E2E:')) {
-            e2ePending++;
-          } else {
-            tasksPending++;
-          }
-        }
-      }
-
-      // Fallback: if no checkboxes found, count "#### Task N:" headers
-      // (generated by the writing-plans skill in a different format)
-      if (tasksDone === 0 && tasksPending === 0 && e2eDone === 0 && e2ePending === 0) {
-        let headerTaskCount = 0;
-        for (const line of lines) {
-          if (line.match(/^#{1,4}\s+Task\s+\d+/i)) {
-            headerTaskCount++;
-          }
-        }
-        if (headerTaskCount > 0) {
-          // Check phases file to determine completion
-          const phasesPath = `/tmp/ralph-loop-${feature}.phases`;
-          let implDone = false;
-          if (existsSync(phasesPath)) {
-            const phases = readFileSync(phasesPath, 'utf-8');
-            implDone = phases.includes('implementation|success');
-          }
-          if (implDone) {
-            tasksDone = headerTaskCount;
-          } else {
-            tasksPending = headerTaskCount;
-          }
-        }
-      }
-    } catch {
-      // Ignore errors
-    }
-  }
-
-  return { tasksDone, tasksPending, e2eDone, e2ePending, planExists };
-}
-
-/**
- * Get current git branch
- */
-function getGitBranch(projectRoot: string): string {
-  try {
-    // Try app directory first
-    const appDir = join(projectRoot, '..', 'app');
-    if (existsSync(appDir)) {
-      return execFileSync('git', ['branch', '--show-current'], {
-        cwd: appDir,
-        encoding: 'utf-8',
-      }).trim();
-    }
-    return execFileSync('git', ['branch', '--show-current'], {
-      cwd: projectRoot,
-      encoding: 'utf-8',
-    }).trim();
-  } catch {
-    return '-';
-  }
-}
-
-/**
- * Format number with K/M suffix
- */
-function formatNumber(num: number): string {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M';
-  }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'K';
-  }
-  return String(num);
-}
-
-/**
  * Create a progress bar
  */
 function progressBar(percent: number, width: number = 15): string {
@@ -276,9 +64,9 @@ function progressBar(percent: number, width: number = 15): string {
 /**
  * Display built-in monitor dashboard
  */
-async function displayDashboard(feature: string, projectRoot: string, interval: number = 5): Promise<void> {
-  const status = readStatus(feature);
-  const tasks = await parseImplementationPlan(projectRoot, feature);
+async function displayDashboard(feature: string, projectRoot: string, specsDir: string, interval: number = 5): Promise<void> {
+  const status = readLoopStatus(feature);
+  const tasks = await parseImplementationPlan(projectRoot, feature, specsDir);
   const branch = getGitBranch(projectRoot);
 
   // Calculate progress
@@ -435,13 +223,22 @@ export async function monitorCommand(feature: string, options: MonitorOptions = 
     logger.info('Using built-in monitor instead');
   }
 
-  // Built-in monitor
+  // Load config for correct specs path
+  let specsDir = '.ralph/specs';
+  try {
+    const config = await loadConfigWithDefaults(projectRoot);
+    specsDir = config.paths.specs;
+  } catch (err) {
+    logger.debug(`Failed to load config: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Built-in monitor with sequential polling
   const intervalSeconds = options.interval || 5;
   const intervalMs = intervalSeconds * 1000;
 
   // Initial display
   try {
-    await displayDashboard(feature, projectRoot, intervalSeconds);
+    await displayDashboard(feature, projectRoot, specsDir, intervalSeconds);
   } catch (error) {
     logger.error(`Failed to display dashboard: ${error instanceof Error ? error.message : String(error)}`);
     if (process.env.DEBUG && error instanceof Error) {
@@ -450,26 +247,23 @@ export async function monitorCommand(feature: string, options: MonitorOptions = 
     process.exit(1);
   }
 
-  // Refresh loop
-  const refreshTimer = setInterval(async () => {
+  // Sequential refresh loop (prevents overlapping refreshes)
+  let running = true;
+  const cleanup = () => {
+    running = false;
+    console.log('');
+    logger.info('Monitor stopped');
+  };
+  process.on('SIGINT', cleanup);
+  process.on('SIGTERM', cleanup);
+
+  while (running) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    if (!running) break;
     try {
-      await displayDashboard(feature, projectRoot, intervalSeconds);
+      await displayDashboard(feature, projectRoot, specsDir, intervalSeconds);
     } catch (error) {
-      // Log error but continue monitoring
       logger.debug(`Dashboard refresh error: ${error instanceof Error ? error.message : String(error)}`);
     }
-  }, intervalMs);
-
-  // Return a Promise that resolves on SIGINT
-  return new Promise<void>((resolve) => {
-    const cleanup = () => {
-      clearInterval(refreshTimer);
-      console.log('');
-      logger.info('Monitor stopped');
-      resolve();
-    };
-
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
-  });
+  }
 }

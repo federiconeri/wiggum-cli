@@ -402,6 +402,30 @@ except Exception:
 " "$raw_file" 2>/dev/null || echo "No review output available"
 }
 
+# Run a fix iteration based on code review findings.
+# Pipes the review output into Claude for targeted fixes.
+run_review_fix() {
+    local findings
+    findings=$(extract_review_findings "${CLAUDE_OUTPUT}.raw")
+    cat <<FIXEOF | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+## Code Review Findings
+
+The following issues were found during code review:
+
+${findings}
+
+## Task
+
+Fix each issue listed above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
+1. Fix each issue referenced in the review
+2. Run tests to verify fixes
+3. Commit and push the fixes
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push.
+FIXEOF
+    extract_session_result "${CLAUDE_OUTPUT}.raw"
+    accumulate_tokens_from_session "$LAST_SESSION_ID"
+}
+
 # Initialize tokens
 init_tokens
 
@@ -770,24 +794,7 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            REVIEW_FINDINGS=$(extract_review_findings "${CLAUDE_OUTPUT}.raw")
-            cat <<FIXEOF | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
-## Code Review Findings
-
-The following issues were found during code review:
-
-${REVIEW_FINDINGS}
-
-## Task
-
-Fix each issue listed above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
-1. Fix each issue referenced in the review
-2. Run tests to verify fixes
-3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push.
-FIXEOF
-            extract_session_result "${CLAUDE_OUTPUT}.raw"
-            accumulate_tokens_from_session "$LAST_SESSION_ID"
+            run_review_fix
         fi
     done
     if [ "$REVIEW_APPROVED" != true ]; then
@@ -815,24 +822,7 @@ else
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            REVIEW_FINDINGS=$(extract_review_findings "${CLAUDE_OUTPUT}.raw")
-            cat <<FIXEOF | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
-## Code Review Findings
-
-The following issues were found during code review:
-
-${REVIEW_FINDINGS}
-
-## Task
-
-Fix each issue listed above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
-1. Fix each issue referenced in the review
-2. Run tests to verify fixes
-3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push.
-FIXEOF
-            extract_session_result "${CLAUDE_OUTPUT}.raw"
-            accumulate_tokens_from_session "$LAST_SESSION_ID"
+            run_review_fix
         fi
     done
     if [ "$REVIEW_APPROVED" != true ]; then
