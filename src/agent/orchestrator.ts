@@ -26,6 +26,7 @@ export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agen
      1. Call assessFeatureState with the featureName and issueNumber
      2. If recommendation is "pr_merged" or "linked_pr_merged": close it with closeIssue. Reflect with outcome "skipped". Does NOT count against maxItems.
      3. If recommendation is anything else (e.g., "resume_implementation", "start_fresh", "resume_pr_phase"): the issue was NOT actually shipped. Do NOT close it. Instead, prioritize it as your next work item and follow the Feature State Decision Tree. This counts against maxItems.
+   - **Retry:** If memory records a previous attempt at an issue with outcome "failure" or "partial", and it's still open, prioritize it over new issues. Bugs that caused the failure may have been fixed, and existing work (branch, spec, plan) should not be abandoned. Call assessFeatureState to determine the right action — usually resume_implementation. This counts against maxItems.
 3. For the chosen issue (one NOT already completed):
    a. Read the full issue details
    b. Derive a featureName from the issue title (lowercase, hyphens, no spaces)
