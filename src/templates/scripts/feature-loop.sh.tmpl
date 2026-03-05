@@ -17,21 +17,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load config from ralph.config.cjs if available
 if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
-    RALPH_ROOT=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
-    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
-    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
-    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
-    PLANNING_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
-    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
-    DEFAULT_MAX_E2E=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+    CONFIG_PATH="$SCRIPT_DIR/../ralph.config.cjs"
+    RALPH_ROOT=$(node -e "console.log(require('$CONFIG_PATH').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
+    SPEC_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
+    PROMPTS_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
+    DEFAULT_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+    PLANNING_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
+    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
+    DEFAULT_MAX_E2E=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+    TEST_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.test || 'npm test')" 2>/dev/null || echo "npm test")
+    BUILD_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.build || 'npm run build')" 2>/dev/null || echo "npm run build")
 elif [ -f "$SCRIPT_DIR/../../ralph.config.cjs" ]; then
-    RALPH_ROOT=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
-    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
-    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
-    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
-    PLANNING_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
-    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
-    DEFAULT_MAX_E2E=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+    CONFIG_PATH="$SCRIPT_DIR/../../ralph.config.cjs"
+    RALPH_ROOT=$(node -e "console.log(require('$CONFIG_PATH').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
+    SPEC_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
+    PROMPTS_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
+    DEFAULT_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+    PLANNING_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
+    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
+    DEFAULT_MAX_E2E=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+    TEST_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.test || 'npm test')" 2>/dev/null || echo "npm test")
+    BUILD_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.build || 'npm run build')" 2>/dev/null || echo "npm run build")
 else
     # Default paths
     RALPH_ROOT=".ralph"
@@ -41,6 +47,8 @@ else
     PLANNING_MODEL="opus"
     DEFAULT_MAX_ITERATIONS="10"
     DEFAULT_MAX_E2E="5"
+    TEST_COMMAND="npm test"
+    BUILD_COMMAND="npm run build"
 fi
 
 # Navigate to project root (parent of .ralph)
@@ -370,6 +378,24 @@ count_pending_tasks() {
     echo "1"
 }
 
+# Detect plan format: checkbox (primary), heading (legacy), or unknown.
+detect_plan_format() {
+    local plan_file="$1"
+    local checkbox_count
+    checkbox_count=$(grep -cE "^- \[[ x]\]" "$plan_file" 2>/dev/null) || checkbox_count=0
+    if [ "$checkbox_count" -gt 0 ]; then
+        echo "checkbox"
+        return
+    fi
+    local heading_count
+    heading_count=$(grep -ciE "^#{1,4}\s+(Task\s+[0-9]|Phase\s+[0-9])" "$plan_file" 2>/dev/null) || heading_count=0
+    if [ "$heading_count" -gt 0 ]; then
+        echo "heading"
+        return
+    fi
+    echo "unknown"
+}
+
 # Check if any source files were changed since baseline.
 # Returns count of changed source files.
 count_source_file_changes() {
@@ -570,6 +596,16 @@ else
     write_phase_end "planning" "skipped"
 fi
 
+# Detect plan format for task-progress tracking
+PLAN_FORMAT="checkbox"
+if [ -f "$PLAN_FILE" ]; then
+    PLAN_FORMAT=$(detect_plan_format "$PLAN_FILE")
+    if [ "$PLAN_FORMAT" != "checkbox" ]; then
+        echo "WARNING: Plan uses '$PLAN_FORMAT' format (no checkboxes). Task progress tracking disabled."
+        echo "Completion will be detected via source-file gate."
+    fi
+fi
+
 # Phase 4: Implementation loop
 echo "======================== IMPLEMENTATION PHASE ========================"
 write_phase_start "implementation"
@@ -589,14 +625,21 @@ while true; do
     echo "------------------------ Iteration $ITERATION ------------------------"
 
     # Check if implementation tasks are done
-    PENDING_IMPL=$(count_pending_tasks "$PLAN_FILE")
-    if [ "$PENDING_IMPL" -eq 0 ]; then
-        echo "All implementation tasks completed!"
-        break
+    if [ "$PLAN_FORMAT" = "checkbox" ]; then
+        PENDING_IMPL=$(count_pending_tasks "$PLAN_FILE")
+        if [ "$PENDING_IMPL" -eq 0 ]; then
+            echo "All implementation tasks completed!"
+            break
+        fi
+        echo "Pending implementation tasks: $PENDING_IMPL"
+        TASKS_BEFORE=$PENDING_IMPL
+    else
+        # Legacy format: task counting unreliable (headings never change).
+        # Skip early exit. Let source-file gate + consecutive-failure detection
+        # handle loop termination.
+        TASKS_BEFORE=$(count_pending_tasks "$PLAN_FILE")
+        echo "Legacy plan format — relying on source-file gate for completion."
     fi
-
-    echo "Pending implementation tasks: $PENDING_IMPL"
-    TASKS_BEFORE=$PENDING_IMPL
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
     run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
     extract_session_result "${CLAUDE_OUTPUT}.raw"
@@ -805,9 +848,24 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
 
         # Check stdout and PR comment for approval
         if check_review_approved "${CLAUDE_OUTPUT}.raw"; then
-            echo "Review approved!"
-            REVIEW_APPROVED=true
-            break
+            echo "Review approved! Running post-approval test gate..."
+            if (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1); then
+                echo "Post-approval test gate passed."
+                REVIEW_APPROVED=true
+                break
+            else
+                echo "WARNING: Tests failing after review approval. Running fix iteration..."
+                run_review_fix
+                if (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1); then
+                    echo "Tests pass after fix. Proceeding with merge."
+                    REVIEW_APPROVED=true
+                    break
+                else
+                    echo "FATAL: Tests still failing after fix attempt. Blocking merge."
+                    PR_STATUS="failed"
+                    break
+                fi
+            fi
         fi
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then

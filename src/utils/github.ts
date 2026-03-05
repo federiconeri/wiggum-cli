@@ -62,6 +62,7 @@ export interface GitHubIssueListItem {
   title: string;
   state: 'open' | 'closed';
   labels: string[];
+  createdAt: string;
 }
 
 export interface ListIssuesResult {
@@ -80,7 +81,7 @@ export async function listRepoIssues(
       'issue', 'list',
       '--repo', `${owner}/${repo}`,
       '--limit', String(limit),
-      '--json', 'number,title,state,labels',
+      '--json', 'number,title,state,labels,createdAt',
       '--state', 'open',
     ];
     if (search) {
@@ -93,6 +94,7 @@ export async function listRepoIssues(
       title: item.title,
       state: (item.state as string).toLowerCase() as 'open' | 'closed',
       labels: (item.labels ?? []).map((l: { name: string }) => l.name),
+      createdAt: item.createdAt ?? '',
     }));
     return { issues };
   } catch (err) {

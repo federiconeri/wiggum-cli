@@ -24,8 +24,8 @@ describe('createBacklogTools', () => {
     it('calls listRepoIssues and returns issues', async () => {
       mockListRepoIssues.mockResolvedValue({
         issues: [
-          { number: 1, title: 'Bug fix', state: 'open', labels: ['bug'] },
-          { number: 2, title: 'Feature', state: 'open', labels: ['feature'] },
+          { number: 1, title: 'Bug fix', state: 'open', labels: ['bug'], createdAt: '2026-01-01T00:00:00Z' },
+          { number: 2, title: 'Feature', state: 'open', labels: ['feature'], createdAt: '2026-01-02T00:00:00Z' },
         ],
       });
 
@@ -40,7 +40,7 @@ describe('createBacklogTools', () => {
 
     it('filters by labels when provided', async () => {
       mockListRepoIssues.mockResolvedValue({
-        issues: [{ number: 1, title: 'Bug', state: 'open', labels: ['bug'] }],
+        issues: [{ number: 1, title: 'Bug', state: 'open', labels: ['bug'], createdAt: '2026-01-01T00:00:00Z' }],
       });
 
       await tools.listIssues.execute({ labels: ['bug'], limit: 10 }, execCtx);
@@ -74,9 +74,9 @@ describe('createBacklogTools', () => {
     it('returns issues sorted by number ascending', async () => {
       mockListRepoIssues.mockResolvedValue({
         issues: [
-          { number: 5, title: 'Feature C', state: 'open', labels: [] },
-          { number: 1, title: 'Scaffolding', state: 'open', labels: [] },
-          { number: 3, title: 'Feature A', state: 'open', labels: [] },
+          { number: 5, title: 'Feature C', state: 'open', labels: [], createdAt: '2026-01-05T00:00:00Z' },
+          { number: 1, title: 'Scaffolding', state: 'open', labels: [], createdAt: '2026-01-01T00:00:00Z' },
+          { number: 3, title: 'Feature A', state: 'open', labels: [], createdAt: '2026-01-03T00:00:00Z' },
         ],
       });
 
