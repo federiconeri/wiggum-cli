@@ -132,6 +132,7 @@ do NOT implement the feature yourself. Instead, report "VERDICT: NOT APPROVED �
 no implementation found" so the harness can trigger a new implementation iteration.
 
 ## Rules
+- **NEVER approve if any tests are failing.** Output "VERDICT: NOT APPROVED — test failures" if any tests fail.
 - Do NOT merge the PR — auto mode only reviews, the user merges
 - Do NOT implement missing features — only review and fix minor issues
 - Address ALL review comments before marking as approved

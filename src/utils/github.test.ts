@@ -122,13 +122,13 @@ describe('listRepoIssues', () => {
 
   it('returns issue list from gh issue list', async () => {
     mockExecFileResult(JSON.stringify([
-      { number: 42, title: 'Fix bug', state: 'OPEN', labels: [{ name: 'bug' }] },
-      { number: 41, title: 'Add feature', state: 'OPEN', labels: [] },
+      { number: 42, title: 'Fix bug', state: 'OPEN', labels: [{ name: 'bug' }], createdAt: '2026-01-01T00:00:00Z' },
+      { number: 41, title: 'Add feature', state: 'OPEN', labels: [], createdAt: '2026-01-02T00:00:00Z' },
     ]));
     const result = await listRepoIssues('acme', 'api');
     expect(result.issues).toEqual([
-      { number: 42, title: 'Fix bug', state: 'open', labels: ['bug'] },
-      { number: 41, title: 'Add feature', state: 'open', labels: [] },
+      { number: 42, title: 'Fix bug', state: 'open', labels: ['bug'], createdAt: '2026-01-01T00:00:00Z' },
+      { number: 41, title: 'Add feature', state: 'open', labels: [], createdAt: '2026-01-02T00:00:00Z' },
     ]);
   });
 

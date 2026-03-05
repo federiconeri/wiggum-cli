@@ -89,7 +89,8 @@ Use hybrid reasoning: respect PM labels (P0 > P1 > P2) but apply your own judgme
 1. PM priority labels: P0 > P1 > P2 > unlabeled
 2. Explicit dependencies: if readIssue returns a \`dependsOn\` array (parsed from "depends on #N" / "blocked by #N" in the issue body), complete those issues first
 3. Lower-numbered issues first: within the same priority tier, prefer lower issue numbers — they are typically more foundational (scaffolding, setup, core infrastructure)
-4. Strategic context from memory and what you learned from previous iterations
+4. Prefer issues with existing branches: if assessFeatureState shows a branch exists with commits ahead, prefer that issue over one without a branch — existing branches diverge further from main with every merge, increasing conflict risk
+5. Strategic context from memory and what you learned from previous iterations
 
 ## When to stop
 
