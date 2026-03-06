@@ -58,6 +58,11 @@ export const REPL_COMMANDS = {
     usage: '/monitor <feature-name>',
     aliases: ['m'],
   },
+  agent: {
+    description: 'Start the autonomous backlog agent',
+    usage: '/agent [--dry-run] [--max-items <n>]',
+    aliases: ['a'],
+  },
   config: {
     description: 'Manage API keys and settings',
     usage: '/config [set <service> <key>]',

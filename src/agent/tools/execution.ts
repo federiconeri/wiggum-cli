@@ -145,6 +145,11 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
         return { status: 'preflight_failed', error: preflight.error, logPath };
       }
 
+      // Signal loop start immediately — the subprocess writes to stdout (log file),
+      // not stderr, so the piped stderr stream won't carry progress events.
+      // This triggers TUI polling for temp file updates.
+      emitProgress?.('runLoop', `Ralph Loop: ${featureName}`);
+
       return new Promise<{ status: string; iterations?: number; error?: string; logPath: string }>((resolve) => {
         const args = ['run', featureName];
         if (worktree) args.push('--worktree');

@@ -53,14 +53,14 @@ describe('createReportingTools', () => {
     });
   });
 
-  describe('createTechDebtIssue', () => {
+  describe('createIssue', () => {
     it('creates an issue and parses the URL', async () => {
       mockExecFile.mockImplementation((_cmd: any, _args: any, _opts: any, cb: any) => {
         cb(null, 'https://github.com/testowner/testrepo/issues/99\n', '');
         return {} as any;
       });
 
-      const result = await tools.createTechDebtIssue.execute(
+      const result = await tools.createIssue.execute(
         { title: 'Fix flaky tests', body: 'Selectors need data-testid', labels: ['tech-debt'] },
         execCtx,
       );

@@ -4,7 +4,7 @@ import { listSpecNames } from './utils/spec-names.js';
 import { AVAILABLE_MODELS, getAvailableProvider, isAnthropicAlias } from './ai/providers.js';
 import type { AIProvider } from './ai/providers.js';
 import { notifyIfUpdateAvailable } from './utils/update-check.js';
-import { renderApp, type AppScreen, type RunAppProps } from './tui/app.js';
+import { renderApp, type AppScreen, type RunAppProps, type AgentAppProps } from './tui/app.js';
 import { logger } from './utils/logger.js';
 import { loadApiKeysFromEnvLocal } from './utils/env.js';
 import { readFileSync } from 'fs';
@@ -158,6 +158,7 @@ async function startInkTui(
     runFeature?: string;
     monitorOnly?: boolean;
     initialReferences?: string[];
+    agentOptions?: AgentAppProps;
   },
 ): Promise<void> {
   const interviewFeature = options?.interviewFeature;
@@ -232,6 +233,7 @@ async function startInkTui(
     version,
     interviewProps,
     runProps,
+    agentProps: options?.agentOptions,
     onComplete: (specPath) => {
       // Spec was saved to disk by app.tsx (avoid stdout noise during TUI)
       logger.debug(`Created spec: ${specPath}`);
@@ -448,13 +450,12 @@ Press Esc to cancel any operation.
     }
 
     case 'agent': {
-      const { agentCommand } = await import('./commands/agent.js');
       const reviewModeFlag = typeof parsed.flags.reviewMode === 'string' ? parsed.flags.reviewMode : undefined;
       if (reviewModeFlag && !['manual', 'auto', 'merge'].includes(reviewModeFlag)) {
         console.error(`Error: Invalid --review-mode '${reviewModeFlag}'. Allowed values: manual, auto, merge`);
         process.exit(1);
       }
-      await agentCommand({
+      const agentOpts = {
         model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
         maxItems: typeof parsed.flags.maxItems === 'string' ? parseIntFlag(parsed.flags.maxItems, '--max-items') : undefined,
         maxSteps: typeof parsed.flags.maxSteps === 'string' ? parseIntFlag(parsed.flags.maxSteps, '--max-steps') : undefined,
@@ -462,7 +463,29 @@ Press Esc to cancel any operation.
         reviewMode: reviewModeFlag as 'manual' | 'auto' | 'merge' | undefined,
         dryRun: parsed.flags.dryRun === true,
         stream: parsed.flags.stream === true,
-      });
+      };
+
+      if (agentOpts.stream === true) {
+        // Explicit --stream: always headless
+        const { agentCommand } = await import('./commands/agent.js');
+        await agentCommand(agentOpts);
+      } else if (process.stdout.isTTY && !isCI()) {
+        // TTY: launch TUI
+        await startInkTui('agent', {
+          agentOptions: {
+            modelOverride: agentOpts.model,
+            maxItems: agentOpts.maxItems,
+            maxSteps: agentOpts.maxSteps,
+            labels: agentOpts.labels,
+            reviewMode: agentOpts.reviewMode,
+            dryRun: agentOpts.dryRun,
+          },
+        });
+      } else {
+        // Non-TTY / CI: headless
+        const { agentCommand } = await import('./commands/agent.js');
+        await agentCommand(agentOpts);
+      }
       break;
     }
 

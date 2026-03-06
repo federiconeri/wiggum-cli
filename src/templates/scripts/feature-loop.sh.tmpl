@@ -396,17 +396,16 @@ detect_plan_format() {
     echo "unknown"
 }
 
-# Check if any source files were changed since baseline.
-# Returns count of changed source files.
-count_source_file_changes() {
+# Check if any tracked files were changed since baseline.
+# Counts ALL file types (code, docs, config) — not just source code.
+count_file_changes() {
     local baseline="$1"
     if [ -z "$baseline" ]; then
         echo "0"
         return
     fi
     local count
-    count=$(git diff --stat "${baseline}..HEAD" 2>/dev/null \
-      | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s') || count=0
+    count=$(git diff --name-only "${baseline}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || count=0
     echo "$count"
 }
 
@@ -450,6 +449,48 @@ Do NOT propose completion options or ask interactive questions. Just fix, test, 
 FIXEOF
     extract_session_result "${CLAUDE_OUTPUT}.raw"
     accumulate_tokens_from_session "$LAST_SESSION_ID"
+}
+
+# Normalize test failure lines: extract test name, strip timing, deduplicate.
+# This makes baseline comparison stable across runs where timing values change.
+normalize_test_failures() {
+    grep -E '^\(fail\)' | sed 's/ \[[0-9.]*ms\]$//' | sort -u
+}
+
+# Check if tests pass, treating pre-existing failures as acceptable.
+# Returns 0 if tests pass OR all failures are pre-existing (captured at baseline).
+check_tests_pass_or_baseline() {
+    local test_output
+    test_output=$( (cd "$APP_DIR" && eval "$TEST_COMMAND") 2>&1 )
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        return 0
+    fi
+
+    # Tests failed — check if all failures are pre-existing
+    local baseline_file="/tmp/ralph-loop-${FEATURE}.baseline-failures"
+    if [ ! -f "$baseline_file" ] || [ ! -s "$baseline_file" ]; then
+        echo "$test_output"
+        return 1  # no baseline = all failures are new
+    fi
+
+    local current_failures
+    current_failures=$(echo "$test_output" | normalize_test_failures)
+    local new_failures
+    new_failures=$(comm -13 "$baseline_file" <(echo "$current_failures"))
+
+    if [ -z "$new_failures" ]; then
+        local count
+        count=$(echo "$current_failures" | wc -l | tr -d ' ')
+        echo "All $count test failure(s) are pre-existing (baseline). Treating as pass."
+        return 0
+    else
+        echo "New test failures detected (not in baseline):"
+        echo "$new_failures"
+        echo "$test_output"
+        return 1
+    fi
 }
 
 # Initialize tokens
@@ -574,6 +615,18 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
     fi
 fi
 
+# Capture baseline test failures for pre-existing failure detection
+BASELINE_FAILURES_FILE="/tmp/ralph-loop-${FEATURE}.baseline-failures"
+echo "Capturing baseline test failures..."
+if (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1) > /dev/null 2>&1; then
+    echo "Baseline: all tests passing"
+    : > "$BASELINE_FAILURES_FILE"
+else
+    (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1) | normalize_test_failures > "$BASELINE_FAILURES_FILE" 2>/dev/null || true
+    BASELINE_COUNT=$(wc -l < "$BASELINE_FAILURES_FILE" | tr -d ' ')
+    echo "Baseline: $BASELINE_COUNT pre-existing test failure(s) recorded"
+fi
+
 # Write initial .status so TUI shows iteration info during planning
 echo "0|$MAX_ITERATIONS|$(date +%s)" > "$STATUS_FILE"
 
@@ -651,7 +704,7 @@ while true; do
         # Before declaring "no progress", check if source files already exist.
         # If code was implemented in a prior run but plan checkboxes weren't checked,
         # the loop sees "pending tasks" but Claude correctly does nothing → treat as already complete.
-        _EXISTING_SOURCE=$(count_source_file_changes "$BASELINE_COMMIT")
+        _EXISTING_SOURCE=$(count_file_changes "$BASELINE_COMMIT")
         # Also check against default branch for work done in prior runs (resume mode).
         # When baseline == HEAD (no new commits this run), the above returns 0 even
         # though the branch has real implementation work from a previous run.
@@ -684,14 +737,13 @@ while true; do
 done
 # Guard C: Verify implementation produced actual code changes
 if [ "$IMPL_SUCCESS" = true ]; then
-    SOURCE_CHANGES=$(count_source_file_changes "$BASELINE_COMMIT")
+    SOURCE_CHANGES=$(count_file_changes "$BASELINE_COMMIT")
     # Also check against default branch for work done in prior runs (resume mode)
     if [ "$SOURCE_CHANGES" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
-        SOURCE_CHANGES=$(git diff --stat "${DEFAULT_BRANCH}..HEAD" 2>/dev/null \
-            | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s') || SOURCE_CHANGES=0
+        SOURCE_CHANGES=$(git diff --name-only "${DEFAULT_BRANCH}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || SOURCE_CHANGES=0
     fi
     if [ "$SOURCE_CHANGES" -eq 0 ]; then
-        echo "WARNING: Implementation phase completed but no source files were changed."
+        echo "WARNING: Implementation phase completed but no files were changed."
         echo "Expected code changes between ${BASELINE_COMMIT:0:7} and HEAD."
         IMPL_SUCCESS=false
         write_phase_end "implementation" "failed"
@@ -779,15 +831,14 @@ export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 PR_STATUS="success"
 MAX_REVIEW_ATTEMPTS=3
 
-# Short-circuit: skip review if no source files exist in diff
-_REVIEW_SOURCE_CHANGES=$(count_source_file_changes "$BASELINE_COMMIT")
+# Short-circuit: skip review if no files exist in diff
+_REVIEW_FILE_CHANGES=$(count_file_changes "$BASELINE_COMMIT")
 # Also check against default branch for work done in prior runs (resume mode)
-if [ "$_REVIEW_SOURCE_CHANGES" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
-    _REVIEW_SOURCE_CHANGES=$(git diff --stat "${DEFAULT_BRANCH}..HEAD" 2>/dev/null \
-        | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s') || _REVIEW_SOURCE_CHANGES=0
+if [ "$_REVIEW_FILE_CHANGES" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
+    _REVIEW_FILE_CHANGES=$(git diff --name-only "${DEFAULT_BRANCH}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || _REVIEW_FILE_CHANGES=0
 fi
-if [ "$_REVIEW_SOURCE_CHANGES" -eq 0 ]; then
-    echo "No source files in diff — skipping PR & review phase."
+if [ "$_REVIEW_FILE_CHANGES" -eq 0 ]; then
+    echo "No files in diff — skipping PR & review phase."
     PR_STATUS="failed"
     write_phase_end "pr_review" "skipped"
 else
@@ -849,14 +900,14 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
         # Check stdout and PR comment for approval
         if check_review_approved "${CLAUDE_OUTPUT}.raw"; then
             echo "Review approved! Running post-approval test gate..."
-            if (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1); then
+            if check_tests_pass_or_baseline; then
                 echo "Post-approval test gate passed."
                 REVIEW_APPROVED=true
                 break
             else
                 echo "WARNING: Tests failing after review approval. Running fix iteration..."
                 run_review_fix
-                if (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1); then
+                if check_tests_pass_or_baseline; then
                     echo "Tests pass after fix. Proceeding with merge."
                     REVIEW_APPROVED=true
                     break
@@ -945,11 +996,11 @@ esac
 FINAL_STATUS="done"
 if [ "$IMPL_SUCCESS" != true ]; then
     FINAL_STATUS="failed"
-    echo "Loop ending with status 'failed': implementation did not produce source files."
+    echo "Loop ending with status 'failed': implementation did not produce any file changes."
 elif [ "$PR_STATUS" = "failed" ]; then
-    if [ "$(count_source_file_changes "$BASELINE_COMMIT")" -eq 0 ]; then
+    if [ "$(count_file_changes "$BASELINE_COMMIT")" -eq 0 ]; then
         FINAL_STATUS="failed"
-        echo "Loop ending with status 'failed': no source files and review not approved."
+        echo "Loop ending with status 'failed': no file changes and review not approved."
     else
         FINAL_STATUS="review_failed"
         echo "Loop ending with status 'review_failed': code exists but review not approved."

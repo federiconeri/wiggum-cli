@@ -52,6 +52,18 @@ export interface InterviewAppProps {
 }
 
 /**
+ * Props for the agent screen when launched directly from CLI
+ */
+export interface AgentAppProps {
+  modelOverride?: string;
+  maxItems?: number;
+  maxSteps?: number;
+  labels?: string[];
+  reviewMode?: 'manual' | 'auto' | 'merge';
+  dryRun?: boolean;
+}
+
+/**
  * Props for the run/monitor screen when launched directly from CLI
  */
 export interface RunAppProps {
@@ -77,6 +89,8 @@ export interface AppProps {
   interviewProps?: InterviewAppProps;
   /** Props for the run/monitor screen (required when screen is 'run') */
   runProps?: RunAppProps;
+  /** Props for the agent screen (required when screen is 'agent') */
+  agentProps?: AgentAppProps;
   /** Called when the screen completes successfully */
   onComplete?: (result: string) => void;
   /** Called when the user exits/cancels */
@@ -95,6 +109,7 @@ export function App({
   version = '0.12.1', // Fallback if package.json read fails (keep in sync with index.ts)
   interviewProps,
   runProps,
+  agentProps,
   onComplete,
   onExit,
 }: AppProps): React.ReactElement | null {
@@ -351,10 +366,19 @@ export function App({
       );
     }
 
-    case 'agent':
+    case 'agent': {
+      // Merge CLI-provided agentProps with navigation screenProps (from /agent command)
+      const resolvedAgentOptions: AgentAppProps = {
+        ...agentProps,
+        ...(screenProps?.dryRun != null ? { dryRun: screenProps.dryRun as boolean } : {}),
+        ...(screenProps?.maxItems != null ? { maxItems: screenProps.maxItems as number } : {}),
+        ...(screenProps?.reviewMode != null ? { reviewMode: screenProps.reviewMode as AgentAppProps['reviewMode'] } : {}),
+      };
       return (
         <AgentScreen
           header={headerElement}
+          projectRoot={sessionState.projectRoot}
+          agentOptions={resolvedAgentOptions}
           onExit={() => {
             if (initialScreen === 'agent') {
               onExit?.();
@@ -364,6 +388,7 @@ export function App({
           }}
         />
       );
+    }
 
     default: {
       // Return fallback UI instead of calling navigate() during render (which would be setState during render).
@@ -393,6 +418,8 @@ export interface RenderAppOptions {
   interviewProps?: InterviewAppProps;
   /** Props for run/monitor screen (if starting directly on run screen) */
   runProps?: RunAppProps;
+  /** Props for agent screen (if starting directly on agent screen) */
+  agentProps?: AgentAppProps;
   /** Called when spec generation completes */
   onComplete?: (result: string) => void;
   /** Called when user exits */
@@ -410,6 +437,7 @@ export function renderApp(options: RenderAppOptions): Instance {
       version={options.version}
       interviewProps={options.interviewProps}
       runProps={options.runProps}
+      agentProps={options.agentProps}
       onComplete={options.onComplete}
       onExit={options.onExit}
     />

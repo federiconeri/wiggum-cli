@@ -64,12 +64,12 @@ export function createDryRunReportingTools() {
     }),
   });
 
-  const createTechDebtIssue = tool({
-    description: '[DRY RUN] Simulates creating a tech debt issue without actually creating it.',
+  const createIssue = tool({
+    description: '[DRY RUN] Simulates creating a GitHub issue without actually creating it.',
     inputSchema: zodSchema(z.object({
       title: z.string().describe('Issue title'),
       body: z.string().describe('Issue body'),
-      labels: z.array(z.string()).default(['tech-debt']).describe('Labels'),
+      labels: z.array(z.string()).default([]).describe('Labels'),
     })),
     execute: async ({ title }) => ({
       success: true,
@@ -103,7 +103,7 @@ export function createDryRunReportingTools() {
     }),
   });
 
-  return { commentOnIssue, createTechDebtIssue, closeIssue, checkAllBoxes };
+  return { commentOnIssue, createIssue, closeIssue, checkAllBoxes };
 }
 
 export function createDryRunFeatureStateTools() {

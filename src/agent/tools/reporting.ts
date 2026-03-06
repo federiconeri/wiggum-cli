@@ -32,12 +32,12 @@ export function createReportingTools(owner: string, repo: string) {
     },
   });
 
-  const createTechDebtIssue = tool({
-    description: 'Create a new GitHub issue for tech debt discovered during development.',
+  const createIssue = tool({
+    description: 'Create a new GitHub issue. Use for tech debt, blockers, bugs, or follow-up work discovered during development.',
     inputSchema: zodSchema(z.object({
       title: z.string().describe('Issue title'),
       body: z.string().describe('Issue body in markdown'),
-      labels: z.array(z.string()).default(['tech-debt']).describe('Labels to apply'),
+      labels: z.array(z.string()).default([]).describe('Labels to apply (e.g. bug, P0, tech-debt, blocker)'),
     })),
     execute: async ({ title, body, labels }) => {
       try {
@@ -114,5 +114,5 @@ export function createReportingTools(owner: string, repo: string) {
     },
   });
 
-  return { commentOnIssue, createTechDebtIssue, closeIssue, checkAllBoxes };
+  return { commentOnIssue, createIssue, closeIssue, checkAllBoxes };
 }

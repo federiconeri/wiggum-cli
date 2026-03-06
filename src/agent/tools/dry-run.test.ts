@@ -48,8 +48,8 @@ describe('createDryRunReportingTools', () => {
     expect(result.wouldComment).toEqual({ issueNumber: 42, bodyLength: 12 });
   });
 
-  it('createTechDebtIssue returns simulated success without creating', async () => {
-    const result = await tools.createTechDebtIssue.execute(
+  it('createIssue returns simulated success without creating', async () => {
+    const result = await tools.createIssue.execute(
       { title: 'Fix auth', body: 'Details', labels: ['tech-debt'] },
       execCtx,
     );
