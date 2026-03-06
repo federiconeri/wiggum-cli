@@ -469,7 +469,7 @@ const SKIP_LINE_PATTERNS: RegExp[] = [
 /**
  * Returns true if a log line should be excluded from the activity feed.
  */
-function shouldSkipLine(line: string): boolean {
+export function shouldSkipLine(line: string): boolean {
   return SKIP_LINE_PATTERNS.some((pattern) => pattern.test(line));
 }
 

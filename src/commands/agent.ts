@@ -8,20 +8,12 @@
 
 import { logger } from '../utils/logger.js';
 import {
-  getAvailableProvider,
-  getModel,
-} from '../ai/providers.js';
-import type { AIProvider } from '../ai/providers.js';
-import { detectGitHubRemote } from '../utils/github.js';
-import { loadConfigWithDefaults } from '../utils/config.js';
-import {
   createAgentOrchestrator,
   type AgentOrchestrator,
 } from '../agent/orchestrator.js';
+import { resolveAgentEnv } from '../agent/resolve-config.js';
 import type { AgentConfig } from '../agent/types.js';
 import { initTracing, flushTracing, traced, currentSpan } from '../utils/tracing.js';
-
-const VALID_PROVIDERS: Set<string> = new Set(['anthropic', 'openai', 'openrouter']);
 
 export interface AgentOptions {
   model?: string;
@@ -39,33 +31,16 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   // Initialize Braintrust tracing (no-op if BRAINTRUST_API_KEY not set)
   initTracing();
 
-  // 1. Resolve provider (config > env detection)
-  const ralphConfig = await loadConfigWithDefaults(projectRoot);
-  const configProvider = ralphConfig.agent.defaultProvider;
-  const validConfigProvider = VALID_PROVIDERS.has(configProvider)
-    ? (configProvider as AIProvider)
-    : null;
-  const provider = validConfigProvider || getAvailableProvider();
-
-  if (!provider) {
-    console.error(
-      'Error: No AI provider configured. Run `wiggum init` or set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.',
-    );
+  // Resolve provider, model, and GitHub remote
+  let env: Awaited<ReturnType<typeof resolveAgentEnv>>;
+  try {
+    env = await resolveAgentEnv(projectRoot, { model: options.model });
+  } catch (err) {
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 
-  // 2. Detect GitHub remote
-  const remote = await detectGitHubRemote(projectRoot);
-  if (!remote) {
-    console.error(
-      'Error: No GitHub remote detected. Run from a repo with a GitHub origin.',
-    );
-    process.exit(1);
-  }
-
-  // 3. Resolve model (CLI flag > config > provider default)
-  const modelId = options.model || ralphConfig.agent.defaultModel || undefined;
-  const { model } = getModel(provider, modelId);
+  const { provider, model, modelId, owner, repo } = env;
 
   // 4. Create orchestrator
   const agentConfig: AgentConfig = {
@@ -73,8 +48,8 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
     modelId: modelId ?? undefined,
     provider,
     projectRoot,
-    owner: remote.owner,
-    repo: remote.repo,
+    owner,
+    repo,
     maxSteps: options.maxSteps,
     maxItems: options.maxItems,
     labels: options.labels,
@@ -105,14 +80,14 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   const agent: AgentOrchestrator = createAgentOrchestrator(agentConfig);
 
   // 5. Run in headless mode
-  logger.info(`Agent starting: ${remote.owner}/${remote.repo} with ${provider}/${modelId ?? 'default'}`);
+  logger.info(`Agent starting: ${owner}/${repo} with ${provider}/${modelId ?? 'default'}`);
 
   try {
     await traced(async () => {
       currentSpan().log({
         input: {
-          owner: remote.owner,
-          repo: remote.repo,
+          owner,
+          repo,
           provider,
           model: modelId ?? 'default',
           maxItems: options.maxItems,
@@ -123,8 +98,8 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
         },
         metadata: {
           command: 'agent',
-          owner: remote.owner,
-          repo: remote.repo,
+          owner,
+          repo,
           provider,
           model: modelId ?? 'default',
           dryRun: String(options.dryRun ?? false),

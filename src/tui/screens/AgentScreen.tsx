@@ -3,15 +3,20 @@
  *
  * Displays issue processing status and an agent log.
  * Two-column layout on wide terminals (>=65 cols), single-column on narrow.
- * This is the visual shell; actual orchestrator integration comes later.
+ *
+ * Wired to the orchestrator via useAgentOrchestrator hook, which
+ * interprets tool calls into structured React state. Console is patched
+ * on mount to prevent Ink rendering corruption.
  *
  * Wrapped in AppShell for consistent layout with header and footer.
  */
 
-import React, { useState, useCallback } from 'react';
-import { Box, Text, Static, useInput, useStdout } from 'ink';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
+import { Box, Text, useInput, useStdout } from 'ink';
 import { AppShell } from '../components/AppShell.js';
 import { colors, phase } from '../theme.js';
+import { useAgentOrchestrator, type AgentStatus } from '../hooks/useAgentOrchestrator.js';
+import type { AgentAppProps } from '../app.js';
 import type { AgentLogEntry, AgentIssueState, AgentPhase } from '../../agent/types.js';
 
 const NARROW_BREAKPOINT = 65;
@@ -19,17 +24,17 @@ const SECTION_CHAR = '\u2500'; // ─
 
 export interface AgentScreenProps {
   header: React.ReactNode;
+  projectRoot: string;
+  agentOptions?: AgentAppProps;
   onExit?: () => void;
 }
 
-type AgentStatus = 'idle' | 'running' | 'paused' | 'complete' | 'error';
-
-function phaseLabel(p: AgentPhase): string {
+function phaseLabel(p: AgentPhase, activeIssue?: AgentIssueState | null): string {
   switch (p) {
     case 'idle': return 'Idle';
     case 'planning': return 'Planning...';
     case 'generating_spec': return 'Generating spec...';
-    case 'running_loop': return 'Running loop...';
+    case 'running_loop': return activeIssue?.loopPhase ?? 'Running loop...';
     case 'reporting': return 'Reporting...';
     case 'reflecting': return 'Reflecting...';
     default: return String(p);
@@ -47,24 +52,27 @@ function logLevelColor(level: AgentLogEntry['level']): string {
 }
 
 /**
- * Build a working status string from active issue state
+ * Build a working status string from active issue state.
+ * Issue number/title is already shown in Active Issue panel — just show phase.
  */
 function workingLabel(activeIssue: AgentIssueState | null): string {
   if (!activeIssue) return 'Starting...';
-  const iter = activeIssue.loopIterations != null ? ` (iter ${activeIssue.loopIterations})` : '';
-  return `${phaseLabel(activeIssue.phase)} #${activeIssue.issueNumber}${iter}`;
+  return phaseLabel(activeIssue.phase, activeIssue);
 }
 
 /**
- * Build the footer phase string from current state
+ * Build the footer phase string from current state.
+ * Shows loop sub-phase and iteration instead of duplicating issue title.
  */
-function footerPhase(status: AgentStatus, activeIssue: AgentIssueState | null): string {
+function footerPhase(status: AgentStatus, activeIssue: AgentIssueState | null, completedCount: number, cancelling: boolean): string {
+  if (cancelling) return 'Cancelling...';
   if (status === 'idle') return 'Waiting';
-  if (status === 'complete') return 'Done';
+  if (status === 'complete') return `Done — ${completedCount} issue${completedCount === 1 ? '' : 's'} processed`;
   if (status === 'error') return 'Error';
-  if (status === 'paused') return 'Paused';
   if (!activeIssue) return 'Starting...';
-  return `#${activeIssue.issueNumber} ${activeIssue.title}`;
+  const loopDetail = activeIssue.loopPhase ? ` · ${activeIssue.loopPhase}` : '';
+  const iter = activeIssue.loopIterations != null ? ` (iter ${activeIssue.loopIterations})` : '';
+  return `#${activeIssue.issueNumber}${loopDetail}${iter}`;
 }
 
 /**
@@ -100,7 +108,7 @@ function IssuesPanel({
             <Text> {activeIssue.title}</Text>
           </Text>
           <Text dimColor>
-            {phase.active} {phaseLabel(activeIssue.phase)}
+            {phase.active} {phaseLabel(activeIssue.phase, activeIssue)}
             {activeIssue.loopIterations != null ? ` (iter ${activeIssue.loopIterations})` : ''}
           </Text>
         </Box>
@@ -163,24 +171,25 @@ function IssuesPanel({
 /**
  * Log panel content — shared between wide and narrow layouts
  */
+const LOG_TAIL_SIZE = 20;
+
 function LogPanel({ logEntries }: { logEntries: AgentLogEntry[] }): React.ReactElement {
+  const visible = logEntries.slice(-LOG_TAIL_SIZE);
   return (
     <Box flexDirection="column">
       <Text bold color={colors.yellow}>Agent Log</Text>
-      {logEntries.length === 0 ? (
+      {visible.length === 0 ? (
         <Text dimColor>Waiting for agent activity...</Text>
       ) : (
-        <Static items={logEntries}>
-          {(entry, index) => (
-            <Box key={`${entry.timestamp}-${index}`}>
-              <Text>
-                <Text dimColor>{entry.timestamp.slice(11, 19)}</Text>
-                <Text> </Text>
-                <Text color={logLevelColor(entry.level)}>{entry.message}</Text>
-              </Text>
-            </Box>
-          )}
-        </Static>
+        visible.map((entry, index) => (
+          <Box key={`${entry.timestamp}-${index}`}>
+            <Text>
+              <Text dimColor>{entry.timestamp.slice(11, 19)}</Text>
+              <Text> </Text>
+              <Text color={logLevelColor(entry.level)}>{entry.message}</Text>
+            </Text>
+          </Box>
+        ))
       )}
     </Box>
   );
@@ -188,33 +197,73 @@ function LogPanel({ logEntries }: { logEntries: AgentLogEntry[] }): React.ReactE
 
 export function AgentScreen({
   header,
+  projectRoot,
+  agentOptions,
   onExit,
 }: AgentScreenProps): React.ReactElement {
   const { stdout } = useStdout();
   const columns = stdout?.columns ?? 80;
   const isNarrow = columns < NARROW_BREAKPOINT;
 
-  // Internal state (shell only — orchestrator integration comes later)
-  const [status] = useState<AgentStatus>('idle');
-  const [activeIssue] = useState<AgentIssueState | null>(null);
-  const [queue] = useState<AgentIssueState[]>([]);
-  const [completed] = useState<AgentIssueState[]>([]);
-  const [logEntries] = useState<AgentLogEntry[]>([]);
+  // Patch console on mount to prevent Ink rendering corruption
+  // from any console.* calls in the orchestrator or AI SDK.
+  useEffect(() => {
+    let restore: (() => void) | undefined;
+    import('patch-console').then((mod) => {
+      const patchConsole = mod.default;
+      restore = patchConsole(() => {
+        // Swallow console output — Ink renders its own UI
+      });
+    }).catch(() => {
+      // patch-console not available — continue without it
+    });
+    return () => {
+      restore?.();
+    };
+  }, []);
 
-  const isWorking = status === 'running';
+  const { status, activeIssue, queue, completed, logEntries, error, abort } =
+    useAgentOrchestrator({
+      projectRoot,
+      modelOverride: agentOptions?.modelOverride,
+      maxItems: agentOptions?.maxItems,
+      maxSteps: agentOptions?.maxSteps,
+      labels: agentOptions?.labels,
+      reviewMode: agentOptions?.reviewMode,
+      dryRun: agentOptions?.dryRun,
+    });
+
+  // Track whether the user requested cancellation
+  const [cancelling, setCancelling] = useState(false);
+  const onExitRef = useRef(onExit);
+  onExitRef.current = onExit;
+
+  // When cancelling and the orchestrator finishes, exit
+  useEffect(() => {
+    if (cancelling && (status === 'complete' || status === 'error')) {
+      onExitRef.current?.();
+    }
+  }, [cancelling, status]);
+
+  const isWorking = status === 'running' || cancelling;
 
   useInput(useCallback((input: string, key: { escape?: boolean }) => {
     if (input === 'q' || key.escape) {
-      onExit?.();
+      if (status === 'running') {
+        // Signal abort — stay mounted so cleanup can propagate to subprocesses
+        setCancelling(true);
+        abort();
+      } else {
+        // Already done — exit immediately
+        onExitRef.current?.();
+      }
     }
-  }, [onExit]));
+  }, [abort, status]));
 
-  // #2+#3: Actionable tips in the TipsBar zone (not manual Box in content)
-  const tips = 'q exit \u2502 Esc back';
+  const tips = cancelling ? 'Cancelling...' : 'q exit │ Esc back';
 
   if (isNarrow) {
-    // #4: Single-column stacked layout for narrow terminals
-    const panelWidth = Math.max(20, columns - 4); // border + padding
+    const panelWidth = Math.max(20, columns - 4);
     return (
       <AppShell
         header={header}
@@ -223,7 +272,7 @@ export function AgentScreen({
         workingStatus={workingLabel(activeIssue)}
         footerStatus={{
           action: 'Agent',
-          phase: footerPhase(status, activeIssue),
+          phase: footerPhase(status, activeIssue, completed.length, cancelling),
         }}
       >
         <Box flexDirection="column" gap={1}>
@@ -251,7 +300,7 @@ export function AgentScreen({
       workingStatus={workingLabel(activeIssue)}
       footerStatus={{
         action: 'Agent',
-        phase: footerPhase(status, activeIssue),
+        phase: footerPhase(status, activeIssue, completed.length, cancelling),
       }}
     >
       <Box flexDirection="row" gap={1}>

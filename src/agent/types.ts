@@ -37,6 +37,8 @@ export interface AgentIssueState {
   title: string;
   labels: string[];
   phase: AgentPhase;
+  loopPhase?: string;
+  loopFeatureName?: string;
   loopIterations?: number;
   prUrl?: string;
   error?: string;
