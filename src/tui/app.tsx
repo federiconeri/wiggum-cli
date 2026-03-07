@@ -22,6 +22,7 @@ import { logger } from '../utils/logger.js';
 import { InterviewScreen } from './screens/InterviewScreen.js';
 import { InitScreen } from './screens/InitScreen.js';
 import { RunScreen, type RunSummary } from './screens/RunScreen.js';
+import { AgentScreen } from './screens/AgentScreen.js';
 import { MainShell, type NavigationTarget, type NavigationProps } from './screens/MainShell.js';
 import { HeaderContent } from './components/HeaderContent.js';
 import { useBackgroundRuns } from './hooks/useBackgroundRuns.js';
@@ -30,7 +31,7 @@ import type { Message } from './components/MessageList.js';
 /**
  * Available screen types for the App component
  */
-export type AppScreen = 'shell' | 'interview' | 'init' | 'run';
+export type AppScreen = 'shell' | 'interview' | 'init' | 'run' | 'agent';
 
 /**
  * Props for the interview screen
@@ -48,6 +49,18 @@ export interface InterviewAppProps {
   scanResult?: ScanResult;
   /** References to auto-add during context phase (from CLI --issue/--context flags) */
   initialReferences?: string[];
+}
+
+/**
+ * Props for the agent screen when launched directly from CLI
+ */
+export interface AgentAppProps {
+  modelOverride?: string;
+  maxItems?: number;
+  maxSteps?: number;
+  labels?: string[];
+  reviewMode?: 'manual' | 'auto' | 'merge';
+  dryRun?: boolean;
 }
 
 /**
@@ -76,6 +89,8 @@ export interface AppProps {
   interviewProps?: InterviewAppProps;
   /** Props for the run/monitor screen (required when screen is 'run') */
   runProps?: RunAppProps;
+  /** Props for the agent screen (required when screen is 'agent') */
+  agentProps?: AgentAppProps;
   /** Called when the screen completes successfully */
   onComplete?: (result: string) => void;
   /** Called when the user exits/cancels */
@@ -94,6 +109,7 @@ export function App({
   version = '0.12.1', // Fallback if package.json read fails (keep in sync with index.ts)
   interviewProps,
   runProps,
+  agentProps,
   onComplete,
   onExit,
 }: AppProps): React.ReactElement | null {
@@ -271,7 +287,7 @@ export function App({
       if (!featureName || typeof featureName !== 'string') {
         navigate('shell', { message: 'Feature name is required for the run screen.' });
       }
-    } else if (currentScreen !== 'shell' && currentScreen !== 'init') {
+    } else if (currentScreen !== 'shell' && currentScreen !== 'init' && currentScreen !== 'agent') {
       // Unknown screen — redirect to shell on next tick
       navigate('shell', { message: `Internal error: unknown screen "${currentScreen}". Returned to shell.` });
     }
@@ -350,6 +366,30 @@ export function App({
       );
     }
 
+    case 'agent': {
+      // Merge CLI-provided agentProps with navigation screenProps (from /agent command)
+      const resolvedAgentOptions: AgentAppProps = {
+        ...agentProps,
+        ...(screenProps?.dryRun != null ? { dryRun: screenProps.dryRun as boolean } : {}),
+        ...(screenProps?.maxItems != null ? { maxItems: screenProps.maxItems as number } : {}),
+        ...(screenProps?.reviewMode != null ? { reviewMode: screenProps.reviewMode as AgentAppProps['reviewMode'] } : {}),
+      };
+      return (
+        <AgentScreen
+          header={headerElement}
+          projectRoot={sessionState.projectRoot}
+          agentOptions={resolvedAgentOptions}
+          onExit={() => {
+            if (initialScreen === 'agent') {
+              onExit?.();
+            } else {
+              navigate('shell');
+            }
+          }}
+        />
+      );
+    }
+
     default: {
       // Return fallback UI instead of calling navigate() during render (which would be setState during render).
       // The useEffect guard above will redirect to shell on next tick.
@@ -378,6 +418,8 @@ export interface RenderAppOptions {
   interviewProps?: InterviewAppProps;
   /** Props for run/monitor screen (if starting directly on run screen) */
   runProps?: RunAppProps;
+  /** Props for agent screen (if starting directly on agent screen) */
+  agentProps?: AgentAppProps;
   /** Called when spec generation completes */
   onComplete?: (result: string) => void;
   /** Called when user exits */
@@ -395,6 +437,7 @@ export function renderApp(options: RenderAppOptions): Instance {
       version={options.version}
       interviewProps={options.interviewProps}
       runProps={options.runProps}
+      agentProps={options.agentProps}
       onComplete={options.onComplete}
       onExit={options.onExit}
     />

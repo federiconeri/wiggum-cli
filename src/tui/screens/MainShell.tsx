@@ -31,7 +31,7 @@ import path from 'node:path';
 /**
  * Navigation targets for the shell
  */
-export type NavigationTarget = 'shell' | 'interview' | 'init' | 'run';
+export type NavigationTarget = 'shell' | 'interview' | 'init' | 'run' | 'agent';
 
 /**
  * Navigation props passed to target screens
@@ -246,6 +246,40 @@ export function MainShell({
     addSystemMessage(`No running loop found for "${featureName}".`);
   }, [addSystemMessage, backgroundRuns, onNavigate]);
 
+  const handleAgent = useCallback((args: string[]) => {
+    if (!sessionState.initialized) {
+      addSystemMessage('Project not initialized. Run /init first.');
+      return;
+    }
+
+    // Parse optional flags
+    let dryRun = false;
+    let maxItems: number | undefined;
+    let reviewMode: string | undefined;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--dry-run') {
+        dryRun = true;
+      } else if (args[i] === '--max-items' && i + 1 < args.length) {
+        maxItems = parseInt(args[i + 1]!, 10);
+        if (Number.isNaN(maxItems)) {
+          addSystemMessage(`Invalid --max-items value '${args[i + 1]}'. Must be a number.`);
+          return;
+        }
+        i++;
+      } else if (args[i] === '--review-mode' && i + 1 < args.length) {
+        reviewMode = args[i + 1];
+        i++;
+      }
+    }
+
+    if (reviewMode !== undefined && !['manual', 'auto', 'merge'].includes(reviewMode)) {
+      addSystemMessage(`Invalid --review-mode value '${reviewMode}'. Use 'manual', 'auto', or 'merge'.`);
+      return;
+    }
+
+    onNavigate('agent', { dryRun, maxItems, reviewMode } as NavigationProps);
+  }, [sessionState.initialized, addSystemMessage, onNavigate]);
+
   const handleConfig = useCallback((args: string[]) => {
     if (args.length === 0) {
       addSystemMessage('Config management - not yet implemented in TUI mode. Use CLI: wiggum config');
@@ -297,6 +331,9 @@ export function MainShell({
       case 'monitor':
         handleMonitor(args);
         break;
+      case 'agent':
+        handleAgent(args);
+        break;
       case 'config':
         handleConfig(args);
         break;
@@ -306,7 +343,7 @@ export function MainShell({
       default:
         addSystemMessage(`Unknown command: ${commandName}`);
     }
-  }, [handleHelp, handleInit, handleSync, handleNew, handleRun, handleMonitor, handleConfig, handleExit, addSystemMessage]);
+  }, [handleHelp, handleInit, handleSync, handleNew, handleRun, handleMonitor, handleAgent, handleConfig, handleExit, addSystemMessage]);
 
   const handleNaturalLanguage = useCallback((_text: string) => {
     addSystemMessage('Tip: Use /help to see available commands, or /new <feature> to create a spec.');

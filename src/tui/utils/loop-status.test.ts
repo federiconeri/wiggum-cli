@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 
 vi.mock('node:fs');
 
-import { formatRelativeTime, parseLoopLog, parsePhaseChanges, readLoopStatus } from './loop-status.js';
+import { findImplementationPlan, formatRelativeTime, parseImplementationPlan, parseLoopLog, parsePhaseChanges, readCurrentPhase, readLoopStatus } from './loop-status.js';
 import * as child_process from 'node:child_process';
 
 vi.mock('node:child_process');
@@ -106,6 +106,23 @@ describe('parseLoopLog', () => {
     const events = parseLoopLog(logPath);
     expect(events[0].status).toBe('error');
     expect(events[1].status).toBe('error');
+  });
+
+  it('does not misclassify positive actions containing error-related words', () => {
+    vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1705318800000 } as fs.Stats);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      'Fixed error handling in login flow\nAdded error recovery logic\nError handling tests passed\nResolved authentication failure\n'
+    );
+
+    const events = parseLoopLog(logPath);
+    // "Fixed error handling" — positive action, should NOT be error
+    expect(events[0].status).not.toBe('error');
+    // "Added error recovery" — positive action, should NOT be error
+    expect(events[1].status).not.toBe('error');
+    // "Error handling tests passed" — contains "passed", should be success
+    expect(events[2].status).toBe('success');
+    // "Resolved authentication failure" — positive action, should NOT be error
+    expect(events[3].status).not.toBe('error');
   });
 
   it('uses file mtime as timestamp fallback when no timestamp prefix found', () => {
@@ -287,8 +304,8 @@ describe('parsePhaseChanges', () => {
     expect(parsePhaseChanges(feature)).toEqual({ events: [] });
   });
 
-  it('returns empty events and preserves lastKnownPhases on invalid JSON', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue('not valid json');
+  it('returns empty events and preserves lastKnownPhases on empty file', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue('');
     const prev = [{ id: 'planning', label: 'Planning', status: 'success' as const }];
     const result = parsePhaseChanges(feature, prev);
     expect(result.events).toEqual([]);
@@ -297,7 +314,7 @@ describe('parsePhaseChanges', () => {
 
   it('emits "started" events for new phases not in lastKnownPhases', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
-      JSON.stringify([{ id: 'planning', label: 'Planning', status: 'success' }])
+      'planning|success|1700000000|1700000060'
     );
 
     const { events, currentPhases } = parsePhaseChanges(feature, []);
@@ -309,10 +326,10 @@ describe('parsePhaseChanges', () => {
 
   it('emits "completed" event when a phase transitions to success', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
-      JSON.stringify([{ id: 'planning', label: 'Planning', status: 'success' }])
+      'planning|success|1700000000|1700000060'
     );
 
-    const prev = [{ id: 'planning', label: 'Planning', status: 'skipped' as const }];
+    const prev = [{ id: 'planning', label: 'Planning', status: 'started' as const }];
     const { events } = parsePhaseChanges(feature, prev);
     expect(events).toHaveLength(1);
     expect(events[0].message).toBe('Planning phase completed');
@@ -321,10 +338,10 @@ describe('parsePhaseChanges', () => {
 
   it('emits "failed" event when a phase transitions to failed', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
-      JSON.stringify([{ id: 'implementation', label: 'Implementation', status: 'failed' }])
+      'implementation|failed|1700000000|1700000060'
     );
 
-    const prev = [{ id: 'implementation', label: 'Implementation', status: 'skipped' as const }];
+    const prev = [{ id: 'implementation', label: 'Implementation', status: 'started' as const }];
     const { events } = parsePhaseChanges(feature, prev);
     expect(events).toHaveLength(1);
     expect(events[0].message).toBe('Implementation phase failed');
@@ -333,7 +350,7 @@ describe('parsePhaseChanges', () => {
 
   it('returns no events when phases have not changed', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
-      JSON.stringify([{ id: 'planning', label: 'Planning', status: 'success' }])
+      'planning|success|1700000000|1700000060'
     );
 
     const prev = [{ id: 'planning', label: 'Planning', status: 'success' as const }];
@@ -341,33 +358,40 @@ describe('parsePhaseChanges', () => {
     expect(events).toHaveLength(0);
   });
 
-  it('handles non-array JSON gracefully and preserves lastKnownPhases', () => {
-    vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify({ not: 'array' }));
-    const prev = [{ id: 'planning', label: 'Planning', status: 'success' as const }];
-    const result = parsePhaseChanges(feature, prev);
-    expect(result.events).toEqual([]);
-    expect(result.currentPhases).toBe(prev);
-  });
-
-  it('skips malformed phase entries missing required fields', () => {
+  it('parses multi-line pipe-delimited phases', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
-      JSON.stringify([
-        { id: 'planning', label: 'Planning', status: 'success' },
-        { id: 'bad-entry' }, // missing label and status
-        { notAPhase: true },
-      ])
+      'planning|success|1700000000|1700000060\nimplementation|started|1700000060|'
     );
 
     const { events, currentPhases } = parsePhaseChanges(feature, []);
-    // Only the valid phase should produce an event
-    expect(events).toHaveLength(1);
-    expect(events[0].message).toBe('Planning phase started');
+    expect(currentPhases).toHaveLength(2);
+    expect(currentPhases![0]).toEqual({ id: 'planning', label: 'Planning', status: 'success' });
+    expect(currentPhases![1]).toEqual({ id: 'implementation', label: 'Implementation', status: 'started' });
+    expect(events).toHaveLength(2);
+  });
+
+  it('skips lines with fewer than 2 fields', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      'planning|success|1700000000|1700000060\nbadline\nimplementation|started|1700000060|'
+    );
+
+    const { currentPhases } = parsePhaseChanges(feature, []);
+    expect(currentPhases).toHaveLength(2);
+  });
+
+  it('last status wins when multiple lines for same phase', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      'planning|started|1700000000|\nplanning|success|1700000000|1700000060'
+    );
+
+    const { currentPhases } = parsePhaseChanges(feature, []);
     expect(currentPhases).toHaveLength(1);
+    expect(currentPhases![0].status).toBe('success');
   });
 
   it('does not emit events for non-terminal status transitions', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
-      JSON.stringify([{ id: 'planning', label: 'Planning', status: 'skipped' }])
+      'planning|skipped|1700000000|1700000060'
     );
 
     const prev = [{ id: 'planning', label: 'Planning', status: 'skipped' as const }];
@@ -382,6 +406,55 @@ describe('parsePhaseChanges', () => {
 
     const result = parsePhaseChanges(feature);
     expect(result.events).toEqual([]);
+  });
+
+  it('uses PHASE_LABELS for human-readable labels', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      'e2e_testing|started|1700000000|\npr_review|success|1700000060|1700000120'
+    );
+
+    const { currentPhases } = parsePhaseChanges(feature, []);
+    expect(currentPhases![0].label).toBe('E2E Testing');
+    expect(currentPhases![1].label).toBe('PR & Review');
+  });
+});
+
+describe('readCurrentPhase', () => {
+  const feature = 'test-feature';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns null when phases file does not exist', () => {
+    vi.mocked(fs.readFileSync).mockImplementation(() => { throw new Error('ENOENT'); });
+    expect(readCurrentPhase(feature)).toBeNull();
+  });
+
+  it('returns null for empty file', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue('');
+    expect(readCurrentPhase(feature)).toBeNull();
+  });
+
+  it('returns the label of the active (started) phase', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      'planning|success|1700000000|1700000060\nimplementation|started|1700000060|'
+    );
+    expect(readCurrentPhase(feature)).toBe('Implementation');
+  });
+
+  it('returns post-{label} when all phases are completed', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      'planning|success|1700000000|1700000060\nimplementation|success|1700000060|1700000120'
+    );
+    expect(readCurrentPhase(feature)).toBe('post-Implementation');
+  });
+
+  it('returns the last started phase when multiple started phases exist', () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      'planning|started|1700000000|\nimplementation|started|1700000060|'
+    );
+    expect(readCurrentPhase(feature)).toBe('Implementation');
   });
 });
 
@@ -415,6 +488,28 @@ describe('readLoopStatus', () => {
     expect(status.cacheRead).toBe(14145458);
   });
 
+  it('should parse 5-field tokens file with timestamp', () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/tmp/ralph-loop-test-tokens5.status') return true;
+      if (path === '/tmp/ralph-loop-test-tokens5.tokens') return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/tmp/ralph-loop-test-tokens5.status') return '2|10|1700000000';
+      if (path === '/tmp/ralph-loop-test-tokens5.tokens') return '277|2105|582599|14145458|1700000100';
+      throw new Error(`Unexpected read: ${path}`);
+    });
+
+    const status = readLoopStatus('test-tokens5');
+    expect(status.tokensInput).toBe(277);
+    expect(status.tokensOutput).toBe(2105);
+    expect(status.cacheCreate).toBe(582599);
+    expect(status.cacheRead).toBe(14145458);
+    expect(status.tokensUpdatedAt).toBe(1700000100000); // converted to ms
+  });
+
   it('should parse legacy 2-field tokens file with cache defaulting to 0', () => {
     vi.mocked(fs.existsSync).mockImplementation((p) => {
       const path = String(p);
@@ -434,5 +529,126 @@ describe('readLoopStatus', () => {
     expect(status.tokensOutput).toBe(500);
     expect(status.cacheCreate).toBe(0);
     expect(status.cacheRead).toBe(0);
+  });
+});
+
+describe('findImplementationPlan', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns main project path when plan exists there', () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      return String(p) === '/project/.ralph/specs/my-feature-implementation-plan.md';
+    });
+
+    const result = findImplementationPlan('/project', '.ralph/specs', 'my-feature');
+    expect(result).toBe('/project/.ralph/specs/my-feature-implementation-plan.md');
+  });
+
+  it('returns null when plan does not exist in main or worktrees', () => {
+    vi.mocked(fs.existsSync).mockReturnValue(false);
+    vi.mocked(child_process.execFileSync).mockReturnValue('');
+
+    const result = findImplementationPlan('/project', '.ralph/specs', 'my-feature');
+    expect(result).toBeNull();
+  });
+
+  it('searches worktrees when main path does not have the plan', () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/my-feature-implementation-plan.md') return false;
+      if (path === '/worktrees/my-feature/.ralph/specs/my-feature-implementation-plan.md') return true;
+      return false;
+    });
+    vi.mocked(child_process.execFileSync).mockReturnValue(
+      'worktree /worktrees/my-feature\nHEAD abc123\nbranch refs/heads/feat/my-feature\n\n'
+    );
+
+    const result = findImplementationPlan('/project', '.ralph/specs', 'my-feature');
+    expect(result).toBe('/worktrees/my-feature/.ralph/specs/my-feature-implementation-plan.md');
+  });
+});
+
+describe('parseImplementationPlan — header fallback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('counts header-based tasks when no checkboxes found', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/hdr-feature-implementation-plan.md') return true;
+      if (path === '/tmp/ralph-loop-hdr-feature.phases') return false;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/hdr-feature-implementation-plan.md') {
+        return '# Implementation Plan\n\n#### Task 1: Setup\nDo setup.\n\n#### Task 2: Build\nBuild it.\n\n#### Task 3: Test\nTest it.\n';
+      }
+      throw new Error(`Unexpected read: ${path}`);
+    });
+
+    const result = await parseImplementationPlan('/project', 'hdr-feature', '.ralph/specs');
+    expect(result.planExists).toBe(true);
+    expect(result.tasksPending).toBe(3);
+    expect(result.tasksDone).toBe(0);
+  });
+
+  it('marks header tasks as done when implementation phase succeeded', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/hdr-done-implementation-plan.md') return true;
+      if (path === '/tmp/ralph-loop-hdr-done.phases') return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/hdr-done-implementation-plan.md') {
+        return '#### Task 1: A\n\n#### Task 2: B\n';
+      }
+      if (path === '/tmp/ralph-loop-hdr-done.phases') {
+        return 'planning|success|1700000000|1700000060\nimplementation|success|1700000060|1700000120\n';
+      }
+      throw new Error(`Unexpected read: ${path}`);
+    });
+
+    const result = await parseImplementationPlan('/project', 'hdr-done', '.ralph/specs');
+    expect(result.tasksDone).toBe(2);
+    expect(result.tasksPending).toBe(0);
+  });
+
+  it('prefers checkbox counts over header fallback when checkboxes exist', async () => {
+    vi.mocked(fs.existsSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/mixed-feature-implementation-plan.md') return true;
+      return false;
+    });
+    vi.mocked(fs.readFileSync).mockImplementation((p) => {
+      const path = String(p);
+      if (path === '/project/.ralph/specs/mixed-feature-implementation-plan.md') {
+        return '#### Task 1: Setup\n- [x] Subtask A\n- [ ] Subtask B\n#### Task 2: Build\n- [x] Subtask C\n';
+      }
+      throw new Error(`Unexpected read: ${path}`);
+    });
+
+    const result = await parseImplementationPlan('/project', 'mixed-feature', '.ralph/specs');
+    // Checkboxes take precedence — 2 done, 1 pending
+    expect(result.tasksDone).toBe(2);
+    expect(result.tasksPending).toBe(1);
+  });
+});
+
+describe('parseLoopLog — JSON filter', () => {
+  it('filters lines starting with JSON objects (Claude result, log entries)', () => {
+    vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 1000 } as fs.Stats);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      '{"type":"result","session_id":"abc123"}\n{"level":"warn","msg":"something"}\nActual progress\n'
+    );
+
+    const events = parseLoopLog('/tmp/test.log');
+    expect(events).toHaveLength(1);
+    expect(events[0].message).toBe('Actual progress');
   });
 });

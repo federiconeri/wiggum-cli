@@ -1,5 +1,5 @@
 ## Context
-Study @.ralph/AGENTS.md for commands and patterns.
+If @.ralph/guides/AGENTS.md exists, study it for commands and patterns.
 Study @.ralph/specs/$FEATURE.md for feature specification.
 Study @.ralph/specs/$FEATURE-implementation-plan.md for completed tasks.
 
@@ -9,6 +9,7 @@ Capture any review feedback patterns for future iterations.
 
 ## Task
 All implementation and E2E tasks are complete. Create PR for manual review.
+Complete ALL steps in a single pass — do not end the session between steps.
 
 ### Step 1: Verify Ready State
 1. Check all tasks are complete in implementation plan (no `- [ ]` items)
@@ -58,6 +59,8 @@ cd {{appDir}} && gh pr create --base main --head feat/$FEATURE \
 
 ## E2E Test Results
 [Copy from implementation plan if E2E phase exists]
+
+Closes #[Read the source issue number from the spec file metadata or context section]
 
 Generated with Claude Code
 EOF

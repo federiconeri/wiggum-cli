@@ -178,11 +178,13 @@ export function RunCompletionSummary({
             const phaseIcon =
               phaseInfo.status === 'success' ? phase.complete :
               phaseInfo.status === 'failed' ? phase.error :
+              phaseInfo.status === 'started' ? phase.active :
               phase.pending;
 
             const phaseColor =
               phaseInfo.status === 'success' ? colors.green :
               phaseInfo.status === 'failed' ? colors.pink :
+              phaseInfo.status === 'started' ? colors.yellow :
               colors.gray;
 
             const durationText = phaseInfo.durationMs !== undefined
@@ -194,7 +196,8 @@ export function RunCompletionSummary({
               : '';
 
             const statusText = phaseInfo.status === 'skipped' ? ' skipped' :
-                               phaseInfo.status === 'failed' ? ' failed' : '';
+                               phaseInfo.status === 'failed' ? ' failed' :
+                               phaseInfo.status === 'started' ? ' in progress' : '';
 
             return (
               <Box key={phaseInfo.id} flexDirection="row">

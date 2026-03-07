@@ -1,5 +1,5 @@
 ## Context
-Study @.ralph/AGENTS.md for commands and patterns.
+If @.ralph/guides/AGENTS.md exists, study it for commands and patterns.
 Study @.ralph/specs/$FEATURE.md for feature specification.
 Study @.ralph/specs/$FEATURE-implementation-plan.md for E2E test scenarios.
 {{#if frameworkVariant}}For detailed architecture, see @{{appDir}}/.claude/CLAUDE.md{{/if}}
@@ -21,6 +21,7 @@ If either fails, fix issues before proceeding with E2E tests.
 {{#if isTui}}
 ## Task
 Execute automated E2E tests for the completed TUI feature using the xterm.js bridge and agent-browser.
+Run ALL scenarios in a single session — do not end between scenarios.
 
 ### Step 1: Start Bridge
 Check the bridge is running:
@@ -149,11 +150,11 @@ When all scenarios are executed:
 2. Update the Implementation Summary status to `[PASSED]` if all passed
 3. **Commit the updated implementation plan:**
    ```bash
-   git add -A && git commit -m "test($FEATURE): E2E tests passed via agent-browser"
+   git -C {{appDir}} add -A && git -C {{appDir}} commit -m "test($FEATURE): E2E tests passed via agent-browser"
    ```
 4. **Push to remote:**
    ```bash
-   git push origin feat/$FEATURE
+   git -C {{appDir}} push origin feat/$FEATURE
    ```
 5. If all passed: signal ready for PR phase
 6. If any failed: failures documented, loop will retry after fix iteration
@@ -168,6 +169,7 @@ Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
 {{else}}
 ## Task
 Execute automated E2E tests for the completed feature using Playwright MCP tools.
+Run ALL scenarios in a single session — do not end between scenarios.
 
 ### Step 1: Check Dev Server
 Verify dev server is running at http://localhost:3000. If not accessible, start it:
@@ -176,7 +178,7 @@ cd {{appDir}} && {{devCommand}} &
 ```
 Wait ~10 seconds for server startup, then verify with a simple browser_navigate.
 
-### Step 1.5: Seed Test Data (if needed)
+{{#if hasSupabase}}### Step 1.5: Seed Test Data (if needed)
 
 Check if test scenarios require specific data volumes (e.g., pagination needs >10 rows).
 
@@ -199,6 +201,7 @@ query: "DELETE FROM table_name WHERE data->>'_test' = 'true';"
 ```
 
 **If seeding is impractical:** Document in implementation plan that E2E was skipped but unit tests provide coverage.
+{{/if}}
 
 ### Step 2: Parse E2E Test Scenarios
 Read E2E test scenarios from @.ralph/specs/$FEATURE-implementation-plan.md.
@@ -246,7 +249,7 @@ For each E2E test scenario:
    - Check console: `browser_console_messages` for JS errors
    - Document failure details
 
-### Step 4: Database Verification
+{{#if hasSupabase}}### Step 4: Database Verification
 For scenarios with database checks, use Supabase MCP:
 ```
 mcp__plugin_supabase_supabase__execute_sql
@@ -255,6 +258,7 @@ query: "SELECT * FROM survey_responses WHERE ..."
 ```
 
 Verify returned data matches expected state.
+{{/if}}
 
 ### Unique Test Data (for Parallel Execution)
 When creating test data, use unique identifiers to avoid conflicts with other loops:
@@ -315,11 +319,12 @@ Update @.ralph/specs/$FEATURE-implementation-plan.md for each scenario:
 2. Verify URL contains expected path/params
 ```
 
-### Database State
+{{#if hasSupabase}}### Database State
 ```
 1. mcp__plugin_supabase_supabase__execute_sql with SELECT query
 2. Verify row count, column values match expectations
 ```
+{{/if}}
 
 ## Browser State Management
 
@@ -364,8 +369,9 @@ If code changes don't appear in the browser:
 
 ### Stale Data
 - Clear browser storage: Use `browser_close` between scenarios
-- Check Supabase for stale test data from previous runs
+{{#if hasSupabase}}- Check Supabase for stale test data from previous runs
 - Delete test data: `DELETE FROM table WHERE data->>'_test' = 'true'`
+{{/if}}
 
 ## Rules
 - Always get a fresh `browser_snapshot` after actions before making assertions

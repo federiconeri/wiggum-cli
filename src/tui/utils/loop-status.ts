@@ -8,6 +8,44 @@ import { join } from 'node:path';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
 
+/**
+ * Find the implementation plan file, checking main project and git worktrees.
+ *
+ * Shared between loop-status.ts and monitor.ts to avoid duplicating the
+ * worktree search logic.
+ */
+export function findImplementationPlan(
+  projectRoot: string,
+  specsRelPath: string,
+  feature: string,
+): string | null {
+  // 1. Check main project
+  const mainPath = join(projectRoot, specsRelPath, `${feature}-implementation-plan.md`);
+  if (existsSync(mainPath)) return mainPath;
+
+  // 2. Check git worktrees for the feature branch
+  try {
+    const output = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: projectRoot,
+      encoding: 'utf-8',
+    });
+    const worktrees = output.split('\n\n').filter(Boolean);
+    for (const wt of worktrees) {
+      const pathMatch = wt.match(/^worktree (.+)$/m);
+      const escapedFeature = feature.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const branchMatch = wt.match(new RegExp(`^branch .+/feat/${escapedFeature}$`, 'm'));
+      if (pathMatch && branchMatch) {
+        const wtPlan = join(pathMatch[1], specsRelPath, `${feature}-implementation-plan.md`);
+        if (existsSync(wtPlan)) return wtPlan;
+      }
+    }
+  } catch {
+    // git worktree list failed — ignore
+  }
+
+  return null;
+}
+
 export interface LoopStatus {
   running: boolean;
   phase: string;
@@ -17,6 +55,7 @@ export interface LoopStatus {
   tokensOutput: number;
   cacheCreate: number;
   cacheRead: number;
+  tokensUpdatedAt?: number;
 }
 
 export interface TaskCounts {
@@ -24,6 +63,7 @@ export interface TaskCounts {
   tasksPending: number;
   e2eDone: number;
   e2ePending: number;
+  planExists: boolean;
 }
 
 /**
@@ -36,12 +76,24 @@ export interface PhaseInfo {
   /** Human-readable phase label */
   label: string;
   /** Phase completion status */
-  status: 'success' | 'skipped' | 'failed';
+  status: 'success' | 'skipped' | 'failed' | 'started';
   /** Duration in milliseconds, if available */
   durationMs?: number;
   /** Number of iterations in this phase (e.g., for implementation) */
   iterations?: number;
 }
+
+/**
+ * Phase ID to human-readable label mapping.
+ * Matches the phase IDs written by feature-loop.sh.
+ */
+export const PHASE_LABELS: Record<string, string> = {
+  planning: 'Planning',
+  implementation: 'Implementation',
+  e2e_testing: 'E2E Testing',
+  verification: 'Verification',
+  pr_review: 'PR & Review',
+};
 
 /**
  * Track whether pgrep is available to avoid repeated failed calls.
@@ -100,6 +152,52 @@ export function detectPhase(feature: string): string {
 }
 
 /**
+ * Read the current phase from the `.phases` file written by feature-loop.sh.
+ * Returns the human-readable label of the active phase, or null if unavailable.
+ *
+ * The file format is: phase_id|status|start_timestamp|end_timestamp
+ * A line with status "started" and no end timestamp indicates the active phase.
+ */
+export function readCurrentPhase(feature: string): string | null {
+  const phasesFile = `/tmp/ralph-loop-${feature}.phases`;
+
+  let content: string;
+  try {
+    content = readFileSync(phasesFile, 'utf-8').trim();
+  } catch {
+    return null;
+  }
+
+  if (!content) return null;
+
+  const lines = content.split('\n');
+  let lastStartedPhase: string | null = null;
+  let lastCompletedPhase: string | null = null;
+
+  for (const line of lines) {
+    const parts = line.split('|');
+    if (parts.length < 2) continue;
+    const [id, status] = parts;
+    if (status === 'started') {
+      lastStartedPhase = id;
+    } else if (status === 'success' || status === 'failed' || status === 'skipped') {
+      lastCompletedPhase = id;
+    }
+  }
+
+  if (lastStartedPhase) {
+    return PHASE_LABELS[lastStartedPhase] || lastStartedPhase;
+  }
+
+  if (lastCompletedPhase) {
+    const label = PHASE_LABELS[lastCompletedPhase] || lastCompletedPhase;
+    return `post-${label}`;
+  }
+
+  return null;
+}
+
+/**
  * Read loop status from temp files written by feature-loop.sh.
  *
  * Reads `ralph-loop-<feature>.status` (or `.final`) for iteration progress
@@ -125,8 +223,13 @@ export function readLoopStatus(feature: string): LoopStatus {
     try {
       const content = readFileSync(fileToRead, 'utf-8').trim();
       const parts = content.split('|');
-      iteration = parseInt(parts[0] || '0', 10) || 0;
-      maxIterations = parseInt(parts[1] || '0', 10) || 0;
+      // Require at least 2 fields (iteration|maxIterations); skip partial writes
+      if (parts.length >= 2) {
+        iteration = parseInt(parts[0] || '0', 10) || 0;
+        maxIterations = parseInt(parts[1] || '0', 10) || 0;
+      } else {
+        logger.debug(`Status file has fewer than 2 fields, using defaults: ${content}`);
+      }
     } catch (err) {
       logger.debug(`Failed to parse status file: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -136,28 +239,48 @@ export function readLoopStatus(feature: string): LoopStatus {
   let tokensOutput = 0;
   let cacheCreate = 0;
   let cacheRead = 0;
+  let tokensUpdatedAt: number | undefined;
   if (existsSync(tokensFile)) {
     try {
       const content = readFileSync(tokensFile, 'utf-8').trim();
       const parts = content.split('|');
-      tokensInput = parseInt(parts[0] || '0', 10) || 0;
-      tokensOutput = parseInt(parts[1] || '0', 10) || 0;
-      cacheCreate = parseInt(parts[2] || '0', 10) || 0;
-      cacheRead = parseInt(parts[3] || '0', 10) || 0;
+      // Require at least 2 fields (input|output); cache fields are optional (legacy format)
+      if (parts.length >= 2) {
+        tokensInput = parseInt(parts[0] || '0', 10) || 0;
+        tokensOutput = parseInt(parts[1] || '0', 10) || 0;
+        cacheCreate = parts.length >= 3 ? (parseInt(parts[2] || '0', 10) || 0) : 0;
+        cacheRead = parts.length >= 4 ? (parseInt(parts[3] || '0', 10) || 0) : 0;
+        if (parts[4]) {
+          const epoch = parseInt(parts[4], 10);
+          if (epoch > 0) tokensUpdatedAt = epoch * 1000; // convert to ms
+        }
+      } else {
+        logger.debug(`Tokens file has fewer than 2 fields, using defaults: ${content}`);
+      }
     } catch (err) {
       logger.debug(`Failed to parse tokens file: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
+  const running = isProcessRunning(`feature-loop.sh.*${feature}`);
+
+  // Prefer .phases file (written by feature-loop.sh on transitions) over process
+  // detection. pgrep-based detection can return stale results when old Claude
+  // sessions linger, causing the phase to appear stuck (e.g., "Planning" during
+  // Verification). The .phases file is the authoritative source of phase transitions.
+  const phaseFromFile = readCurrentPhase(feature);
+  let phase = phaseFromFile ?? detectPhase(feature);
+
   return {
-    running: isProcessRunning(`feature-loop.sh.*${feature}`),
-    phase: detectPhase(feature),
+    running,
+    phase,
     iteration,
     maxIterations,
     tokensInput,
     tokensOutput,
     cacheCreate,
     cacheRead,
+    tokensUpdatedAt,
   };
 }
 
@@ -183,14 +306,16 @@ export async function parseImplementationPlan(
     }
   }
   const specsDir = specsDirOverride || config?.paths.specs || '.ralph/specs';
-  const planPath = join(projectRoot, specsDir, `${feature}-implementation-plan.md`);
+  const planPath = findImplementationPlan(projectRoot, specsDir, feature);
 
   let tasksDone = 0;
   let tasksPending = 0;
   let e2eDone = 0;
   let e2ePending = 0;
 
-  if (existsSync(planPath)) {
+  const planExists = planPath !== null;
+
+  if (planPath) {
     try {
       const content = readFileSync(planPath, 'utf-8');
       const lines = content.split('\n');
@@ -211,12 +336,36 @@ export async function parseImplementationPlan(
           }
         }
       }
+
+      // Fallback: if no checkboxes found, count "#### Task N:" headers
+      if (tasksDone === 0 && tasksPending === 0 && e2eDone === 0 && e2ePending === 0) {
+        let headerTaskCount = 0;
+        for (const line of lines) {
+          if (line.match(/^#{1,4}\s+Task\s+\d+/i)) {
+            headerTaskCount++;
+          }
+        }
+        if (headerTaskCount > 0) {
+          // Check phases file to determine completion
+          const phasesPath = `/tmp/ralph-loop-${feature}.phases`;
+          let implDone = false;
+          if (existsSync(phasesPath)) {
+            const phases = readFileSync(phasesPath, 'utf-8');
+            implDone = phases.includes('implementation|success');
+          }
+          if (implDone) {
+            tasksDone = headerTaskCount;
+          } else {
+            tasksPending = headerTaskCount;
+          }
+        }
+      }
     } catch (err) {
       logger.debug(`Failed to parse implementation plan: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  return { tasksDone, tasksPending, e2eDone, e2ePending };
+  return { tasksDone, tasksPending, e2eDone, e2ePending, planExists };
 }
 
 /**
@@ -312,7 +461,7 @@ const SKIP_LINE_PATTERNS: RegExp[] = [
   /^Baseline commit:/,
   /^Creating branch:/,
   // Misc noise
-  /^\{"level"/,                            // JSON log lines (BashTool warnings etc.)
+  /^\{"/,                                  // Any line starting with JSON object (Claude result, log entries)
   /^Pending implementation tasks: \d+$/,   // raw task count (redundant with progress bar)
   /^Ready for feedback\.?$/i,              // Conversational filler
 ];
@@ -320,7 +469,7 @@ const SKIP_LINE_PATTERNS: RegExp[] = [
 /**
  * Returns true if a log line should be excluded from the activity feed.
  */
-function shouldSkipLine(line: string): boolean {
+export function shouldSkipLine(line: string): boolean {
   return SKIP_LINE_PATTERNS.some((pattern) => pattern.test(line));
 }
 
@@ -335,12 +484,17 @@ function stripMarkdown(msg: string): string {
     .trim();
 }
 
-const SUCCESS_KEYWORDS = /completed|passed|success|approved|all implementation tasks completed/i;
-const ERROR_KEYWORDS = /error|failed|failure/i;
+const SUCCESS_KEYWORDS = /\b(completed|passed|success|approved|fixed|resolved|merged|works)\b/i;
+const ERROR_KEYWORDS = /\b(error|failed|failure)\b/i;
+const POSITIVE_ERROR_CONTEXT = /\b(fixed|resolved|added|handled|handling|recovery|boundary|boundaries|tests?\s+passed)\b/i;
 
 function inferStatus(message: string): ActivityEvent['status'] {
   if (SUCCESS_KEYWORDS.test(message)) return 'success';
-  if (ERROR_KEYWORDS.test(message)) return 'error';
+  if (ERROR_KEYWORDS.test(message)) {
+    // Avoid misclassifying positive actions that mention error-related words
+    if (POSITIVE_ERROR_CONTEXT.test(message)) return 'in-progress';
+    return 'error';
+  }
   return 'in-progress';
 }
 
@@ -428,31 +582,30 @@ export function parsePhaseChanges(
     return { events: [] };
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawContent);
-    if (!Array.isArray(parsed)) {
-      logger.debug(`parsePhaseChanges: expected array in ${phasesFile}, got ${typeof parsed}`);
-      return { events: [], currentPhases: lastKnownPhases };
-    }
-  } catch (err) {
-    logger.debug(`parsePhaseChanges: invalid JSON in ${phasesFile}: ${err instanceof Error ? err.message : String(err)}`);
+  const content = rawContent.trim();
+  if (!content) {
     return { events: [], currentPhases: lastKnownPhases };
   }
 
-  // Validate each phase has required fields
-  const currentPhases: PhaseInfo[] = [];
-  for (const item of parsed as unknown[]) {
-    if (
-      typeof item === 'object' && item !== null &&
-      'id' in item && typeof (item as PhaseInfo).id === 'string' &&
-      'label' in item && typeof (item as PhaseInfo).label === 'string' &&
-      'status' in item && typeof (item as PhaseInfo).status === 'string'
-    ) {
-      currentPhases.push(item as PhaseInfo);
-    }
+  // Parse pipe-delimited format: phase_id|status|start_timestamp|end_timestamp
+  const VALID_STATUSES = new Set(['success', 'skipped', 'failed', 'started']);
+  const phaseMap = new Map<string, PhaseInfo>();
+
+  for (const line of content.split('\n')) {
+    const parts = line.split('|');
+    if (parts.length < 2) continue;
+
+    const [id, status] = parts;
+    if (!id || !VALID_STATUSES.has(status)) continue;
+
+    const label = PHASE_LABELS[id] || id;
+    const validStatus = status as PhaseInfo['status'];
+
+    // Last status wins for each phase id
+    phaseMap.set(id, { id, label, status: validStatus });
   }
 
+  const currentPhases = Array.from(phaseMap.values());
   const events: ActivityEvent[] = [];
   const now = Date.now();
 
@@ -477,4 +630,81 @@ export function parsePhaseChanges(
   }
 
   return { events, currentPhases };
+}
+
+/**
+ * Parse phase information from the phases file written by feature-loop.sh.
+ *
+ * Format: phase_id|status|start_timestamp|end_timestamp
+ * Accepts both 3-field lines (started: phase_id|started|timestamp) and
+ * 4-field lines (completed: phase_id|status|start_ts|end_ts).
+ *
+ * The parser handles duplicate phase entries defensively (last status wins,
+ * durations aggregate), though feature-loop.sh normally writes one final
+ * line per phase.
+ *
+ * Used by build-run-summary.ts for completion summaries.
+ */
+export function parsePhases(phasesFilePath: string): PhaseInfo[] {
+  if (!existsSync(phasesFilePath)) {
+    return [];
+  }
+
+  try {
+    const content = readFileSync(phasesFilePath, 'utf-8').trim();
+    if (!content) {
+      return [];
+    }
+
+    const lines = content.split('\n');
+    const VALID_STATUSES = new Set(['success', 'skipped', 'failed', 'started']);
+    const phaseMap = new Map<string, PhaseInfo>();
+
+    for (const line of lines) {
+      const parts = line.split('|');
+      if (parts.length < 2) continue;
+
+      const [id, status] = parts;
+      if (!id || !VALID_STATUSES.has(status)) {
+        logger.warn(`Unknown phase status "${status}" for phase "${id}", treating as failed`);
+        // Still process with 'failed' status
+      }
+
+      const validatedStatus: PhaseInfo['status'] = VALID_STATUSES.has(status)
+        ? (status as PhaseInfo['status'])
+        : 'failed';
+
+      // Parse timestamps (may be absent for 3-field 'started' lines)
+      const startTime = parts.length >= 3 ? (parseInt(parts[2], 10) || 0) : 0;
+      const endTime = parts.length >= 4 ? (parseInt(parts[3], 10) || 0) : 0;
+
+      // Calculate duration (end - start) in milliseconds
+      const durationMs = endTime > 0 && startTime > 0 ? (endTime - startTime) * 1000 : undefined;
+
+      // Get or create phase entry
+      let phase = phaseMap.get(id);
+      if (!phase) {
+        phase = {
+          id,
+          label: PHASE_LABELS[id] || id,
+          status: validatedStatus,
+          durationMs: 0,
+        };
+        phaseMap.set(id, phase);
+      }
+
+      // Update status (last status wins)
+      phase.status = validatedStatus;
+
+      // Aggregate duration
+      if (durationMs !== undefined) {
+        phase.durationMs = (phase.durationMs || 0) + durationMs;
+      }
+    }
+
+    return Array.from(phaseMap.values());
+  } catch (err) {
+    logger.warn(`Failed to parse phases file: ${err instanceof Error ? err.message : String(err)}`);
+    return [];
+  }
 }

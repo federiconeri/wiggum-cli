@@ -103,16 +103,24 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
   // Load config
   const config = await loadConfigWithDefaults(projectRoot);
 
-  // Validate spec file exists
-  const specFile = await validateSpecFile(projectRoot, feature);
-  if (!specFile) {
-    logger.error(`Spec file not found: ${feature}.md`);
-    logger.info(`Create the spec first: wiggum new ${feature}`);
-    logger.info(`Expected location: ${join(projectRoot, config.paths.specs, `${feature}.md`)}`);
-    process.exit(1);
+  // Validate spec file exists (skip when resuming — spec lives on the feature branch)
+  let specFile: string | null = null;
+  if (options.resume) {
+    // Best-effort: find it if it's here, but don't fail
+    specFile = await validateSpecFile(projectRoot, feature);
+  } else {
+    specFile = await validateSpecFile(projectRoot, feature);
+    if (!specFile) {
+      logger.error(`Spec file not found: ${feature}.md`);
+      logger.info(`Create the spec first: wiggum new ${feature}`);
+      logger.info(`Expected location: ${join(projectRoot, config.paths.specs, `${feature}.md`)}`);
+      process.exit(1);
+    }
   }
 
-  logger.info(`Found spec: ${specFile}`);
+  if (specFile) {
+    logger.info(`Found spec: ${specFile}`);
+  }
 
   // Find the feature-loop.sh script
   const scriptPath = findFeatureLoopScript(projectRoot);
@@ -163,7 +171,8 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
   // Display configuration
   console.log(pc.cyan('--- Run Configuration ---'));
   console.log(`  Feature: ${pc.bold(feature)}`);
-  console.log(`  Spec: ${specFile}`);
+  console.log(`  Spec: ${specFile ?? '(on feature branch)'}`);
+
   console.log(`  Max Iterations: ${maxIterations}`);
   console.log(`  Max E2E Attempts: ${maxE2eAttempts}`);
   console.log(`  Model: ${options.model || config.loop.defaultModel}`);
@@ -212,7 +221,8 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
         } else {
           logger.error(`Feature loop exited with code: ${code}`);
           logger.info('Use --resume to continue from where you left off');
-          reject(new Error(`Feature loop exited with code: ${code || 1}`));
+          process.exitCode = code || 1;
+          resolve();
         }
       });
     } catch (error) {

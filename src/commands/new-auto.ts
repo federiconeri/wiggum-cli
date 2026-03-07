@@ -16,7 +16,7 @@ import type { AIProvider } from '../ai/providers.js';
 import { loadConfigWithDefaults, hasConfig } from '../utils/config.js';
 import { loadContext, toScanResultFromPersisted } from '../context/index.js';
 import { detectGitHubRemote, fetchGitHubIssue } from '../utils/github.js';
-import { initTracing, flushTracing } from '../utils/tracing.js';
+import { initTracing, flushTracing, traced, currentSpan } from '../utils/tracing.js';
 import {
   InterviewOrchestrator,
   type SessionContext,
@@ -116,17 +116,35 @@ export async function newAutoCommand(
   }
 
   // Drive the orchestrator headlessly
-  const spec = await driveOrchestrator({
-    featureName,
-    projectRoot,
-    provider,
-    model,
-    scanResult: resolvedScanResult,
-    sessionContext: resolvedSessionContext,
-    goals: options.goals,
-    initialReferences: options.initialReferences,
-    timeoutMs: options.timeoutMs,
-  });
+  const spec = await traced(async () => {
+    currentSpan().log({
+      input: {
+        featureName,
+        provider,
+        model,
+        goals: options.goals,
+        hasReferences: (options.initialReferences?.length ?? 0) > 0,
+      },
+      metadata: {
+        command: 'new-auto',
+        provider,
+        model,
+      },
+      tags: ['new-auto'],
+    });
+
+    return driveOrchestrator({
+      featureName,
+      projectRoot,
+      provider,
+      model,
+      scanResult: resolvedScanResult,
+      sessionContext: resolvedSessionContext,
+      goals: options.goals,
+      initialReferences: options.initialReferences,
+      timeoutMs: options.timeoutMs,
+    });
+  }, { name: 'new-auto-run' });
 
   // Save spec to disk
   if (!existsSync(specsDir)) {

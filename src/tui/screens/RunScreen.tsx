@@ -293,6 +293,7 @@ export function RunScreen({
     tasksPending: 0,
     e2eDone: 0,
     e2ePending: 0,
+    planExists: false,
   });
   const [branch, setBranch] = useState<string>('-');
   const [error, setError] = useState<string | null>(null);
@@ -317,6 +318,8 @@ export function RunScreen({
   const handledActionIdRef = useRef<string | null>(null);
   const lastLogLineCountRef = useRef<number>(0);
   const lastKnownPhasesRef = useRef<PhaseInfo[] | undefined>(undefined);
+  const lastActivityTimeRef = useRef<number>(Date.now());
+  const lastCommitForEventRef = useRef<string | null>(null);
 
   // Read baseline commit once on mount
   useEffect(() => {
@@ -391,10 +394,34 @@ export function RunScreen({
       lastKnownPhasesRef.current = currentPhases;
     }
 
+    // Emit a commit activity event when HEAD changes
+    if (head && head !== lastCommitForEventRef.current && lastCommitForEventRef.current !== null) {
+      newLogEvents.push({
+        timestamp: Date.now(),
+        message: `New commit: ${head.slice(0, 7)}`,
+        status: 'success',
+      });
+    }
+    lastCommitForEventRef.current = head ?? null;
+
     const MAX_STORED_EVENTS = 100;
     const newEvents = [...newLogEvents, ...phaseEvents];
     if (newEvents.length > 0 && isMountedRef.current) {
+      lastActivityTimeRef.current = Date.now();
       setActivityEvents((prev) => [...prev, ...newEvents].slice(-MAX_STORED_EVENTS));
+    } else if (
+      nextStatus.running &&
+      nextStatus.phase !== 'Idle' &&
+      Date.now() - lastActivityTimeRef.current > 30_000 &&
+      isMountedRef.current
+    ) {
+      // Inject a synthetic "session in progress" event when stale
+      // Update lastActivityTimeRef so this doesn't fire every poll cycle
+      lastActivityTimeRef.current = Date.now();
+      setActivityEvents((prev) => [
+        ...prev,
+        { timestamp: Date.now(), message: `${nextStatus.phase} session in progress...`, status: 'in-progress' as const },
+      ].slice(-MAX_STORED_EVENTS));
     }
 
     // Check for pending action request (loop waiting for user input)
@@ -424,6 +451,10 @@ export function RunScreen({
       const tasksTotal = tasksDone + nextTasks.tasksPending + nextTasks.e2ePending;
       const errorTail = exitCode !== 0 ? readLogTail(logPath, ERROR_TAIL_LINES) || undefined : undefined;
 
+      // Use feat/<feature> as the branch name for summary. getGitBranch() returns
+      // "main" after squash-merge + worktree cleanup, which breaks PR/issue detection.
+      const summaryBranch = `feat/${featureName}`;
+
       const basicSummary: RunSummary = {
         feature: featureName,
         iterations: nextStatus.iteration,
@@ -436,14 +467,14 @@ export function RunScreen({
         cacheRead: nextStatus.cacheRead,
         exitCode,
         exitCodeInferred: true,
-        branch: getGitBranch(projectRoot),
+        branch: summaryBranch,
         logPath,
         errorTail,
       };
 
       let enhancedSummary: RunSummary;
       try {
-        enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+        enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName, baselineCommit);
       } catch (err) {
         logger.error(`Failed to build enhanced summary for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
         enhancedSummary = basicSummary;
@@ -455,7 +486,7 @@ export function RunScreen({
         logger.error(`Failed to persist summary file for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
-  }, [featureName, projectRoot, monitorOnly]);
+  }, [featureName, projectRoot, monitorOnly, baselineCommit]);
 
   // Keep a stable ref to the latest refreshStatus so the spawn effect
   // can schedule polls without re-running when refreshStatus changes.
@@ -627,6 +658,10 @@ export function RunScreen({
             if (!logFdClosed) { closeSync(logFd); logFdClosed = true; }
             if (!isMountedRef.current) return;
 
+            // Wait for bash to flush state files (.phases, .tokens, .final)
+            await new Promise((r) => setTimeout(r, 200));
+            if (!isMountedRef.current) return;
+
             let latestStatus: LoopStatus;
             let latestTasks: TaskCounts;
             try {
@@ -635,7 +670,7 @@ export function RunScreen({
             } catch (err) {
               logger.error(`Failed to read final run status for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
               latestStatus = { running: false, iteration: 0, maxIterations: config.loop.maxIterations, phase: 'unknown', tokensInput: 0, tokensOutput: 0, cacheCreate: 0, cacheRead: 0 };
-              latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0 };
+              latestTasks = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0, planExists: false };
             }
 
             const tasksDone = latestTasks.tasksDone + latestTasks.e2eDone;
@@ -654,7 +689,7 @@ export function RunScreen({
               cacheCreate: latestStatus.cacheCreate,
               cacheRead: latestStatus.cacheRead,
               exitCode,
-              branch: getGitBranch(projectRoot),
+              branch: `feat/${featureName}`,
               logPath,
               errorTail,
             };
@@ -662,7 +697,7 @@ export function RunScreen({
             // Build enhanced summary with phases, git stats, PR/issue metadata
             let enhancedSummary: RunSummary;
             try {
-              enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName);
+              enhancedSummary = buildEnhancedRunSummary(basicSummary, projectRoot, featureName, baselineCommit);
             } catch (err) {
               logger.error(`Failed to build enhanced summary for ${featureName}: ${err instanceof Error ? err.message : String(err)}`);
               enhancedSummary = basicSummary;

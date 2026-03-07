@@ -4,7 +4,7 @@ import { listSpecNames } from './utils/spec-names.js';
 import { AVAILABLE_MODELS, getAvailableProvider, isAnthropicAlias } from './ai/providers.js';
 import type { AIProvider } from './ai/providers.js';
 import { notifyIfUpdateAvailable } from './utils/update-check.js';
-import { renderApp, type AppScreen, type RunAppProps } from './tui/app.js';
+import { renderApp, type AppScreen, type RunAppProps, type AgentAppProps } from './tui/app.js';
 import { logger } from './utils/logger.js';
 import { loadApiKeysFromEnvLocal } from './utils/env.js';
 import { readFileSync } from 'fs';
@@ -60,6 +60,9 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     '--issue',
     '--context',
     '--goals',
+    '--max-items',
+    '--max-steps',
+    '--labels',
   ]);
 
   // Flags that can be specified multiple times, accumulating into an array
@@ -155,6 +158,7 @@ async function startInkTui(
     runFeature?: string;
     monitorOnly?: boolean;
     initialReferences?: string[];
+    agentOptions?: AgentAppProps;
   },
 ): Promise<void> {
   const interviewFeature = options?.interviewFeature;
@@ -229,6 +233,7 @@ async function startInkTui(
     version,
     interviewProps,
     runProps,
+    agentProps: options?.agentOptions,
     onComplete: (specPath) => {
       // Spec was saved to disk by app.tsx (avoid stdout noise during TUI)
       logger.debug(`Created spec: ${specPath}`);
@@ -268,6 +273,7 @@ Usage:
   wiggum monitor <feature>  Monitor a running feature loop
   wiggum sync               Refresh project context (scan + AI analysis)
   wiggum config [args...]   Manage API keys and settings
+  wiggum agent              Autonomous backlog executor
 
 Options for run:
   --worktree                Use git worktree isolation
@@ -296,6 +302,15 @@ Options for new:
   --goals <description>     Feature goals (used with --auto)
   -e, --edit                Open in editor after creation
   -f, --force               Overwrite existing spec
+
+Options for agent:
+  --model <model>           AI model (overrides ralph.config.cjs agent.defaultModel)
+  --max-items <n>           Max issues to process before stopping
+  --max-steps <n>           Max agent steps before stopping
+  --labels <l1,l2>          Only work on issues with these labels (comma-separated)
+  --review-mode <mode>      Review mode: 'manual', 'auto', or 'merge' (default: manual)
+  --dry-run                 Plan what would be done without executing
+  --stream                  Stream output in real-time (default: wait for completion)
 
 In the TUI:
   /init                     Initialize or reconfigure project
@@ -349,10 +364,13 @@ Press Esc to cancel any operation.
 
       if (parsed.flags.auto === true) {
         const { newAutoCommand } = await import('./commands/new-auto.js');
+        const providerFlag = typeof parsed.flags.provider === 'string' ? parsed.flags.provider : undefined;
+        const validProviders = new Set(['anthropic', 'openai', 'openrouter']);
         await newAutoCommand(featureName, {
           goals: typeof parsed.flags.goals === 'string' ? parsed.flags.goals : undefined,
           initialReferences: initialReferences.length > 0 ? initialReferences : undefined,
           model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
+          provider: providerFlag && validProviders.has(providerFlag) ? providerFlag as import('./ai/providers.js').AIProvider : undefined,
         });
       } else {
         await startInkTui('interview', {
@@ -428,6 +446,46 @@ Press Esc to cancel any operation.
         : 'sonnet';
       const state = createSessionState(process.cwd(), provider, model);
       await handleConfigCommand(parsed.positionalArgs, state);
+      break;
+    }
+
+    case 'agent': {
+      const reviewModeFlag = typeof parsed.flags.reviewMode === 'string' ? parsed.flags.reviewMode : undefined;
+      if (reviewModeFlag && !['manual', 'auto', 'merge'].includes(reviewModeFlag)) {
+        console.error(`Error: Invalid --review-mode '${reviewModeFlag}'. Allowed values: manual, auto, merge`);
+        process.exit(1);
+      }
+      const agentOpts = {
+        model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
+        maxItems: typeof parsed.flags.maxItems === 'string' ? parseIntFlag(parsed.flags.maxItems, '--max-items') : undefined,
+        maxSteps: typeof parsed.flags.maxSteps === 'string' ? parseIntFlag(parsed.flags.maxSteps, '--max-steps') : undefined,
+        labels: typeof parsed.flags.labels === 'string' ? parsed.flags.labels.split(',').map(l => l.trim()).filter(Boolean) : undefined,
+        reviewMode: reviewModeFlag as 'manual' | 'auto' | 'merge' | undefined,
+        dryRun: parsed.flags.dryRun === true,
+        stream: parsed.flags.stream === true,
+      };
+
+      if (agentOpts.stream === true) {
+        // Explicit --stream: always headless
+        const { agentCommand } = await import('./commands/agent.js');
+        await agentCommand(agentOpts);
+      } else if (process.stdout.isTTY && !isCI()) {
+        // TTY: launch TUI
+        await startInkTui('agent', {
+          agentOptions: {
+            modelOverride: agentOpts.model,
+            maxItems: agentOpts.maxItems,
+            maxSteps: agentOpts.maxSteps,
+            labels: agentOpts.labels,
+            reviewMode: agentOpts.reviewMode,
+            dryRun: agentOpts.dryRun,
+          },
+        });
+      } else {
+        // Non-TTY / CI: headless
+        const { agentCommand } = await import('./commands/agent.js');
+        await agentCommand(agentOpts);
+      }
       break;
     }
 
