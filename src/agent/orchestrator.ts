@@ -64,7 +64,6 @@ After calling assessFeatureState, follow the recommendation:
       1. Call listIssues with labels ["bug"] to check for existing bug issues covering these failures
       2. If no existing issue covers them, you MUST call createIssue with title "Fix N pre-existing test failures", body listing the failing files, and labels ["bug"]. If a "P0" label exists on the repo you may add it; if not, just use ["bug"].
       3. Do NOT skip this step just because the loop succeeded — pre-existing failures degrade CI and must be tracked
-      4. Remember the issue number you created — do NOT work on it in this same session (it requires human triage or a future run)
    d. Only close the issue if assessFeatureState confirms a PR was merged (recommendation: "pr_merged" or "linked_pr_merged")
    e. When closing: check off acceptance criteria with checkAllBoxes, then close with closeIssue
    f. If the loop produced code but no PR was created/merged, run the loop again with resume: true to trigger the PR phase
@@ -76,10 +75,11 @@ After calling assessFeatureState, follow the recommendation:
    - Note what worked, what failed, any patterns discovered
 6. Continue to next issue — MANDATORY tool call sequence:
    a. Call listIssues (with NO label filter) to get the full backlog
-   b. Skip any issues you created during this session (blocker/bug issues from step 4c) — they need human triage or a future run
+   b. Cross-reference with memory to avoid re-doing completed work
    c. If actionable issues remain and no stop condition is met, immediately call assessFeatureState for the next priority issue — do NOT generate text
-   d. Only produce a text-only response (final summary) when the backlog is empty or a stop condition is met
-   e. ANY text without a tool call terminates the session — there is no "ask for permission" step
+   d. When assessFeatureState returns, follow the Feature State Decision Tree (step 3d) for that issue — e.g. start_fresh → generateSpec → runLoop. This begins a full new work cycle (steps 3–6). Do NOT stop after assessFeatureState.
+   e. Only produce a text-only response (final summary) when the backlog is empty or a stop condition is met
+   f. ANY text without a tool call terminates the session — there is no "ask for permission" step
 
 ## Model forwarding
 
@@ -111,7 +111,7 @@ Stop the loop when:
 - A critical failure requires human attention
 - The user has signaled to stop
 
-IMPORTANT: Generating text without tool calls terminates the session immediately. After completing an issue, you MUST call listIssues (step 6) — never ask "should I continue?" or summarize before checking. Your only text-only response is the final summary when ALL issues are processed or a stop condition is met.
+IMPORTANT: Generating text without tool calls terminates the session immediately. After completing an issue, you MUST call listIssues (step 6) — never ask "should I continue?" or summarize before checking. After assessFeatureState returns for the next issue, you MUST follow the Feature State Decision Tree and call the next tool (e.g. generateSpec for start_fresh). Stopping after assessFeatureState is a bug — the result tells you what to do next. Your only text-only response is the final summary when ALL issues are processed or a stop condition is met.
 
 ## Learning
 
@@ -133,7 +133,7 @@ Never close an issue without verifying the code is merged to main. Loop log evid
 
 ## Blocker detection (additional)
 
-Besides the mandatory check in step 4c, also create bug issues for systemic blockers you discover (broken CI, missing infrastructure, flaky tests). Always check with listIssues(labels: ["bug"]) before creating to avoid duplicates. After creating blocker issues, continue processing the backlog — never stop due to blockers alone. Never work on issues you just created in the same session.`;
+Besides the mandatory check in step 4c, also create bug issues for systemic blockers you discover (broken CI, missing infrastructure, flaky tests). Always check with listIssues(labels: ["bug"]) before creating to avoid duplicates. After creating blocker issues, continue processing the backlog — never stop due to blockers alone.`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AgentOrchestrator = ToolLoopAgent<never, any, any>;
