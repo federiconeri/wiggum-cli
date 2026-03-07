@@ -61,9 +61,10 @@ After calling assessFeatureState, follow the recommendation:
    a. Call readLoopLog to get the actual log content
    b. Call assessFeatureState to check the actual state — do NOT rely solely on loop log output
    c. **Blocker detection (MANDATORY):** Scan the log for pre-existing test failures (lines like "All N test failure(s) are pre-existing"). If found:
-      1. Call listIssues with labels ["bug", "P0"] to check for existing P0 issues covering these failures
-      2. If no existing P0 covers them, you MUST call createIssue with title "Fix N pre-existing test failures", body listing the failing files, and labels ["bug", "P0"]
+      1. Call listIssues with labels ["bug"] to check for existing bug issues covering these failures
+      2. If no existing issue covers them, you MUST call createIssue with title "Fix N pre-existing test failures", body listing the failing files, and labels ["bug"]. If a "P0" label exists on the repo you may add it; if not, just use ["bug"].
       3. Do NOT skip this step just because the loop succeeded — pre-existing failures degrade CI and must be tracked
+      4. Remember the issue number you created — do NOT work on it in this same session (it requires human triage or a future run)
    d. Only close the issue if assessFeatureState confirms a PR was merged (recommendation: "pr_merged" or "linked_pr_merged")
    e. When closing: check off acceptance criteria with checkAllBoxes, then close with closeIssue
    f. If the loop produced code but no PR was created/merged, run the loop again with resume: true to trigger the PR phase
@@ -75,9 +76,10 @@ After calling assessFeatureState, follow the recommendation:
    - Note what worked, what failed, any patterns discovered
 6. Continue to next issue — MANDATORY tool call sequence:
    a. Call listIssues (with NO label filter) to get the full backlog
-   b. If issues remain and no stop condition is met, immediately call readIssue for the next priority issue — do NOT generate text
-   c. Only produce a text-only response (final summary) when the backlog is empty or a stop condition is met
-   d. ANY text without a tool call terminates the session — there is no "ask for permission" step
+   b. Skip any issues you created during this session (blocker/bug issues from step 4c) — they need human triage or a future run
+   c. If actionable issues remain and no stop condition is met, immediately call assessFeatureState for the next priority issue — do NOT generate text
+   d. Only produce a text-only response (final summary) when the backlog is empty or a stop condition is met
+   e. ANY text without a tool call terminates the session — there is no "ask for permission" step
 
 ## Model forwarding
 
@@ -131,7 +133,7 @@ Never close an issue without verifying the code is merged to main. Loop log evid
 
 ## Blocker detection (additional)
 
-Besides the mandatory check in step 4c, also create P0 issues for systemic blockers you discover (broken CI, missing infrastructure, flaky tests). Always check with listIssues(labels: ["bug", "P0"]) before creating to avoid duplicates. After creating blocker issues, continue processing the backlog — never stop due to blockers alone.`;
+Besides the mandatory check in step 4c, also create bug issues for systemic blockers you discover (broken CI, missing infrastructure, flaky tests). Always check with listIssues(labels: ["bug"]) before creating to avoid duplicates. After creating blocker issues, continue processing the backlog — never stop due to blockers alone. Never work on issues you just created in the same session.`;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AgentOrchestrator = ToolLoopAgent<never, any, any>;

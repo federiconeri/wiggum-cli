@@ -233,6 +233,15 @@ function interpretToolCalls(
     }
   }
 
+  // Detect whether listIssues was called with a label filter (e.g. P0 check)
+  // so we don't overwrite the queue with a filtered subset.
+  const listIssuesHasLabelFilter = event.toolCalls.some((tc) => {
+    if (tc.toolName !== 'listIssues') return false;
+    const args = tc.args as Record<string, unknown> | undefined;
+    const labels = args?.labels as string[] | undefined;
+    return Array.isArray(labels) && labels.length > 0;
+  });
+
   // Process tool results for additional state updates
   for (const tr of event.toolResults) {
     const result = tr.result as Record<string, unknown> | undefined;
@@ -241,15 +250,19 @@ function interpretToolCalls(
       case 'listIssues': {
         const issues = (result?.issues ?? result) as Array<Record<string, unknown>> | undefined;
         if (Array.isArray(issues)) {
-          const queueItems: AgentIssueState[] = issues.map((issue) => ({
-            issueNumber: (issue.number ?? issue.issueNumber) as number,
-            title: (issue.title as string) ?? `Issue #${issue.number ?? issue.issueNumber}`,
-            labels: Array.isArray(issue.labels) ? issue.labels as string[] : [],
-            phase: 'idle' as AgentPhase,
-          }));
-          setQueue(queueItems);
+          // Only update queue from unfiltered listIssues calls (full backlog scan).
+          // Filtered calls (e.g. labels: ["bug"]) are P0/blocker checks — not the backlog.
+          if (!listIssuesHasLabelFilter) {
+            const queueItems: AgentIssueState[] = issues.map((issue) => ({
+              issueNumber: (issue.number ?? issue.issueNumber) as number,
+              title: (issue.title as string) ?? `Issue #${issue.number ?? issue.issueNumber}`,
+              labels: Array.isArray(issue.labels) ? issue.labels as string[] : [],
+              phase: 'idle' as AgentPhase,
+            }));
+            setQueue(queueItems);
+          }
           setLogEntries((prev) =>
-            appendLog(prev, `Found ${queueItems.length} issue(s) in backlog`),
+            appendLog(prev, `Found ${issues.length} issue(s) in backlog`),
           );
         }
         break;
