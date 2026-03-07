@@ -89,6 +89,7 @@ function interpretToolCalls(
   pollingRef: React.MutableRefObject<PollingState | null>,
   stopLoopPolling: () => void,
   ranLoopRef: React.MutableRefObject<Set<number>>,
+  activeIssueRef: React.MutableRefObject<AgentIssueState | null>,
 ): void {
   // If a new tool call arrives while polling, the runLoop tool has finished — stop polling
   for (const tc of event.toolCalls) {
@@ -116,36 +117,42 @@ function interpretToolCalls(
 
       case 'assessFeatureState': {
         const issueNumber = args?.issueNumber as number | undefined;
-        const featureName = args?.featureName as string | undefined;
-        if (issueNumber) {
-          // assessFeatureState signals the agent has committed to this issue
-          setQueue((prev) => {
-            const queueEntry = prev.find((i) => i.issueNumber === issueNumber);
-            setActiveIssue((currentActive) => {
-              if (currentActive?.issueNumber === issueNumber) return currentActive; // already active
-              return {
-                issueNumber,
-                title: queueEntry?.title ?? featureName ?? `Issue #${issueNumber}`,
-                labels: queueEntry?.labels ?? [],
-                phase: 'planning' as AgentPhase,
-                loopFeatureName: featureName, // store for later use by onProgress polling
-              };
-            });
-            return prev.filter((i) => i.issueNumber !== issueNumber);
-          });
-        }
         setLogEntries((prev) =>
           appendLog(prev, `Assessing feature state${issueNumber ? ` for #${issueNumber}` : ''}`),
         );
         break;
       }
 
-      case 'generateSpec':
-        setActiveIssue((prev) =>
-          prev ? { ...prev, phase: 'generating_spec' as AgentPhase } : prev,
-        );
+      case 'generateSpec': {
+        const genFeatureName = args?.featureName as string | undefined;
+        const genIssueNumber = args?.issueNumber as number | undefined;
+        // generateSpec signals commitment — promote from queue to active
+        setQueue((prev) => {
+          const issueNum = genIssueNumber ?? activeIssueRef.current?.issueNumber;
+          if (issueNum) {
+            const queueEntry = prev.find((i) => i.issueNumber === issueNum);
+            setActiveIssue((currentActive) => {
+              if (currentActive?.issueNumber === issueNum) {
+                return { ...currentActive, phase: 'generating_spec' as AgentPhase, loopFeatureName: genFeatureName ?? currentActive.loopFeatureName };
+              }
+              return {
+                issueNumber: issueNum,
+                title: queueEntry?.title ?? genFeatureName ?? `Issue #${issueNum}`,
+                labels: queueEntry?.labels ?? [],
+                phase: 'generating_spec' as AgentPhase,
+                loopFeatureName: genFeatureName,
+              };
+            });
+            return prev.filter((i) => i.issueNumber !== issueNum);
+          }
+          setActiveIssue((prev) =>
+            prev ? { ...prev, phase: 'generating_spec' as AgentPhase } : prev,
+          );
+          return prev;
+        });
         setLogEntries((prev) => appendLog(prev, 'Generating spec...'));
         break;
+      }
 
       case 'runLoop': {
         // onStepFinish: runLoop tool has completed (may have run for 10+ min).
@@ -153,12 +160,39 @@ function interpretToolCalls(
         // Stop polling now that the tool has returned.
         stopLoopPolling();
         const featureName = args?.featureName as string | undefined;
-        setActiveIssue((prev) => {
-          if (!prev) return prev;
-          const updated = { ...prev, phase: 'running_loop' as AgentPhase };
-          if (featureName && !prev.loopFeatureName) updated.loopFeatureName = featureName;
-          ranLoopRef.current.add(prev.issueNumber);
-          return updated;
+        const runIssueNumber = args?.issueNumber as number | undefined;
+        // runLoop signals commitment — promote from queue to active if not already
+        setQueue((prev) => {
+          const issueNum = runIssueNumber ?? activeIssueRef.current?.issueNumber;
+          if (issueNum) {
+            const queueEntry = prev.find((i) => i.issueNumber === issueNum);
+            setActiveIssue((currentActive) => {
+              if (currentActive?.issueNumber === issueNum) {
+                const updated = { ...currentActive, phase: 'running_loop' as AgentPhase };
+                if (featureName && !currentActive.loopFeatureName) updated.loopFeatureName = featureName;
+                ranLoopRef.current.add(issueNum);
+                return updated;
+              }
+              const entry: AgentIssueState = {
+                issueNumber: issueNum,
+                title: queueEntry?.title ?? featureName ?? `Issue #${issueNum}`,
+                labels: queueEntry?.labels ?? [],
+                phase: 'running_loop' as AgentPhase,
+                loopFeatureName: featureName,
+              };
+              ranLoopRef.current.add(issueNum);
+              return entry;
+            });
+            return prev.filter((i) => i.issueNumber !== issueNum);
+          }
+          setActiveIssue((prev) => {
+            if (!prev) return prev;
+            const updated = { ...prev, phase: 'running_loop' as AgentPhase };
+            if (featureName && !prev.loopFeatureName) updated.loopFeatureName = featureName;
+            ranLoopRef.current.add(prev.issueNumber);
+            return updated;
+          });
+          return prev;
         });
         setLogEntries((prev) => appendLog(prev, 'Development loop complete'));
         break;
@@ -440,6 +474,7 @@ export function useAgentOrchestrator(
               pollingRef,
               stopLoopPolling,
               ranLoopRef,
+              activeIssueRef,
             );
           },
           onProgress: (toolName: string, line: string) => {
