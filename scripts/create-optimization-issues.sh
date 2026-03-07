@@ -10,6 +10,14 @@ REPO="federiconeri/wiggum-cli"
 echo "Creating optimization issues on $REPO..."
 echo ""
 
+# Create labels if they don't exist
+echo "Ensuring labels exist..."
+gh label create "performance" --color "0E8A16" --description "Performance optimization" -R "$REPO" 2>/dev/null || true
+gh label create "P1" --color "D93F0B" --description "High priority" -R "$REPO" 2>/dev/null || true
+gh label create "P2" --color "FBCA04" --description "Medium priority" -R "$REPO" 2>/dev/null || true
+gh label create "P3" --color "C5DEF5" --description "Lower priority" -R "$REPO" 2>/dev/null || true
+echo ""
+
 # --- Sub-issue 1 ---
 echo "Creating sub-issue #1..."
 ISSUE1=$(gh issue create -R "$REPO" \
