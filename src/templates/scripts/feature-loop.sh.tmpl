@@ -155,13 +155,12 @@ run_claude_resume() {
     local claude_cmd="$3"
     # Insert --resume "$session_id" before the -p flag
     local resume_cmd="${claude_cmd/ -p / --resume \"$session_id\" -p }"
+    if [ "$resume_cmd" = "$claude_cmd" ]; then
+        echo "WARNING: --resume injection failed, -p flag not found in command" >&2
+        return 1
+    fi
     { echo "$continuation_prompt"; echo "$AUTOMATION_FOOTER"; } | $resume_cmd
 }
-
-# Continuation prompt for implementation loop iterations 2+
-CONTINUATION_PROMPT="Continue implementing the remaining tasks in the implementation plan at $SPEC_DIR/${FEATURE}-implementation-plan.md.
-Check off completed tasks as you go. Skip any E2E testing tasks.
-Run validation (lint, typecheck, test) after completing tasks."
 
 # Token tracking
 TOKENS_FILE="/tmp/ralph-loop-${1}.tokens"
@@ -709,6 +708,10 @@ while true; do
         echo "Legacy plan format — relying on source-file gate for completion."
     fi
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
+    # Continuation prompt for implementation loop iterations 2+
+    CONTINUATION_PROMPT="Continue implementing the remaining tasks in the implementation plan at $SPEC_DIR/${FEATURE}-implementation-plan.md.
+Check off completed tasks as you go. Skip any E2E testing tasks.
+Run validation (lint, typecheck, test) after completing tasks."
     if [ $ITERATION -eq 1 ] || [ -z "$LAST_SESSION_ID" ]; then
         echo "Mode: fresh"
         run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
