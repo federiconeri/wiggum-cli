@@ -59,6 +59,7 @@ export interface AgentAppProps {
   maxItems?: number;
   maxSteps?: number;
   labels?: string[];
+  issues?: number[];
   reviewMode?: 'manual' | 'auto' | 'merge';
   dryRun?: boolean;
 }
@@ -376,6 +377,7 @@ export function App({
         ...(screenProps?.dryRun != null ? { dryRun: screenProps.dryRun as boolean } : {}),
         ...(screenProps?.maxItems != null ? { maxItems: screenProps.maxItems as number } : {}),
         ...(screenProps?.reviewMode != null ? { reviewMode: screenProps.reviewMode as AgentAppProps['reviewMode'] } : {}),
+        ...(screenProps?.issues != null ? { issues: screenProps.issues as number[] } : {}),
       };
       return (
         <AgentScreen

@@ -357,6 +357,7 @@ export function AgentScreen({
       maxItems: agentOptions?.maxItems,
       maxSteps: agentOptions?.maxSteps,
       labels: agentOptions?.labels,
+      issues: agentOptions?.issues,
       reviewMode: agentOptions?.reviewMode,
       dryRun: agentOptions?.dryRun,
     });

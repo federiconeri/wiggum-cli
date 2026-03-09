@@ -20,6 +20,7 @@ export interface AgentOptions {
   maxItems?: number;
   maxSteps?: number;
   labels?: string[];
+  issues?: number[];
   reviewMode?: 'manual' | 'auto' | 'merge';
   dryRun?: boolean;
   stream?: boolean;
@@ -53,6 +54,7 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
     maxSteps: options.maxSteps,
     maxItems: options.maxItems,
     labels: options.labels,
+    issues: options.issues,
     reviewMode: options.reviewMode,
     dryRun: options.dryRun,
     onStepUpdate: (event) => {
