@@ -7,9 +7,10 @@
  */
 
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
-import { Box, Text, useInput, useApp } from 'ink';
+import { Box, Text, useInput, useApp, useStdout } from 'ink';
 import { MessageList, type Message } from '../components/MessageList.js';
 import { ChatInput } from '../components/ChatInput.js';
+import { IssuePicker } from '../components/IssuePicker.js';
 import type { Command } from '../components/CommandDropdown.js';
 import { ActionOutput } from '../components/ActionOutput.js';
 import { AppShell } from '../components/AppShell.js';
@@ -26,7 +27,25 @@ import type { SessionState } from '../../repl/session-state.js';
 import { readLoopStatus } from '../utils/loop-status.js';
 import { useSync } from '../hooks/useSync.js';
 import type { BackgroundRun } from '../hooks/useBackgroundRuns.js';
+import {
+  isGhInstalled,
+  detectGitHubRemote,
+  listRepoIssues,
+  type GitHubIssueListItem,
+  type GitHubRepo,
+} from '../../utils/github.js';
+import { clearScreen } from '../utils/clear-screen.js';
 import path from 'node:path';
+
+function slugifyIssueTitle(title: string, maxWords = 4): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .split(/\s+/)
+    .slice(0, maxWords)
+    .join('-') || 'untitled';
+}
 
 /**
  * Navigation targets for the shell
@@ -82,6 +101,7 @@ export function MainShell({
   initialFiles,
 }: MainShellProps): React.ReactElement {
   const { exit } = useApp();
+  const { stdout } = useStdout();
   const [messages, setMessages] = useState<Message[]>(() => {
     const initial: Message[] = [];
     if (initialMessage) {
@@ -98,6 +118,13 @@ export function MainShell({
 
   // Sync hook
   const { status: syncStatus, error: syncError, sync } = useSync();
+
+  // Issue picker state
+  const [issuePickerVisible, setIssuePickerVisible] = useState(false);
+  const [issuePickerIssues, setIssuePickerIssues] = useState<GitHubIssueListItem[]>([]);
+  const [issuePickerLoading, setIssuePickerLoading] = useState(false);
+  const [issuePickerError, setIssuePickerError] = useState<string | undefined>();
+  const [issuePickerRepo, setIssuePickerRepo] = useState<GitHubRepo | null>(null);
 
   const addSystemMessage = useCallback((content: string) => {
     const message: Message = {
@@ -280,6 +307,66 @@ export function MainShell({
     onNavigate('agent', { dryRun, maxItems, reviewMode } as NavigationProps);
   }, [sessionState.initialized, addSystemMessage, onNavigate]);
 
+  const handleIssueCommand = useCallback(async (searchQuery?: string) => {
+    if (!sessionState.initialized) {
+      addSystemMessage('Project not initialized. Run /init first.');
+      return;
+    }
+
+    setIssuePickerVisible(true);
+    setIssuePickerLoading(true);
+    setIssuePickerError(undefined);
+
+    try {
+      const ghAvailable = await isGhInstalled();
+      if (!ghAvailable) {
+        setIssuePickerError('Install GitHub CLI (gh) for issue browsing');
+        setIssuePickerLoading(false);
+        return;
+      }
+
+      let repo = issuePickerRepo;
+      if (!repo) {
+        repo = await detectGitHubRemote(sessionState.projectRoot);
+        if (!repo) {
+          setIssuePickerError('No GitHub remote detected in this project');
+          setIssuePickerLoading(false);
+          return;
+        }
+        setIssuePickerRepo(repo);
+      }
+
+      const result = await listRepoIssues(repo.owner, repo.repo, searchQuery);
+      if (result.error) {
+        setIssuePickerError(result.error);
+      }
+      setIssuePickerIssues(result.issues);
+    } catch (err) {
+      setIssuePickerError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIssuePickerLoading(false);
+    }
+  }, [sessionState.initialized, sessionState.projectRoot, issuePickerRepo, addSystemMessage]);
+
+  const handleIssueSelect = useCallback((issue: GitHubIssueListItem) => {
+    clearScreen(stdout);
+    setIssuePickerVisible(false);
+    setIssuePickerIssues([]);
+
+    const featureName = slugifyIssueTitle(issue.title);
+    onNavigate('interview', {
+      featureName,
+      initialReferences: [`issue:${issue.number}`],
+    });
+  }, [stdout, onNavigate]);
+
+  const handleIssueCancel = useCallback(() => {
+    clearScreen(stdout);
+    setIssuePickerVisible(false);
+    setIssuePickerIssues([]);
+    setIssuePickerError(undefined);
+  }, [stdout]);
+
   const handleConfig = useCallback((args: string[]) => {
     if (args.length === 0) {
       addSystemMessage('Config management - not yet implemented in TUI mode. Use CLI: wiggum config');
@@ -331,6 +418,9 @@ export function MainShell({
       case 'monitor':
         handleMonitor(args);
         break;
+      case 'issue':
+        handleIssueCommand(args.join(' ') || undefined);
+        break;
       case 'agent':
         handleAgent(args);
         break;
@@ -343,7 +433,7 @@ export function MainShell({
       default:
         addSystemMessage(`Unknown command: ${commandName}`);
     }
-  }, [handleHelp, handleInit, handleSync, handleNew, handleRun, handleMonitor, handleAgent, handleConfig, handleExit, addSystemMessage]);
+  }, [handleHelp, handleInit, handleSync, handleNew, handleRun, handleMonitor, handleIssueCommand, handleAgent, handleConfig, handleExit, addSystemMessage]);
 
   const handleNaturalLanguage = useCallback((_text: string) => {
     addSystemMessage('Tip: Use /help to see available commands, or /new <feature> to create a spec.');
@@ -386,7 +476,7 @@ export function MainShell({
 
   // Build tips text
   const tips = sessionState.initialized
-    ? 'Tip: /new <feature> to create spec, /help for commands'
+    ? 'Tip: /new <feature> or /issue to browse issues, /help for commands'
     : 'Tip: /init to set up, /help for commands';
 
   const specSuggestions: Command[] | undefined = useMemo(
@@ -395,13 +485,25 @@ export function MainShell({
   );
 
   const inputElement = (
-    <ChatInput
-      onSubmit={handleSubmit}
-      disabled={false}
-      placeholder="Enter command or type /help..."
-      onCommand={(cmd) => handleSubmit(`/${cmd}`)}
-      specSuggestions={specSuggestions}
-    />
+    <Box flexDirection="column">
+      <ChatInput
+        onSubmit={handleSubmit}
+        disabled={issuePickerVisible}
+        placeholder="Enter command or type /help..."
+        onCommand={(cmd) => handleSubmit(`/${cmd}`)}
+        specSuggestions={specSuggestions}
+      />
+      {issuePickerVisible && (
+        <IssuePicker
+          issues={issuePickerIssues}
+          repoSlug={issuePickerRepo ? `${issuePickerRepo.owner}/${issuePickerRepo.repo}` : '...'}
+          onSelect={handleIssueSelect}
+          onCancel={handleIssueCancel}
+          isLoading={issuePickerLoading}
+          error={issuePickerError}
+        />
+      )}
+    </Box>
   );
 
   return (
