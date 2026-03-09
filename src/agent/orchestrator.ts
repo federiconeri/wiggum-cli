@@ -57,7 +57,7 @@ After calling assessFeatureState, follow the recommendation:
 - When recommendation is start_fresh, generate a spec first, then run the loop without resume
 - ALWAYS pass issueNumber to assessFeatureState so it can detect work shipped under a different branch name
 - Derive short, stable feature names (2-4 words, kebab-case) from the issue title — e.g. "config-module" not "config-module-toml-read-write-with-secret-masking"
-4. After the loop completes (successfully or with failure):
+4. After the loop completes (successfully or with failure) — MANDATORY for EVERY issue, including subsequent ones:
    a. Call readLoopLog to get the actual log content
    b. Call assessFeatureState to check the actual state — do NOT rely solely on loop log output
    c. **Blocker detection (MANDATORY):** Scan the log for pre-existing test failures (lines like "All N test failure(s) are pre-existing"). If found:
@@ -68,6 +68,7 @@ After calling assessFeatureState, follow the recommendation:
    e. When closing: check off acceptance criteria with checkAllBoxes, then close with closeIssue
    f. If the loop produced code but no PR was created/merged, run the loop again with resume: true to trigger the PR phase
    g. If the loop failed and code exists on the branch without a PR, this is incomplete work — do NOT close the issue
+   h. Steps 4–6 are MANDATORY after every runLoop — including the 2nd, 3rd, etc. issue. Do NOT summarize or stop after runLoop returns. The next tool call must be readLoopLog.
 5. Reflect on the outcome:
    - Call reflectOnWork with structured observations
    - Use outcome "skipped" for issues that were already complete (no real work done) — these do NOT count against maxItems
@@ -111,7 +112,7 @@ Stop the loop when:
 - A critical failure requires human attention
 - The user has signaled to stop
 
-IMPORTANT: Generating text without tool calls terminates the session immediately. After completing an issue, you MUST call listIssues (step 6) — never ask "should I continue?" or summarize before checking. After assessFeatureState returns for the next issue, you MUST follow the Feature State Decision Tree and call the next tool (e.g. generateSpec for start_fresh). Stopping after assessFeatureState is a bug — the result tells you what to do next. Your only text-only response is the final summary when ALL issues are processed or a stop condition is met.
+IMPORTANT: Generating text without tool calls terminates the session immediately. After completing an issue, you MUST call listIssues (step 6) — never ask "should I continue?" or summarize before checking. After assessFeatureState returns for the next issue, you MUST follow the Feature State Decision Tree and call the next tool (e.g. generateSpec for start_fresh). Stopping after assessFeatureState is a bug — the result tells you what to do next. After runLoop returns, you MUST execute steps 4–6 (readLoopLog → assessFeatureState → close/comment → reflectOnWork → listIssues). Stopping after runLoop is a bug — there is always post-loop work to do. Your only text-only response is the final summary when ALL issues are processed or a stop condition is met.
 
 ## Learning
 
