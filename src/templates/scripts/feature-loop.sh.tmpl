@@ -148,6 +148,21 @@ run_claude_prompt() {
     { cat "$prompt_file" | envsubst; echo "$AUTOMATION_FOOTER"; } | $claude_cmd
 }
 
+# Helper: resume an existing Claude session with a short continuation prompt
+run_claude_resume() {
+    local session_id="$1"
+    local continuation_prompt="$2"
+    local claude_cmd="$3"
+    # Insert --resume "$session_id" before the -p flag
+    local resume_cmd="${claude_cmd/ -p / --resume \"$session_id\" -p }"
+    { echo "$continuation_prompt"; echo "$AUTOMATION_FOOTER"; } | $resume_cmd
+}
+
+# Continuation prompt for implementation loop iterations 2+
+CONTINUATION_PROMPT="Continue implementing the remaining tasks in the implementation plan at $SPEC_DIR/${FEATURE}-implementation-plan.md.
+Check off completed tasks as you go. Skip any E2E testing tasks.
+Run validation (lint, typecheck, test) after completing tasks."
+
 # Token tracking
 TOKENS_FILE="/tmp/ralph-loop-${1}.tokens"
 CLAUDE_OUTPUT="/tmp/ralph-loop-${1}.output"
@@ -694,7 +709,23 @@ while true; do
         echo "Legacy plan format — relying on source-file gate for completion."
     fi
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-    run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+    if [ $ITERATION -eq 1 ] || [ -z "$LAST_SESSION_ID" ]; then
+        echo "Mode: fresh"
+        run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+    else
+        echo "Mode: resume (session: $LAST_SESSION_ID)"
+        RESUME_EXIT=0
+        run_claude_resume "$LAST_SESSION_ID" "$CONTINUATION_PROMPT" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || RESUME_EXIT=$?
+        extract_session_result "${CLAUDE_OUTPUT}.raw"
+        if [ $RESUME_EXIT -ne 0 ] || [ -z "$LAST_SESSION_ID" ]; then
+            if [ $RESUME_EXIT -ne 0 ]; then
+                echo "Resume failed (resume_exit_nonzero: exit=$RESUME_EXIT). Fallback: using fresh prompt"
+            else
+                echo "Resume failed (resume_no_session_id). Fallback: using fresh prompt"
+            fi
+            run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        fi
+    fi
     extract_session_result "${CLAUDE_OUTPUT}.raw"
     accumulate_tokens_from_session "$LAST_SESSION_ID"
 

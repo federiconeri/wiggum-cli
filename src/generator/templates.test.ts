@@ -5,11 +5,20 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { extractVariables } from './templates.js';
 import type { ScanResult } from '../scanner/types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+function readFeatureLoopTemplate(): string {
+  const templatePath = join(__dirname, '..', 'templates', 'scripts', 'feature-loop.sh.tmpl');
+  return readFileSync(templatePath, 'utf-8');
+}
 
 function makeScanResult(overrides: {
   projectRoot: string;
@@ -133,5 +142,68 @@ describe('extractVariables - isTui detection', () => {
   it('sets isTui to "" when no package.json exists', () => {
     const result = extractVariables(makeScanResult({ projectRoot: testDir }));
     expect(result.isTui).toBe('');
+  });
+});
+
+describe('feature-loop.sh.tmpl — resume invocation', () => {
+  it('contains run_claude_resume helper function', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('run_claude_resume()');
+  });
+
+  it('run_claude_resume builds resume command with --resume flag', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('--resume');
+    expect(template).toContain('run_claude_resume');
+  });
+
+  it('contains CONTINUATION_PROMPT variable', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('CONTINUATION_PROMPT=');
+  });
+
+  it('CONTINUATION_PROMPT instructs to continue implementation tasks', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('Continue implementing the remaining tasks');
+    expect(template).toContain('Skip any E2E testing tasks');
+  });
+
+  it('implementation loop branches on iteration 1 for fresh prompt', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('[ $ITERATION -eq 1 ]');
+    expect(template).toContain('Mode: fresh');
+  });
+
+  it('implementation loop uses resume for iterations 2+', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('Mode: resume (session:');
+    expect(template).toContain('run_claude_resume "$LAST_SESSION_ID"');
+  });
+
+  it('contains fallback logic that triggers run_claude_prompt on resume failure', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('Fallback: using fresh prompt');
+    // After resume path, there must be a fallback run_claude_prompt call
+    const resumeIndex = template.indexOf('run_claude_resume "$LAST_SESSION_ID"');
+    const fallbackIndex = template.indexOf('Fallback: using fresh prompt');
+    expect(resumeIndex).toBeGreaterThan(-1);
+    expect(fallbackIndex).toBeGreaterThan(resumeIndex);
+  });
+
+  it('logs resume failure reason categories', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('resume_exit_nonzero');
+    expect(template).toContain('resume_no_session_id');
+  });
+
+  it('produces raw output artifacts for both resume and fallback paths via tee', () => {
+    const template = readFeatureLoopTemplate();
+    // Count tee occurrences in the implementation loop section — both paths use tee
+    const implSection = template.slice(
+      template.indexOf('IMPLEMENTATION PHASE'),
+      template.indexOf('E2E PHASE') !== -1 ? template.indexOf('E2E PHASE') : template.length
+    );
+    const teeMatches = implSection.match(/\| tee "\$\{CLAUDE_OUTPUT\}\.raw"/g) ?? [];
+    expect(teeMatches.length).toBeGreaterThanOrEqual(3); // fresh, resume, and fallback paths
   });
 });
