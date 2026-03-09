@@ -12,6 +12,7 @@ export interface AgentConfig {
   maxSteps?: number;
   maxItems?: number;
   labels?: string[];
+  issues?: number[];
   reviewMode?: ReviewMode;
   dryRun?: boolean;
   onStepUpdate?: (event: AgentStepEvent) => void;

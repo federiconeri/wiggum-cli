@@ -93,6 +93,54 @@ describe('createBacklogTools', () => {
       expect(search).toContain('label:P0');
       expect(search).toContain('label:P1');
     });
+
+    it('filters results to only configured issue numbers', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', { issueNumbers: [3, 5] });
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 1, title: 'Other', state: 'open', labels: [], createdAt: '2026-01-01T00:00:00Z' },
+          { number: 3, title: 'Target A', state: 'open', labels: [], createdAt: '2026-01-03T00:00:00Z' },
+          { number: 5, title: 'Target B', state: 'open', labels: [], createdAt: '2026-01-05T00:00:00Z' },
+          { number: 7, title: 'Other B', state: 'open', labels: [], createdAt: '2026-01-07T00:00:00Z' },
+        ],
+      });
+
+      const result = await scopedTools.listIssues.execute({ limit: 20 }, execCtx);
+      expect(result.issues).toHaveLength(2);
+      expect(result.issues.map((i: any) => i.number)).toEqual([3, 5]);
+    });
+
+    it('returns empty when no configured issues match', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', { issueNumbers: [99] });
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 1, title: 'Other', state: 'open', labels: [], createdAt: '2026-01-01T00:00:00Z' },
+        ],
+      });
+
+      const result = await scopedTools.listIssues.execute({ limit: 20 }, execCtx);
+      expect(result.issues).toHaveLength(0);
+    });
+
+    it('combines issue number filter with label filter', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', {
+        defaultLabels: ['P1'],
+        issueNumbers: [3, 5],
+      });
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 3, title: 'Target', state: 'open', labels: ['P1'], createdAt: '2026-01-03T00:00:00Z' },
+          { number: 5, title: 'Target B', state: 'open', labels: ['P1'], createdAt: '2026-01-05T00:00:00Z' },
+          { number: 7, title: 'Other', state: 'open', labels: ['P1'], createdAt: '2026-01-07T00:00:00Z' },
+        ],
+      });
+
+      const result = await scopedTools.listIssues.execute({ limit: 20 }, execCtx);
+      expect(result.issues).toHaveLength(2);
+      expect(result.issues.map((i: any) => i.number)).toEqual([3, 5]);
+      // Labels should still be passed to GitHub search
+      expect(mockListRepoIssues.mock.calls[0][2]).toContain('label:P1');
+    });
   });
 
   describe('readIssue', () => {

@@ -4,6 +4,7 @@ import { listRepoIssues, fetchGitHubIssue } from '../../utils/github.js';
 
 export interface BacklogToolsOptions {
   defaultLabels?: string[];
+  issueNumbers?: number[];
 }
 
 const DEPENDENCY_PATTERN = /\b(?:depends on|blocked by|requires|after)\s+#(\d+)/gi;
@@ -35,7 +36,10 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       if (result.error) return { issues: [], error: result.error };
       // Sort by issue number ascending — lower numbers are typically more foundational
       const sorted = [...result.issues].sort((a, b) => a.number - b.number);
-      return { issues: sorted };
+      const filtered = options.issueNumbers?.length
+        ? sorted.filter(i => options.issueNumbers!.includes(i.number))
+        : sorted;
+      return { issues: filtered };
     },
   });
 
