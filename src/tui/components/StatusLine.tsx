@@ -19,6 +19,8 @@ export interface StatusLineProps {
   phase?: string;
   /** Path or context info (e.g., working directory or feature name) */
   path?: string;
+  /** Extra trailing segment (e.g., "review: auto") */
+  extra?: string;
 }
 
 /**
@@ -41,6 +43,7 @@ export function StatusLine({
   action,
   phase,
   path,
+  extra,
 }: StatusLineProps): React.ReactElement {
   const separator = theme.statusLine.separator;
 
@@ -69,6 +72,14 @@ export function StatusLine({
         <>
           <Text dimColor>{separator}</Text>
           <Text dimColor>{displayPath}</Text>
+        </>
+      )}
+
+      {/* Extra segment (optional) */}
+      {extra && (
+        <>
+          <Text dimColor>{separator}</Text>
+          <Text dimColor>{extra}</Text>
         </>
       )}
     </Box>

@@ -96,6 +96,27 @@ export function getDiffStats(
  * @param toHash - Ending commit hash (inclusive)
  * @returns Array of commit entries, or null if not available
  */
+export function getRecentCommits(
+  projectRoot: string,
+  count = 3,
+): CommitLogEntry[] {
+  try {
+    const output = execFileSync(
+      'git',
+      ['log', '--oneline', `-${count}`],
+      { cwd: projectRoot, encoding: 'utf-8', timeout: 10_000 },
+    ).trim();
+    if (!output) return [];
+    return output.split('\n').map((line) => {
+      const spaceIdx = line.indexOf(' ');
+      if (spaceIdx === -1) return { hash: line, title: '' };
+      return { hash: line.substring(0, spaceIdx), title: line.substring(spaceIdx + 1) };
+    });
+  } catch {
+    return [];
+  }
+}
+
 export function getCommitList(
   projectRoot: string,
   fromHash: string,

@@ -1,8 +1,11 @@
 /**
  * AgentScreen - TUI dashboard for the autonomous agent mode
  *
- * Displays issue processing status and an agent log.
+ * Displays issue processing status, a loop monitor, and an agent log.
  * Two-column layout on wide terminals (>=65 cols), single-column on narrow.
+ *
+ * When a loop is running, the right panel splits: loop monitor (top) + log (bottom).
+ * When no loop is running, the right panel shows only the agent log.
  *
  * Wired to the orchestrator via useAgentOrchestrator hook, which
  * interprets tool calls into structured React state. Console is patched
@@ -14,10 +17,12 @@
 import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { Box, Text, useInput, useStdout } from 'ink';
 import { AppShell } from '../components/AppShell.js';
-import { colors, phase } from '../theme.js';
-import { useAgentOrchestrator, type AgentStatus } from '../hooks/useAgentOrchestrator.js';
+import { ActivityFeed } from '../components/ActivityFeed.js';
+import { colors, phase, theme } from '../theme.js';
+import { useAgentOrchestrator, type AgentStatus, type LoopMonitorData } from '../hooks/useAgentOrchestrator.js';
+import { formatNumber } from '../utils/loop-status.js';
 import type { AgentAppProps } from '../app.js';
-import type { AgentLogEntry, AgentIssueState, AgentPhase } from '../../agent/types.js';
+import type { AgentLogEntry, AgentIssueState, AgentPhase, ReviewMode } from '../../agent/types.js';
 
 const NARROW_BREAKPOINT = 65;
 const SECTION_CHAR = '\u2500'; // ─
@@ -67,10 +72,10 @@ function workingLabel(activeIssue: AgentIssueState | null): string {
 function footerPhase(status: AgentStatus, activeIssue: AgentIssueState | null, completedCount: number, cancelling: boolean): string {
   if (cancelling) return 'Cancelling...';
   if (status === 'idle') return 'Waiting';
-  if (status === 'complete') return `Done — ${completedCount} issue${completedCount === 1 ? '' : 's'} processed`;
+  if (status === 'complete') return `Done \u2014 ${completedCount} issue${completedCount === 1 ? '' : 's'} processed`;
   if (status === 'error') return 'Error';
   if (!activeIssue) return 'Starting...';
-  const loopDetail = activeIssue.loopPhase ? ` · ${activeIssue.loopPhase}` : '';
+  const loopDetail = activeIssue.loopPhase ? ` \u00b7 ${activeIssue.loopPhase}` : '';
   const iter = activeIssue.loopIterations != null ? ` (iter ${activeIssue.loopIterations})` : '';
   return `#${activeIssue.issueNumber}${loopDetail}${iter}`;
 }
@@ -159,7 +164,7 @@ function IssuesPanel({
               <Text> {issue.title}</Text>
             </Text>
             {issue.prUrl && (
-              <Text dimColor>  └ PR: {issue.prUrl}</Text>
+              <Text dimColor>  \u2514 PR: {issue.prUrl}</Text>
             )}
           </Box>
         ))
@@ -169,12 +174,11 @@ function IssuesPanel({
 }
 
 /**
- * Log panel content — shared between wide and narrow layouts
+ * Log panel content — shared between wide and narrow layouts.
+ * tailSize controls how many entries to show (shrinks when monitor is visible).
  */
-const LOG_TAIL_SIZE = 20;
-
-function LogPanel({ logEntries }: { logEntries: AgentLogEntry[] }): React.ReactElement {
-  const visible = logEntries.slice(-LOG_TAIL_SIZE);
+function LogPanel({ logEntries, tailSize = 20 }: { logEntries: AgentLogEntry[]; tailSize?: number }): React.ReactElement {
+  const visible = logEntries.slice(-tailSize);
   return (
     <Box flexDirection="column">
       <Text bold color={colors.yellow}>Agent Log</Text>
@@ -194,6 +198,130 @@ function LogPanel({ logEntries }: { logEntries: AgentLogEntry[] }): React.ReactE
     </Box>
   );
 }
+
+/**
+ * ProgressBar — inline progress indicator
+ */
+function ProgressBar({ percent, width = 18 }: { percent: number; width?: number }): React.ReactElement {
+  const safePercent = Math.max(0, Math.min(100, percent));
+  const filled = Math.round((safePercent / 100) * width);
+  const empty = Math.max(0, width - filled);
+  return (
+    <Box flexDirection="row">
+      <Text color={colors.green}>{'\u2588'.repeat(filled)}</Text>
+      <Text dimColor>{'\u2591'.repeat(empty)}</Text>
+    </Box>
+  );
+}
+
+function formatDuration(start: number): string {
+  const seconds = Math.max(0, Math.floor((Date.now() - start) / 1000));
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
+}
+
+const PROGRESS_LABEL_WIDTH = 17;
+const padLabel = (label: string) => label.padEnd(PROGRESS_LABEL_WIDTH);
+
+/**
+ * Loop Monitor panel — shows progress, commits, and activity for the active loop
+ */
+function LoopMonitorPanel({
+  monitor,
+  featureName,
+  panelWidth,
+}: {
+  monitor: LoopMonitorData;
+  featureName: string;
+  panelWidth: number;
+}): React.ReactElement {
+  const { loopStatus, tasks, branch, recentCommits, activityEvents, startTime } = monitor;
+  const totalTokens = loopStatus.tokensInput + loopStatus.tokensOutput + loopStatus.cacheCreate + loopStatus.cacheRead;
+  const totalTasks = tasks.tasksDone + tasks.tasksPending;
+  const totalE2e = tasks.e2eDone + tasks.e2ePending;
+  const totalAll = totalTasks + totalE2e;
+  const doneAll = tasks.tasksDone + tasks.e2eDone;
+  const percentTasks = totalTasks > 0 ? Math.round((tasks.tasksDone / totalTasks) * 100) : 0;
+  const percentE2e = totalE2e > 0 ? Math.round((tasks.e2eDone / totalE2e) * 100) : 0;
+  const percentAll = totalAll > 0 ? Math.round((doneAll / totalAll) * 100) : 0;
+
+  return (
+    <Box flexDirection="column">
+      <Text bold color={colors.yellow}>Loop Monitor <Text dimColor>\u2014 {featureName}</Text></Text>
+
+      <Box flexDirection="row">
+        <Text>Phase: </Text>
+        <Text color={colors.yellow}>{loopStatus.phase}</Text>
+        <Text dimColor>{theme.statusLine.separator}</Text>
+        <Text>Iter: </Text>
+        <Text color={colors.green}>{loopStatus.iteration}</Text>
+        <Text dimColor>/{loopStatus.maxIterations || '-'}</Text>
+        <Text dimColor>{theme.statusLine.separator}</Text>
+        <Text>Branch: </Text>
+        <Text color={colors.blue}>{branch}</Text>
+      </Box>
+
+      {totalTokens > 0 && (
+        <Box flexDirection="row">
+          <Text>Tokens: </Text>
+          <Text color={colors.pink}>{formatNumber(totalTokens)}</Text>
+          <Text dimColor> (in:{formatNumber(loopStatus.tokensInput)} out:{formatNumber(loopStatus.tokensOutput)} cache:{formatNumber(loopStatus.cacheRead)})</Text>
+          <Text dimColor>{theme.statusLine.separator}</Text>
+          <Text dimColor>Elapsed: {formatDuration(startTime)}</Text>
+        </Box>
+      )}
+
+      <Box marginTop={1} flexDirection="column">
+        <Box flexDirection="row" alignItems="center" gap={1}>
+          <Text bold>{padLabel('Implementation:')}</Text>
+          <ProgressBar percent={percentTasks} />
+          <Text>{String(percentTasks).padStart(3)}%</Text>
+          <Text color={colors.green}>{'\u2713'} {tasks.tasksDone}</Text>
+          <Text color={colors.yellow}>{'\u25cb'} {tasks.tasksPending}</Text>
+        </Box>
+
+        {totalE2e > 0 && (
+          <Box flexDirection="row" alignItems="center" gap={1}>
+            <Text bold>{padLabel('E2E Tests:')}</Text>
+            <ProgressBar percent={percentE2e} />
+            <Text>{String(percentE2e).padStart(3)}%</Text>
+            <Text color={colors.green}>{'\u2713'} {tasks.e2eDone}</Text>
+            <Text color={colors.yellow}>{'\u25cb'} {tasks.e2ePending}</Text>
+          </Box>
+        )}
+
+        <Box flexDirection="row" alignItems="center" gap={1}>
+          <Text bold>{padLabel('Overall:')}</Text>
+          <ProgressBar percent={percentAll} />
+          <Text>{String(percentAll).padStart(3)}%</Text>
+          <Text color={colors.green}>{'\u2713'} {doneAll}</Text>
+          <Text color={colors.yellow}>{'\u25cb'} {totalAll - doneAll}</Text>
+        </Box>
+      </Box>
+
+      {recentCommits.length > 0 && (
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>Recent Commits</Text>
+          {recentCommits.map((c) => (
+            <Box key={c.hash} flexDirection="row">
+              <Text dimColor>  {c.hash} {c.title}</Text>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {activityEvents.length > 0 && (
+        <Box marginTop={1} flexDirection="column">
+          <Text bold>Activity</Text>
+          <ActivityFeed events={activityEvents} maxEvents={6} />
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+const REVIEW_MODES: ReviewMode[] = ['manual', 'auto', 'merge'];
 
 export function AgentScreen({
   header,
@@ -222,7 +350,7 @@ export function AgentScreen({
     };
   }, []);
 
-  const { status, activeIssue, queue, completed, logEntries, error, abort } =
+  const { status, activeIssue, queue, completed, logEntries, loopMonitor, error, abort } =
     useAgentOrchestrator({
       projectRoot,
       modelOverride: agentOptions?.modelOverride,
@@ -235,6 +363,7 @@ export function AgentScreen({
 
   // Track whether the user requested cancellation
   const [cancelling, setCancelling] = useState(false);
+  const [reviewMode, setReviewMode] = useState<ReviewMode>(agentOptions?.reviewMode ?? 'manual');
   const onExitRef = useRef(onExit);
   onExitRef.current = onExit;
 
@@ -246,6 +375,7 @@ export function AgentScreen({
   }, [cancelling, status]);
 
   const isWorking = status === 'running' || cancelling;
+  const hasLoopMonitor = loopMonitor !== null && activeIssue?.phase === 'running_loop';
 
   useInput(useCallback((input: string, key: { escape?: boolean }) => {
     if (input === 'q' || key.escape) {
@@ -257,10 +387,26 @@ export function AgentScreen({
         // Already done — exit immediately
         onExitRef.current?.();
       }
+      return;
+    }
+    // Shift+R cycles review mode (manual → auto → merge)
+    if (input === 'R') {
+      setReviewMode((prev) => {
+        const idx = REVIEW_MODES.indexOf(prev);
+        return REVIEW_MODES[(idx + 1) % REVIEW_MODES.length];
+      });
     }
   }, [abort, status]));
 
-  const tips = cancelling ? 'Cancelling...' : 'q exit │ Esc back';
+  const tips = cancelling
+    ? 'Cancelling...'
+    : 'q exit \u2502 Esc back \u2502 Shift+R review mode';
+
+  const footerStatus = {
+    action: 'Agent',
+    phase: footerPhase(status, activeIssue, completed.length, cancelling),
+    extra: `review: ${reviewMode}`,
+  };
 
   if (isNarrow) {
     const panelWidth = Math.max(20, columns - 4);
@@ -270,17 +416,19 @@ export function AgentScreen({
         tips={tips}
         isWorking={isWorking}
         workingStatus={workingLabel(activeIssue)}
-        footerStatus={{
-          action: 'Agent',
-          phase: footerPhase(status, activeIssue, completed.length, cancelling),
-        }}
+        footerStatus={footerStatus}
       >
         <Box flexDirection="column" gap={1}>
           <Box flexDirection="column" borderStyle="round" borderColor={colors.brown} paddingX={1}>
             <IssuesPanel activeIssue={activeIssue} queue={queue} completed={completed} panelWidth={panelWidth} />
           </Box>
+          {hasLoopMonitor && (
+            <Box flexDirection="column" borderStyle="round" borderColor={colors.brown} paddingX={1}>
+              <LoopMonitorPanel monitor={loopMonitor} featureName={activeIssue!.loopFeatureName ?? `issue-${activeIssue!.issueNumber}`} panelWidth={panelWidth} />
+            </Box>
+          )}
           <Box flexDirection="column" borderStyle="round" borderColor={colors.brown} paddingX={1}>
-            <LogPanel logEntries={logEntries} />
+            <LogPanel logEntries={logEntries} tailSize={hasLoopMonitor ? 8 : 20} />
           </Box>
         </Box>
       </AppShell>
@@ -291,6 +439,7 @@ export function AgentScreen({
   const leftWidth = Math.max(30, Math.floor(columns * 0.4));
   const rightWidth = Math.max(30, columns - leftWidth - 3);
   const leftInnerWidth = leftWidth - 4; // border (2) + paddingX (2)
+  const rightInnerWidth = rightWidth - 4;
 
   return (
     <AppShell
@@ -298,10 +447,7 @@ export function AgentScreen({
       tips={tips}
       isWorking={isWorking}
       workingStatus={workingLabel(activeIssue)}
-      footerStatus={{
-        action: 'Agent',
-        phase: footerPhase(status, activeIssue, completed.length, cancelling),
-      }}
+      footerStatus={footerStatus}
     >
       <Box flexDirection="row" gap={1}>
         {/* Left panel: Issues */}
@@ -309,9 +455,16 @@ export function AgentScreen({
           <IssuesPanel activeIssue={activeIssue} queue={queue} completed={completed} panelWidth={leftInnerWidth} />
         </Box>
 
-        {/* Right panel: Agent Log */}
-        <Box flexDirection="column" width={rightWidth} borderStyle="round" borderColor={colors.brown} paddingX={1}>
-          <LogPanel logEntries={logEntries} />
+        {/* Right panel: Loop Monitor (when running) + Agent Log */}
+        <Box flexDirection="column" width={rightWidth}>
+          {hasLoopMonitor && (
+            <Box flexDirection="column" borderStyle="round" borderColor={colors.brown} paddingX={1} marginBottom={1}>
+              <LoopMonitorPanel monitor={loopMonitor} featureName={activeIssue!.loopFeatureName ?? `issue-${activeIssue!.issueNumber}`} panelWidth={rightInnerWidth} />
+            </Box>
+          )}
+          <Box flexDirection="column" borderStyle="round" borderColor={colors.brown} paddingX={1}>
+            <LogPanel logEntries={logEntries} tailSize={hasLoopMonitor ? 8 : 20} />
+          </Box>
         </Box>
       </Box>
     </AppShell>
