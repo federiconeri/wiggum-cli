@@ -157,6 +157,9 @@ export function buildConstraints(config: AgentConfig): string {
   if (config.labels?.length) {
     lines.push(`- Only work on issues with these labels: ${config.labels.join(', ')}. Ignore all others.`);
   }
+  if (config.issues?.length) {
+    lines.push(`- ONLY work on these specific issues: ${config.issues.map(n => `#${n}`).join(', ')}. Ignore all others.`);
+  }
   if (config.dryRun) {
     lines.push('- DRY RUN MODE: Plan what you would do but do NOT execute. Execution and reporting tools return simulated results.');
   }
@@ -172,6 +175,7 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
 
   const backlog = createBacklogTools(owner, repo, {
     defaultLabels: config.labels,
+    issueNumbers: config.issues,
   });
   const memory = createMemoryTools(store, projectRoot);
   const execution = config.dryRun
@@ -194,7 +198,9 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     ...featureState,
   };
 
-  const constraints = buildConstraints(config);
+  const effectiveMaxItems = config.maxItems ?? (config.issues?.length ? config.issues.length : undefined);
+  const constraintConfig = { ...config, maxItems: effectiveMaxItems };
+  const constraints = buildConstraints(constraintConfig);
   const runtimeConfig = buildRuntimeConfig(config);
   const fullPrompt = AGENT_SYSTEM_PROMPT + runtimeConfig + constraints;
   const completedIssues = new Set<number>();
@@ -215,7 +221,7 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     },
     stopWhen: ({ steps }) => {
       if (steps.length >= maxSteps) return true;
-      if (config.maxItems != null && completedIssues.size >= config.maxItems) return true;
+      if (effectiveMaxItems != null && completedIssues.size >= effectiveMaxItems) return true;
       return false;
     },
     prepareStep: async ({ steps }) => {

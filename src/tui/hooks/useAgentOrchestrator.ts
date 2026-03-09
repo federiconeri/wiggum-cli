@@ -41,6 +41,7 @@ export interface UseAgentOrchestratorOptions {
   maxItems?: number;
   maxSteps?: number;
   labels?: string[];
+  issues?: number[];
   reviewMode?: ReviewMode;
   dryRun?: boolean;
 }
@@ -519,6 +520,7 @@ export function useAgentOrchestrator(
           maxSteps: options.maxSteps,
           maxItems: options.maxItems,
           labels: options.labels,
+          issues: options.issues,
           reviewMode: options.reviewMode,
           dryRun: options.dryRun,
           onStepUpdate: (event: AgentStepEvent) => {

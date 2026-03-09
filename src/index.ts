@@ -63,6 +63,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     '--max-items',
     '--max-steps',
     '--labels',
+    '--issues',
   ]);
 
   // Flags that can be specified multiple times, accumulating into an array
@@ -308,6 +309,7 @@ Options for agent:
   --max-items <n>           Max issues to process before stopping
   --max-steps <n>           Max agent steps before stopping
   --labels <l1,l2>          Only work on issues with these labels (comma-separated)
+  --issues <n1,n2,...>      Only work on these specific issue numbers (comma-separated)
   --review-mode <mode>      Review mode: 'manual', 'auto', or 'merge' (default: manual)
   --dry-run                 Plan what would be done without executing
   --stream                  Stream output in real-time (default: wait for completion)
@@ -460,6 +462,16 @@ Press Esc to cancel any operation.
         maxItems: typeof parsed.flags.maxItems === 'string' ? parseIntFlag(parsed.flags.maxItems, '--max-items') : undefined,
         maxSteps: typeof parsed.flags.maxSteps === 'string' ? parseIntFlag(parsed.flags.maxSteps, '--max-steps') : undefined,
         labels: typeof parsed.flags.labels === 'string' ? parsed.flags.labels.split(',').map(l => l.trim()).filter(Boolean) : undefined,
+        issues: typeof parsed.flags.issues === 'string'
+          ? parsed.flags.issues.split(',').map(s => {
+              const n = parseInt(s.trim(), 10);
+              if (Number.isNaN(n) || n < 1) {
+                console.error(`Error: Invalid issue number '${s.trim()}' in --issues`);
+                process.exit(1);
+              }
+              return n;
+            })
+          : undefined,
         reviewMode: reviewModeFlag as 'manual' | 'auto' | 'merge' | undefined,
         dryRun: parsed.flags.dryRun === true,
         stream: parsed.flags.stream === true,
@@ -477,6 +489,7 @@ Press Esc to cancel any operation.
             maxItems: agentOpts.maxItems,
             maxSteps: agentOpts.maxSteps,
             labels: agentOpts.labels,
+            issues: agentOpts.issues,
             reviewMode: agentOpts.reviewMode,
             dryRun: agentOpts.dryRun,
           },
