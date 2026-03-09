@@ -131,6 +131,19 @@ describe('buildConstraints', () => {
     const result = buildConstraints({ ...base, dryRun: true });
     expect(result).toContain('DRY RUN');
   });
+
+  it('includes issues constraint', () => {
+    const result = buildConstraints({ ...base, issues: [137, 139] });
+    expect(result).toContain('#137');
+    expect(result).toContain('#139');
+    expect(result).toContain('ONLY');
+  });
+
+  it('combines issues with other constraints', () => {
+    const result = buildConstraints({ ...base, issues: [42], maxItems: 1 });
+    expect(result).toContain('#42');
+    expect(result).toContain('1 issue(s)');
+  });
 });
 
 describe('buildRuntimeConfig', () => {
