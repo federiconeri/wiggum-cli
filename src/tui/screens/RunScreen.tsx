@@ -201,6 +201,8 @@ export interface RunScreenProps {
 
 const POLL_INTERVAL_MS = 2500;
 const ERROR_TAIL_LINES = 12;
+const RUN_REVIEW_MODES = ['manual', 'auto', 'merge'] as const;
+type RunReviewMode = typeof RUN_REVIEW_MODES[number];
 
 function findFeatureLoopScript(projectRoot: string, scriptsDir: string): string | null {
   const localScript = join(projectRoot, scriptsDir, 'feature-loop.sh');
@@ -305,9 +307,7 @@ export function RunScreen({
   const [latestCommit, setLatestCommit] = useState<string | null>(null);
   const [baselineCommit, setBaselineCommit] = useState<string | null>(null);
   const [recentCommits, setRecentCommits] = useState<CommitLogEntry[]>([]);
-  const REVIEW_MODES = ['manual', 'auto', 'merge'] as const;
-  type ReviewMode = typeof REVIEW_MODES[number];
-  const [reviewMode, setReviewMode] = useState<ReviewMode>(reviewModeProp ?? 'manual');
+  const [reviewMode, setReviewMode] = useState<RunReviewMode>(reviewModeProp ?? 'manual');
   const [loopModel, setLoopModel] = useState<string | null>(null);
 
   const childRef = useRef<ChildProcess | null>(null);
@@ -370,8 +370,8 @@ export function RunScreen({
     // Shift+R cycles review mode (manual → auto → merge)
     if (input === 'R') {
       setReviewMode((prev) => {
-        const idx = REVIEW_MODES.indexOf(prev);
-        return REVIEW_MODES[(idx + 1) % REVIEW_MODES.length];
+        const idx = RUN_REVIEW_MODES.indexOf(prev);
+        return RUN_REVIEW_MODES[(idx + 1) % RUN_REVIEW_MODES.length];
       });
     }
   });
@@ -614,7 +614,7 @@ export function RunScreen({
         }
 
         const effectiveReviewMode = reviewModeProp ?? config.loop.reviewMode ?? 'manual';
-        setReviewMode(effectiveReviewMode as ReviewMode);
+        setReviewMode(effectiveReviewMode as RunReviewMode);
         if (effectiveReviewMode !== 'manual' && effectiveReviewMode !== 'auto' && effectiveReviewMode !== 'merge') {
           setError(`Invalid reviewMode '${effectiveReviewMode}'. Allowed values are 'manual', 'auto', or 'merge'.`);
           setIsStarting(false);
