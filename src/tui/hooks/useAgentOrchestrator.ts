@@ -19,10 +19,17 @@ import {
   readLoopStatus,
   parseLoopLog,
   parsePhaseChanges,
+  parseImplementationPlan,
   getLoopLogPath,
   shouldSkipLine,
+  formatNumber,
+  getGitBranch,
+  type LoopStatus,
+  type TaskCounts,
+  type ActivityEvent,
   type PhaseInfo,
 } from '../utils/loop-status.js';
+import { getCurrentCommitHash, getRecentCommits, type CommitLogEntry } from '../utils/git-summary.js';
 
 const MAX_LOG_ENTRIES = 500;
 
@@ -38,12 +45,22 @@ export interface UseAgentOrchestratorOptions {
   dryRun?: boolean;
 }
 
+export interface LoopMonitorData {
+  loopStatus: LoopStatus;
+  tasks: TaskCounts;
+  branch: string;
+  recentCommits: CommitLogEntry[];
+  activityEvents: ActivityEvent[];
+  startTime: number;
+}
+
 export interface UseAgentOrchestratorResult {
   status: AgentStatus;
   activeIssue: AgentIssueState | null;
   queue: AgentIssueState[];
   completed: AgentIssueState[];
   logEntries: AgentLogEntry[];
+  loopMonitor: LoopMonitorData | null;
   error: string | null;
   abort: () => void;
 }
@@ -338,6 +355,7 @@ export function useAgentOrchestrator(
   const [queue, setQueue] = useState<AgentIssueState[]>([]);
   const [completed, setCompleted] = useState<AgentIssueState[]>([]);
   const [logEntries, setLogEntries] = useState<AgentLogEntry[]>([]);
+  const [loopMonitor, setLoopMonitor] = useState<LoopMonitorData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -354,11 +372,13 @@ export function useAgentOrchestrator(
       clearInterval(pollingRef.current.interval);
       pollingRef.current = null;
     }
+    setLoopMonitor(null);
   }, []);
 
   const startLoopPolling = useCallback((featureName: string) => {
     stopLoopPolling(); // clear any existing polling
 
+    const startTime = Date.now();
     const state: PollingState = {
       featureName,
       interval: null as unknown as ReturnType<typeof setInterval>,
@@ -366,32 +386,53 @@ export function useAgentOrchestrator(
       lastPhases: undefined,
     };
 
-    const poll = () => {
+    // Accumulated activity events across polls
+    const activityEventsAcc: ActivityEvent[] = [];
+    const MAX_ACTIVITY = 50;
+
+    const poll = async () => {
       // Read current phase
-      const phaseLabel = readCurrentPhase(featureName);
-      if (phaseLabel) {
+      const currentPhase = readCurrentPhase(featureName);
+      if (currentPhase) {
         setActiveIssue((prev) =>
-          prev ? { ...prev, loopPhase: phaseLabel } : prev,
+          prev ? { ...prev, loopPhase: currentPhase } : prev,
         );
       }
 
-      // Read loop status for iteration count
+      // Read loop status for iteration count + token data
+      let loopStatus: LoopStatus | null = null;
       try {
-        const loopStatus = readLoopStatus(featureName);
+        loopStatus = readLoopStatus(featureName);
         if (loopStatus.iteration > 0) {
           setActiveIssue((prev) =>
-            prev ? { ...prev, loopIterations: loopStatus.iteration } : prev,
+            prev ? { ...prev, loopIterations: loopStatus!.iteration } : prev,
           );
         }
       } catch {
         // Invalid feature name or file not ready — skip
       }
 
+      // Read task progress
+      let tasks: TaskCounts = { tasksDone: 0, tasksPending: 0, e2eDone: 0, e2ePending: 0, planExists: false };
+      try {
+        tasks = await parseImplementationPlan(options.projectRoot, featureName, '.ralph/specs');
+      } catch {
+        // Plan not yet available
+      }
+
+      // Git info
+      const branch = getGitBranch(options.projectRoot);
+      const recentCommits = getRecentCommits(options.projectRoot, 3);
+
       // Parse loop log for new events
       const logPath = getLoopLogPath(featureName);
       const logEvents = parseLoopLog(logPath, state.lastLogTimestamp);
       if (logEvents.length > 0) {
         state.lastLogTimestamp = logEvents[logEvents.length - 1].timestamp + 1;
+        activityEventsAcc.push(...logEvents);
+        if (activityEventsAcc.length > MAX_ACTIVITY) {
+          activityEventsAcc.splice(0, activityEventsAcc.length - MAX_ACTIVITY);
+        }
         setLogEntries((prev) => {
           let next = prev;
           for (const evt of logEvents) {
@@ -407,12 +448,28 @@ export function useAgentOrchestrator(
         state.lastPhases = phaseResult.currentPhases;
       }
       if (phaseResult.events.length > 0) {
+        activityEventsAcc.push(...phaseResult.events);
+        if (activityEventsAcc.length > MAX_ACTIVITY) {
+          activityEventsAcc.splice(0, activityEventsAcc.length - MAX_ACTIVITY);
+        }
         setLogEntries((prev) => {
           let next = prev;
           for (const evt of phaseResult.events) {
             next = appendLog(next, evt.message, evt.status === 'error' ? 'error' : evt.status === 'success' ? 'success' : 'info');
           }
           return next;
+        });
+      }
+
+      // Update loop monitor data
+      if (loopStatus) {
+        setLoopMonitor({
+          loopStatus,
+          tasks,
+          branch,
+          recentCommits,
+          activityEvents: [...activityEventsAcc],
+          startTime,
         });
       }
     };
@@ -422,7 +479,7 @@ export function useAgentOrchestrator(
 
     // Run first poll immediately
     poll();
-  }, [stopLoopPolling]);
+  }, [stopLoopPolling, options.projectRoot]);
 
   const abort = useCallback(() => {
     abortRef.current?.abort();
@@ -582,5 +639,5 @@ export function useAgentOrchestrator(
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps -- options are stable from parent
 
-  return { status, activeIssue, queue, completed, logEntries, error, abort };
+  return { status, activeIssue, queue, completed, logEntries, loopMonitor, error, abort };
 }

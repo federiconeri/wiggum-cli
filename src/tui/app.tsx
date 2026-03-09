@@ -324,7 +324,10 @@ export function App({
           model={sessionState.model}
           scanResult={sessionState.scanResult}
           specsPath={sessionState.config?.paths.specs}
-          initialReferences={interviewProps?.initialReferences}
+          initialReferences={
+            (screenProps?.initialReferences as string[] | undefined)
+            ?? interviewProps?.initialReferences
+          }
           onComplete={handleInterviewComplete}
           onCancel={handleInterviewCancel}
         />

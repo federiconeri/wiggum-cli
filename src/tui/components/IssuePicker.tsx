@@ -37,6 +37,17 @@ function truncate(text: string, maxLen: number): string {
   return text.slice(0, maxLen - 1) + '\u2026';
 }
 
+function pad(text: string, width: number): string {
+  if (text.length >= width) return text.slice(0, width);
+  return text + ' '.repeat(width - text.length);
+}
+
+// Fixed column widths
+const COL_NUMBER = 6;   // " #104 "
+const COL_STATE = 8;    // " closed " or "  open  "
+const COL_LABELS = 14;  // " enhancement "
+const COL_CHROME = 2;   // left + right border
+
 export function IssuePicker({
   issues,
   repoSlug,
@@ -47,13 +58,12 @@ export function IssuePicker({
 }: IssuePickerProps): React.ReactElement {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const { stdout } = useStdout();
-  const columns = stdout?.columns ?? 80;
+  const termColumns = stdout?.columns ?? 80;
 
   React.useEffect(() => {
     setSelectedIndex(0);
   }, [issues]);
 
-  // Handle keyboard input
   useInput((input, key) => {
     if (key.escape) {
       onCancel();
@@ -76,26 +86,20 @@ export function IssuePicker({
     }
   });
 
-  // Build border strings
   const countSuffix = !isLoading && !error ? ` (${issues.length})` : '';
   const headerLabel = ` GitHub Issues ${box.horizontal} ${repoSlug}${countSuffix} `;
-  const contentWidth = Math.min(Math.max(60, headerLabel.length + 10), columns - 6);
+  const contentWidth = Math.min(Math.max(60, headerLabel.length + 10), termColumns - 6);
   const topBorderFill = contentWidth - headerLabel.length - 1;
   const topBorder = box.topLeft + box.horizontal + headerLabel + box.horizontal.repeat(Math.max(0, topBorderFill)) + box.topRight;
   const bottomBorder = box.bottomLeft + box.horizontal.repeat(contentWidth) + box.bottomRight;
 
-  // Space budget for title: total width minus number, labels, borders, padding
-  const numberWidth = 6; // " #999 " — enough for 3-digit issues
-  const labelBudget = 24; // space for up to 2 labels
-  const chrome = 4; // borders + padding
-  const titleMaxLen = Math.max(20, contentWidth - numberWidth - labelBudget - chrome);
+  // Title column gets all remaining space
+  const colTitle = Math.max(20, contentWidth - COL_NUMBER - COL_STATE - COL_LABELS - COL_CHROME);
 
   return (
     <Box flexDirection="column" marginLeft={2} marginTop={1}>
-      {/* Top border with header */}
       <Text dimColor>{topBorder}</Text>
 
-      {/* Loading state */}
       {isLoading && (
         <Box flexDirection="row">
           <Text dimColor>{box.vertical}</Text>
@@ -107,70 +111,58 @@ export function IssuePicker({
         </Box>
       )}
 
-      {/* Error state */}
       {!isLoading && error && (
         <Box flexDirection="row">
           <Text dimColor>{box.vertical}</Text>
-          <Text color={colors.pink}> {error}</Text>
-          <Text>{' '.repeat(Math.max(0, contentWidth - error.length - 1))}</Text>
+          <Text color={colors.pink}>{pad(` ${error}`, contentWidth)}</Text>
           <Text dimColor>{box.vertical}</Text>
         </Box>
       )}
 
-      {/* Empty state */}
       {!isLoading && !error && issues.length === 0 && (
         <Box flexDirection="row">
           <Text dimColor>{box.vertical}</Text>
-          <Text dimColor> No open issues found</Text>
-          <Text>{' '.repeat(Math.max(0, contentWidth - 21))}</Text>
+          <Text dimColor>{pad(' No open issues found', contentWidth)}</Text>
           <Text dimColor>{box.vertical}</Text>
         </Box>
       )}
 
-      {/* Issue list */}
       {!isLoading && !error && issues.map((issue, index) => {
         const isSelected = index === selectedIndex;
-        const numberText = `#${issue.number}`;
-        const title = truncate(issue.title, titleMaxLen);
-        const labelTags = issue.labels.slice(0, MAX_LABELS).join(' ');
+        const bg = isSelected ? colors.yellow : undefined;
+        const fg = isSelected ? colors.brown : undefined;
+
+        const numberCell = pad(` #${issue.number}`, COL_NUMBER);
+        const titleCell = pad(` ${truncate(issue.title, colTitle - 1)}`, colTitle);
+        const stateCell = pad(` ${issue.state}`, COL_STATE);
+        const labelText = issue.labels.slice(0, MAX_LABELS).join(' ');
+        const labelCell = pad(` ${truncate(labelText, COL_LABELS - 1)}`, COL_LABELS);
 
         return (
           <Box key={issue.number} flexDirection="row">
             <Text dimColor>{box.vertical}</Text>
-            <Text
-              backgroundColor={isSelected ? colors.yellow : undefined}
-              color={isSelected ? colors.brown : colors.yellow}
-            >
-              {' '}{numberText}
+            <Text backgroundColor={bg} color={isSelected ? colors.brown : colors.yellow}>
+              {numberCell}
             </Text>
-            <Text
-              backgroundColor={isSelected ? colors.yellow : undefined}
-              color={isSelected ? colors.brown : undefined}
-            >
-              {'  '}{title}
+            <Text backgroundColor={bg} color={fg}>
+              {titleCell}
             </Text>
-            {labelTags && (
-              <Text
-                backgroundColor={isSelected ? colors.yellow : undefined}
-                color={isSelected ? colors.brown : colors.gray}
-              >
-                {'  '}{labelTags}
-              </Text>
-            )}
-            <Text dimColor>{' '.repeat(1)}{box.vertical}</Text>
+            <Text backgroundColor={bg} color={isSelected ? colors.brown : issue.state === 'open' ? colors.green : colors.gray}>
+              {stateCell}
+            </Text>
+            <Text backgroundColor={bg} color={isSelected ? colors.brown : colors.gray}>
+              {labelCell}
+            </Text>
+            <Text dimColor>{box.vertical}</Text>
           </Box>
         );
       })}
 
-      {/* Bottom border */}
       <Text dimColor>{bottomBorder}</Text>
 
-      {/* Hint bar */}
       <Box marginLeft={1}>
         <Text color={colors.gray}>
-          {'('}
-          {'\u2191\u2193 navigate, Enter select, Esc cancel'}
-          {')'}
+          ({'\u2191\u2193 navigate, Enter select, Esc cancel'})
         </Text>
       </Box>
     </Box>

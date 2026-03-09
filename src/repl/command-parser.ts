@@ -58,6 +58,11 @@ export const REPL_COMMANDS = {
     usage: '/monitor <feature-name>',
     aliases: ['m'],
   },
+  issue: {
+    description: 'Browse GitHub issues and start a new spec from one',
+    usage: '/issue [search terms]',
+    aliases: [],
+  },
   agent: {
     description: 'Start the autonomous backlog agent',
     usage: '/agent [--dry-run] [--max-items <n>]',

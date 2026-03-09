@@ -37,7 +37,7 @@ import {
   type PhaseInfo,
 } from '../utils/loop-status.js';
 import { buildEnhancedRunSummary } from '../utils/build-run-summary.js';
-import { getCurrentCommitHash } from '../utils/git-summary.js';
+import { getCurrentCommitHash, getRecentCommits, type CommitLogEntry } from '../utils/git-summary.js';
 import { writeRunSummaryFile } from '../../utils/summary-file.js';
 import { loadConfigWithDefaults } from '../../utils/config.js';
 import { logger } from '../../utils/logger.js';
@@ -201,6 +201,8 @@ export interface RunScreenProps {
 
 const POLL_INTERVAL_MS = 2500;
 const ERROR_TAIL_LINES = 12;
+const RUN_REVIEW_MODES = ['manual', 'auto', 'merge'] as const;
+type RunReviewMode = typeof RUN_REVIEW_MODES[number];
 
 function findFeatureLoopScript(projectRoot: string, scriptsDir: string): string | null {
   const localScript = join(projectRoot, scriptsDir, 'feature-loop.sh');
@@ -304,6 +306,9 @@ export function RunScreen({
   const [activityEvents, setActivityEvents] = useState<ActivityEvent[]>([]);
   const [latestCommit, setLatestCommit] = useState<string | null>(null);
   const [baselineCommit, setBaselineCommit] = useState<string | null>(null);
+  const [recentCommits, setRecentCommits] = useState<CommitLogEntry[]>([]);
+  const [reviewMode, setReviewMode] = useState<RunReviewMode>(reviewModeProp ?? 'manual');
+  const [loopModel, setLoopModel] = useState<string | null>(null);
 
   const childRef = useRef<ChildProcess | null>(null);
   const stopRequestedRef = useRef(false);
@@ -360,6 +365,14 @@ export function RunScreen({
       } else {
         onCancel();
       }
+      return;
+    }
+    // Shift+R cycles review mode (manual → auto → merge)
+    if (input === 'R') {
+      setReviewMode((prev) => {
+        const idx = RUN_REVIEW_MODES.indexOf(prev);
+        return RUN_REVIEW_MODES[(idx + 1) % RUN_REVIEW_MODES.length];
+      });
     }
   });
 
@@ -375,9 +388,12 @@ export function RunScreen({
     if (!isMountedRef.current) return;
     setBranch(getGitBranch(projectRoot));
 
-    // Update latest commit hash
+    // Update latest commit hash and recent commits
     const head = getCurrentCommitHash(projectRoot);
-    if (head && isMountedRef.current) setLatestCommit(head);
+    if (head && isMountedRef.current) {
+      setLatestCommit(head);
+      setRecentCommits(getRecentCommits(projectRoot, 3));
+    }
 
     // Collect new activity events from log and phase changes
     const logPath = getLoopLogPath(featureName);
@@ -536,6 +552,10 @@ export function RunScreen({
         try {
           const config = sessionState.config ?? await loadConfigWithDefaults(projectRoot);
           specsDirRef.current = config.paths.specs;
+          if (!cancelled) {
+            setLoopModel(config.loop.defaultModel);
+            setReviewMode((prev) => reviewModeProp ?? config.loop.reviewMode ?? prev);
+          }
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
           logger.error(`Failed to load config for monitor mode: ${reason}`);
@@ -577,6 +597,7 @@ export function RunScreen({
         configRootRef.current = config.paths.root;
         maxIterationsRef.current = config.loop.maxIterations;
         maxE2eAttemptsRef.current = config.loop.maxE2eAttempts;
+        setLoopModel(config.loop.defaultModel);
 
         const specFile = findSpecFile(projectRoot, featureName, config.paths.specs);
         if (!specFile) {
@@ -592,9 +613,10 @@ export function RunScreen({
           return;
         }
 
-        const reviewMode = reviewModeProp ?? config.loop.reviewMode ?? 'manual';
-        if (reviewMode !== 'manual' && reviewMode !== 'auto' && reviewMode !== 'merge') {
-          setError(`Invalid reviewMode '${reviewMode}'. Allowed values are 'manual', 'auto', or 'merge'.`);
+        const effectiveReviewMode = reviewModeProp ?? config.loop.reviewMode ?? 'manual';
+        setReviewMode(effectiveReviewMode as RunReviewMode);
+        if (effectiveReviewMode !== 'manual' && effectiveReviewMode !== 'auto' && effectiveReviewMode !== 'merge') {
+          setError(`Invalid reviewMode '${effectiveReviewMode}'. Allowed values are 'manual', 'auto', or 'merge'.`);
           setIsStarting(false);
           return;
         }
@@ -614,7 +636,7 @@ export function RunScreen({
             String(config.loop.maxIterations),
             String(config.loop.maxE2eAttempts),
             '--review-mode',
-            reviewMode,
+            effectiveReviewMode,
           ];
 
           const child = spawn('bash', [scriptPath, ...args], {
@@ -752,8 +774,12 @@ export function RunScreen({
     : actionRequest
       ? 'Select an option, Esc for default'
       : monitorOnly
-        ? 'Ctrl+C stop, Esc back'
-        : 'Ctrl+C stop, Esc background';
+        ? 'Ctrl+C stop, Esc back, Shift+R review mode'
+        : 'Ctrl+C stop, Esc background, Shift+R review mode';
+
+  // Progress bar label padding — align all labels to the longest one
+  const PROGRESS_LABEL_WIDTH = 17; // "Implementation: " padded
+  const padLabel = (label: string) => label.padEnd(PROGRESS_LABEL_WIDTH);
 
   // Action select handler — awaits write before clearing prompt
   const handleActionSelect = useCallback(async (choiceId: string) => {
@@ -819,6 +845,7 @@ export function RunScreen({
         action: 'Run Loop',
         phase: phaseLine,
         path: featureName,
+        extra: `review: ${reviewMode}`,
       }}
     >
       {completionSummary ? (
@@ -836,6 +863,13 @@ export function RunScreen({
               <Text dimColor>{theme.statusLine.separator}</Text>
               <Text>Branch: </Text>
               <Text color={colors.blue}>{branch}</Text>
+              {loopModel && (
+                <>
+                  <Text dimColor>{theme.statusLine.separator}</Text>
+                  <Text>Model: </Text>
+                  <Text color={colors.blue}>{loopModel}</Text>
+                </>
+              )}
             </Box>
 
             <Box marginTop={1} flexDirection="row">
@@ -848,31 +882,42 @@ export function RunScreen({
 
             <Box marginTop={1} flexDirection="column">
               <Box flexDirection="row" alignItems="center" gap={1}>
-                <Text bold>Implementation:</Text>
+                <Text bold>{padLabel('Implementation:')}</Text>
                 <ProgressBar percent={percentTasks} />
-                <Text>{percentTasks}%</Text>
+                <Text>{String(percentTasks).padStart(3)}%</Text>
                 <Text color={colors.green}>{'\u2713'} {tasks.tasksDone}</Text>
                 <Text color={colors.yellow}>{'\u25cb'} {tasks.tasksPending}</Text>
               </Box>
 
               {totalE2e > 0 && (
                 <Box flexDirection="row" alignItems="center" gap={1}>
-                  <Text bold>E2E Tests:</Text>
+                  <Text bold>{padLabel('E2E Tests:')}</Text>
                   <ProgressBar percent={percentE2e} />
-                  <Text>{percentE2e}%</Text>
+                  <Text>{String(percentE2e).padStart(3)}%</Text>
                   <Text color={colors.green}>{'\u2713'} {tasks.e2eDone}</Text>
                   <Text color={colors.yellow}>{'\u25cb'} {tasks.e2ePending}</Text>
                 </Box>
               )}
 
               <Box flexDirection="row" alignItems="center" gap={1} marginTop={1}>
-                <Text bold>Overall:</Text>
+                <Text bold>{padLabel('Overall:')}</Text>
                 <ProgressBar percent={percentAll} />
-                <Text>{percentAll}%</Text>
+                <Text>{String(percentAll).padStart(3)}%</Text>
                 <Text color={colors.green}>{'\u2713'} {doneAll}</Text>
                 <Text color={colors.yellow}>{'\u25cb'} {totalAll - doneAll}</Text>
               </Box>
             </Box>
+
+            {recentCommits.length > 0 && (
+              <Box marginTop={1} flexDirection="column">
+                <Text bold>Recent Commits</Text>
+                {recentCommits.map((c) => (
+                  <Box key={c.hash} flexDirection="row">
+                    <Text dimColor>  {c.hash} {c.title}</Text>
+                  </Box>
+                ))}
+              </Box>
+            )}
 
             <Box marginTop={1} flexDirection="column">
               <Text bold>Activity</Text>
