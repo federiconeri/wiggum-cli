@@ -54,6 +54,10 @@ export interface TemplateVariables {
   // TUI detection
   isTui: string;
 
+  // Service detection (conditional template sections)
+  hasSupabase: string;
+  hasPosthog: string;
+
   // AI Analysis (optional - populated when AI enhancement is used)
   aiEntryPoints: string;
   aiKeyDirectories: string;
@@ -264,14 +268,18 @@ export function extractVariables(scanResult: ScanResult, customVars: Record<stri
     appDir = 'src';
   }
 
-  // Detect TUI (Ink) projects
+  // Detect TUI (Ink) projects and service dependencies
   let isTui = '';
+  let hasSupabase = '';
+  let hasPosthog = '';
   try {
     const pkgPath = join(projectRoot, 'package.json');
     if (existsSync(pkgPath)) {
       const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
       const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
       if (allDeps['ink']) isTui = 'true';
+      if (allDeps['@supabase/supabase-js'] || allDeps['@supabase/ssr']) hasSupabase = 'true';
+      if (allDeps['posthog-js'] || allDeps['posthog-node']) hasPosthog = 'true';
     }
   } catch { /* ignore */ }
 
@@ -292,6 +300,8 @@ export function extractVariables(scanResult: ScanResult, customVars: Record<stri
     stylingVariant,
     appDir,
     isTui,
+    hasSupabase,
+    hasPosthog,
     ...commands,
     ...aiData,
     ...customVars,

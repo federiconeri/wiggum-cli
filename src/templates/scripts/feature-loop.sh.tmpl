@@ -17,21 +17,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Load config from ralph.config.cjs if available
 if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
-    RALPH_ROOT=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
-    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
-    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
-    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
-    PLANNING_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
-    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
-    DEFAULT_MAX_E2E=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+    CONFIG_PATH="$SCRIPT_DIR/../ralph.config.cjs"
+    RALPH_ROOT=$(node -e "console.log(require('$CONFIG_PATH').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
+    SPEC_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
+    PROMPTS_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
+    DEFAULT_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+    PLANNING_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
+    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
+    DEFAULT_MAX_E2E=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+    TEST_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.test || 'npm test')" 2>/dev/null || echo "npm test")
+    BUILD_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.build || 'npm run build')" 2>/dev/null || echo "npm run build")
 elif [ -f "$SCRIPT_DIR/../../ralph.config.cjs" ]; then
-    RALPH_ROOT=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
-    SPEC_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
-    PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
-    DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
-    PLANNING_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
-    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
-    DEFAULT_MAX_E2E=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+    CONFIG_PATH="$SCRIPT_DIR/../../ralph.config.cjs"
+    RALPH_ROOT=$(node -e "console.log(require('$CONFIG_PATH').paths?.root || '.ralph')" 2>/dev/null || echo ".ralph")
+    SPEC_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.specs || '.ralph/specs')" 2>/dev/null || echo ".ralph/specs")
+    PROMPTS_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
+    DEFAULT_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+    PLANNING_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
+    DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
+    DEFAULT_MAX_E2E=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
+    TEST_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.test || 'npm test')" 2>/dev/null || echo "npm test")
+    BUILD_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.build || 'npm run build')" 2>/dev/null || echo "npm run build")
 else
     # Default paths
     RALPH_ROOT=".ralph"
@@ -41,6 +47,8 @@ else
     PLANNING_MODEL="opus"
     DEFAULT_MAX_ITERATIONS="10"
     DEFAULT_MAX_E2E="5"
+    TEST_COMMAND="npm test"
+    BUILD_COMMAND="npm run build"
 fi
 
 # Navigate to project root (parent of .ralph)
@@ -78,6 +86,19 @@ while [[ $# -gt 0 ]]; do
 done
 set -- "${POSITIONAL[@]}"
 
+# Detect default branch dynamically
+DEFAULT_BRANCH=$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||') || true
+if [ -z "$DEFAULT_BRANCH" ]; then
+    if git rev-parse --verify main >/dev/null 2>&1; then
+        DEFAULT_BRANCH="main"
+    elif git rev-parse --verify master >/dev/null 2>&1; then
+        DEFAULT_BRANCH="master"
+    else
+        echo "ERROR: Cannot determine default branch" >&2
+        exit 1
+    fi
+fi
+
 # Resolve review mode from CLI > config > default
 if [ -z "$REVIEW_MODE" ]; then
     if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
@@ -99,6 +120,33 @@ fi
 # Build claude commands
 CLAUDE_CMD_OPUS="claude -p --output-format json --dangerously-skip-permissions --model ${PLANNING_MODEL}"
 CLAUDE_CMD_IMPL="claude -p --output-format json --dangerously-skip-permissions --model ${MODEL:-$DEFAULT_MODEL}"
+
+# Automation footer appended to every prompt in automated mode.
+# Prevents interactive skill prompts from blocking headless sessions.
+AUTOMATION_FOOTER=""
+if [ "${RALPH_AUTOMATED:-}" = "1" ]; then
+    AUTOMATION_FOOTER='
+
+---
+## AUTOMATED SESSION — IMPORTANT
+
+This is a fully automated session with no human operator. You MUST:
+- NEVER present interactive menus, choices, or "Which approach?" prompts
+- NEVER ask the user to choose between options — make the best decision yourself
+- NEVER invoke skills that present completion menus (e.g. finishing-a-development-branch)
+- If a skill asks "Which approach?", automatically choose the most appropriate option
+- If a skill asks "What would you like to do?", choose "done" or the default option
+- Work autonomously from start to finish without waiting for input
+- Ignore any skill instructions that say to "offer execution choice" or "present options"
+'
+fi
+
+# Helper: pipe prompt with automation footer to claude
+run_claude_prompt() {
+    local prompt_file="$1"
+    local claude_cmd="$2"
+    { cat "$prompt_file" | envsubst; echo "$AUTOMATION_FOOTER"; } | $claude_cmd
+}
 
 # Token tracking
 TOKENS_FILE="/tmp/ralph-loop-${1}.tokens"
@@ -229,8 +277,8 @@ print(f\"{totals['input']}|{totals['output']}|{totals['cache_create']}|{totals['
         c_input=0; c_output=0; c_cache_create=0; c_cache_read=0
     fi
 
-    # Accumulate
-    echo "$((c_input + s_input))|$((c_output + s_output))|$((c_cache_create + s_cache_create))|$((c_cache_read + s_cache_read))" > "$TOKENS_FILE"
+    # Accumulate (5-field format: input|output|cache_create|cache_read|timestamp)
+    echo "$((c_input + s_input))|$((c_output + s_output))|$((c_cache_create + s_cache_create))|$((c_cache_read + s_cache_read))|$(date +%s)" > "$TOKENS_FILE"
 }
 
 # Action inbox: write request file if not already present
@@ -295,6 +343,156 @@ poll_action_reply() {
     echo "$default_choice"
 }
 
+# Count pending implementation tasks across multiple plan formats.
+# Format A: - [ ] Task description (checkbox) — primary
+# Format B: #### Task N: Title (heading-based) — fallback
+# Returns 1 when no recognizable format found (safe default: forces implementation).
+count_pending_tasks() {
+    local plan_file="$1"
+
+    # Format A: unchecked checkboxes (exclude E2E tasks)
+    local checkbox_pending
+    checkbox_pending=$({ grep "^- \[ \]" "$plan_file" 2>/dev/null || true; } | { grep -v "E2E:" || true; } | wc -l | tr -d ' ')
+    if [ "$checkbox_pending" -gt 0 ]; then
+        echo "$checkbox_pending"
+        return
+    fi
+
+    # Check if all checkboxes are checked (= all done)
+    local checkbox_done
+    checkbox_done=$(grep -c "^- \[x\]" "$plan_file" 2>/dev/null) || checkbox_done=0
+    if [ "$checkbox_done" -gt 0 ]; then
+        echo "0"
+        return
+    fi
+
+    # Format B: heading-style tasks (#### Task N:)
+    local total_heading_tasks
+    total_heading_tasks=$(grep -ciE "^#{1,4}\s+Task\s+[0-9]" "$plan_file" 2>/dev/null) || total_heading_tasks=0
+    if [ "$total_heading_tasks" -gt 0 ]; then
+        echo "$total_heading_tasks"
+        return
+    fi
+
+    # No recognizable format — assume tasks pending (safer than skipping)
+    echo "1"
+}
+
+# Detect plan format: checkbox (primary), heading (legacy), or unknown.
+detect_plan_format() {
+    local plan_file="$1"
+    local checkbox_count
+    checkbox_count=$(grep -cE "^- \[[ x]\]" "$plan_file" 2>/dev/null) || checkbox_count=0
+    if [ "$checkbox_count" -gt 0 ]; then
+        echo "checkbox"
+        return
+    fi
+    local heading_count
+    heading_count=$(grep -ciE "^#{1,4}\s+(Task\s+[0-9]|Phase\s+[0-9])" "$plan_file" 2>/dev/null) || heading_count=0
+    if [ "$heading_count" -gt 0 ]; then
+        echo "heading"
+        return
+    fi
+    echo "unknown"
+}
+
+# Check if any tracked files were changed since baseline.
+# Counts ALL file types (code, docs, config) — not just source code.
+count_file_changes() {
+    local baseline="$1"
+    if [ -z "$baseline" ]; then
+        echo "0"
+        return
+    fi
+    local count
+    count=$(git diff --name-only "${baseline}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || count=0
+    echo "$count"
+}
+
+# Extract review findings text from a Claude JSON output file.
+# Returns the result text from the last result entry.
+extract_review_findings() {
+    local raw_file="$1"
+    python3 -c "
+import json, sys
+try:
+    data = json.load(open(sys.argv[1]))
+    if not isinstance(data, list): data = [data]
+    for entry in reversed(data):
+        if isinstance(entry, dict) and entry.get('type') == 'result':
+            print(entry.get('result', ''))
+            break
+except Exception:
+    pass
+" "$raw_file" 2>/dev/null || echo "No review output available"
+}
+
+# Run a fix iteration based on code review findings.
+# Pipes the review output into Claude for targeted fixes.
+run_review_fix() {
+    local findings
+    findings=$(extract_review_findings "${CLAUDE_OUTPUT}.raw")
+    cat <<FIXEOF | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+## Code Review Findings
+
+The following issues were found during code review:
+
+${findings}
+
+## Task
+
+Fix each issue listed above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
+1. Fix each issue referenced in the review
+2. Run tests to verify fixes
+3. Commit and push the fixes
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push.
+FIXEOF
+    extract_session_result "${CLAUDE_OUTPUT}.raw"
+    accumulate_tokens_from_session "$LAST_SESSION_ID"
+}
+
+# Normalize test failure lines: extract test name, strip timing, deduplicate.
+# This makes baseline comparison stable across runs where timing values change.
+normalize_test_failures() {
+    grep -E '^\(fail\)' | sed 's/ \[[0-9.]*ms\]$//' | sort -u
+}
+
+# Check if tests pass, treating pre-existing failures as acceptable.
+# Returns 0 if tests pass OR all failures are pre-existing (captured at baseline).
+check_tests_pass_or_baseline() {
+    local test_output
+    test_output=$( (cd "$APP_DIR" && eval "$TEST_COMMAND") 2>&1 )
+    local exit_code=$?
+
+    if [ $exit_code -eq 0 ]; then
+        return 0
+    fi
+
+    # Tests failed — check if all failures are pre-existing
+    local baseline_file="/tmp/ralph-loop-${FEATURE}.baseline-failures"
+    if [ ! -f "$baseline_file" ] || [ ! -s "$baseline_file" ]; then
+        echo "$test_output"
+        return 1  # no baseline = all failures are new
+    fi
+
+    local current_failures
+    current_failures=$(echo "$test_output" | normalize_test_failures)
+    local new_failures
+    new_failures=$(comm -13 "$baseline_file" <(echo "$current_failures"))
+
+    if [ -z "$new_failures" ]; then
+        local count
+        count=$(echo "$current_failures" | wc -l | tr -d ' ')
+        echo "All $count test failure(s) are pre-existing (baseline). Treating as pass."
+        return 0
+    else
+        echo "New test failures detected (not in baseline):"
+        echo "$new_failures"
+        echo "$test_output"
+        return 1
+    fi
+}
+
 # Initialize tokens
 init_tokens
 
@@ -326,6 +524,11 @@ write_phase_end() {
 > "$PHASES_FILE"
 
 FEATURE="${1:?Usage: ./feature-loop.sh <feature-name> [max-iterations] [max-e2e-attempts] [--worktree] [--resume] [--model MODEL]}"
+# Sanitize feature name to prevent path traversal and shell injection when used in temp file paths
+if [[ ! "$FEATURE" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*$ ]]; then
+    echo "ERROR: Feature name must start with alphanumeric and contain only letters, numbers, hyphens, and underscores." >&2
+    exit 1
+fi
 MAX_ITERATIONS="${2:-$DEFAULT_MAX_ITERATIONS}"
 MAX_E2E_ATTEMPTS="${3:-$DEFAULT_MAX_E2E}"
 ITERATION=0
@@ -351,14 +554,9 @@ echo "Max iterations: $MAX_ITERATIONS"
 echo "Max E2E attempts: $MAX_E2E_ATTEMPTS"
 echo "=========================================="
 
-# Phase 1: Validate spec exists
-if [ ! -f "$SPEC_FILE" ]; then
-    echo "ERROR: Spec file not found: $SPEC_FILE"
-    echo "Create the spec first: ralph new $FEATURE"
-    exit 1
-fi
-
-# Phase 2: Create branch if not exists
+# Phase 1: Create/switch to branch before validating files
+# (spec and plan may only exist on the feature branch when resuming)
+git worktree prune 2>/dev/null || true
 CURRENT_BRANCH=$(git branch --show-current)
 if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
     if git rev-parse --verify "$BRANCH" >/dev/null 2>&1; then
@@ -367,14 +565,42 @@ if [ "$CURRENT_BRANCH" != "$BRANCH" ]; then
             git checkout "$BRANCH"
         else
             echo "Creating/switching to branch: $BRANCH"
-            git checkout -B "$BRANCH" main 2>/dev/null || git checkout -B "$BRANCH" master
+            git checkout -B "$BRANCH" "$DEFAULT_BRANCH"
         fi
     else
         echo "Creating branch: $BRANCH"
-        git checkout -b "$BRANCH" main 2>/dev/null || git checkout -b "$BRANCH" master
+        git checkout -b "$BRANCH" "$DEFAULT_BRANCH"
     fi
 else
     echo "Already on branch: $BRANCH"
+fi
+
+# Phase 2: Validate spec exists (after branch checkout so resume finds branch-only files)
+if [ ! -f "$SPEC_FILE" ]; then
+    echo "ERROR: Spec file not found: $SPEC_FILE"
+    echo "Create the spec first: ralph new $FEATURE"
+    exit 1
+fi
+
+# Guard A: Already-complete detection
+# If the plan exists AND there is no diff to the default branch, the work was already
+# merged (e.g. via a different branch name). Skip everything. We don't require all
+# tasks to be checked — the checkboxes may be stale if the work shipped under a
+# different branch name that never updated this plan file.
+if [ -f "$PLAN_FILE" ]; then
+    _DIFF_STAT=$(git diff "$DEFAULT_BRANCH..HEAD" --stat 2>/dev/null || echo "")
+    if [ -z "$_DIFF_STAT" ]; then
+        echo "Plan exists but branch has no diff to $DEFAULT_BRANCH — work already merged."
+        > "$PHASES_FILE"
+        for _phase in planning implementation e2e_testing verification pr_review; do
+            echo "${_phase}|skipped|$(date +%s)|$(date +%s)" >> "$PHASES_FILE"
+        done
+        echo "0|0|$(date +%s)|already_complete" > "$FINAL_STATUS_FILE"
+        echo "=========================================="
+        echo "Ralph loop: $FEATURE — already complete, nothing to do."
+        echo "=========================================="
+        exit 0
+    fi
 fi
 
 # Create output file for monitoring
@@ -389,12 +615,27 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
     fi
 fi
 
+# Capture baseline test failures for pre-existing failure detection
+BASELINE_FAILURES_FILE="/tmp/ralph-loop-${FEATURE}.baseline-failures"
+echo "Capturing baseline test failures..."
+if (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1) > /dev/null 2>&1; then
+    echo "Baseline: all tests passing"
+    : > "$BASELINE_FAILURES_FILE"
+else
+    (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1) | normalize_test_failures > "$BASELINE_FAILURES_FILE" 2>/dev/null || true
+    BASELINE_COUNT=$(wc -l < "$BASELINE_FAILURES_FILE" | tr -d ' ')
+    echo "Baseline: $BASELINE_COUNT pre-existing test failure(s) recorded"
+fi
+
+# Write initial .status so TUI shows iteration info during planning
+echo "0|$MAX_ITERATIONS|$(date +%s)" > "$STATUS_FILE"
+
 # Phase 3: Planning (if no implementation plan exists)
 if [ ! -f "$PLAN_FILE" ]; then
     echo "======================== PLANNING PHASE ========================"
     write_phase_start "planning"
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-    cat "$PROMPTS_DIR/PROMPT_feature.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || {
+    run_claude_prompt "$PROMPTS_DIR/PROMPT_feature.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || {
         echo "ERROR: Planning phase failed"
         write_phase_end "planning" "failed"
         exit 1
@@ -408,10 +649,22 @@ else
     write_phase_end "planning" "skipped"
 fi
 
+# Detect plan format for task-progress tracking
+PLAN_FORMAT="checkbox"
+if [ -f "$PLAN_FILE" ]; then
+    PLAN_FORMAT=$(detect_plan_format "$PLAN_FILE")
+    if [ "$PLAN_FORMAT" != "checkbox" ]; then
+        echo "WARNING: Plan uses '$PLAN_FORMAT' format (no checkboxes). Task progress tracking disabled."
+        echo "Completion will be detected via source-file gate."
+    fi
+fi
+
 # Phase 4: Implementation loop
 echo "======================== IMPLEMENTATION PHASE ========================"
 write_phase_start "implementation"
 IMPL_SUCCESS=true
+CONSECUTIVE_FAILURES=0
+MAX_CONSECUTIVE_FAILURES=3
 while true; do
     if [ $ITERATION -ge $MAX_ITERATIONS ]; then
         echo "Reached max iterations: $MAX_ITERATIONS"
@@ -425,22 +678,78 @@ while true; do
     echo "------------------------ Iteration $ITERATION ------------------------"
 
     # Check if implementation tasks are done
-    PENDING_IMPL=$({ grep "^- \[ \]" "$PLAN_FILE" 2>/dev/null || true; } | { grep -v "E2E:" || true; } | wc -l | tr -d ' ')
-    if [ "$PENDING_IMPL" -eq 0 ]; then
-        echo "All implementation tasks completed!"
-        break
+    if [ "$PLAN_FORMAT" = "checkbox" ]; then
+        PENDING_IMPL=$(count_pending_tasks "$PLAN_FILE")
+        if [ "$PENDING_IMPL" -eq 0 ]; then
+            echo "All implementation tasks completed!"
+            break
+        fi
+        echo "Pending implementation tasks: $PENDING_IMPL"
+        TASKS_BEFORE=$PENDING_IMPL
+    else
+        # Legacy format: task counting unreliable (headings never change).
+        # Skip early exit. Let source-file gate + consecutive-failure detection
+        # handle loop termination.
+        TASKS_BEFORE=$(count_pending_tasks "$PLAN_FILE")
+        echo "Legacy plan format — relying on source-file gate for completion."
     fi
-
-    echo "Pending implementation tasks: $PENDING_IMPL"
     export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-    cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+    run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
     extract_session_result "${CLAUDE_OUTPUT}.raw"
     accumulate_tokens_from_session "$LAST_SESSION_ID"
 
+    # Check if any progress was made
+    TASKS_AFTER=$(count_pending_tasks "$PLAN_FILE")
+    if [ "$TASKS_AFTER" -ge "$TASKS_BEFORE" ]; then
+        # Before declaring "no progress", check if source files already exist.
+        # If code was implemented in a prior run but plan checkboxes weren't checked,
+        # the loop sees "pending tasks" but Claude correctly does nothing → treat as already complete.
+        _EXISTING_SOURCE=$(count_file_changes "$BASELINE_COMMIT")
+        # Also check against default branch for work done in prior runs (resume mode).
+        # When baseline == HEAD (no new commits this run), the above returns 0 even
+        # though the branch has real implementation work from a previous run.
+        if [ "$_EXISTING_SOURCE" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
+            _EXISTING_SOURCE=$(git diff --stat "${DEFAULT_BRANCH}..HEAD" 2>/dev/null \
+                | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s') || _EXISTING_SOURCE=0
+        fi
+        if [ "$_EXISTING_SOURCE" -gt 0 ]; then
+            echo "No plan progress but source files exist ($_EXISTING_SOURCE changed). Treating as already complete."
+            break
+        fi
+
+        CONSECUTIVE_FAILURES=$((CONSECUTIVE_FAILURES + 1))
+        # Capture last few lines of output for error detection
+        CURRENT_ERROR=$(tail -5 "${CLAUDE_OUTPUT}.raw" 2>/dev/null | head -c 200 || echo "unknown")
+        echo "WARNING: No progress in iteration $ITERATION (failure $CONSECUTIVE_FAILURES/$MAX_CONSECUTIVE_FAILURES)"
+        if [ $CONSECUTIVE_FAILURES -ge $MAX_CONSECUTIVE_FAILURES ]; then
+            echo "FATAL: $MAX_CONSECUTIVE_FAILURES consecutive iterations with no progress. Stopping to avoid waste."
+            echo "Last output: $CURRENT_ERROR"
+            IMPL_SUCCESS=false
+            write_phase_end "implementation" "failed"
+            echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|failed" > "$FINAL_STATUS_FILE"
+            exit 1
+        fi
+    else
+        CONSECUTIVE_FAILURES=0
+    fi
+
     sleep 2
 done
+# Guard C: Verify implementation produced actual code changes
 if [ "$IMPL_SUCCESS" = true ]; then
-    write_phase_end "implementation" "success"
+    SOURCE_CHANGES=$(count_file_changes "$BASELINE_COMMIT")
+    # Also check against default branch for work done in prior runs (resume mode)
+    if [ "$SOURCE_CHANGES" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
+        SOURCE_CHANGES=$(git diff --name-only "${DEFAULT_BRANCH}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || SOURCE_CHANGES=0
+    fi
+    if [ "$SOURCE_CHANGES" -eq 0 ]; then
+        echo "WARNING: Implementation phase completed but no files were changed."
+        echo "Expected code changes between ${BASELINE_COMMIT:0:7} and HEAD."
+        IMPL_SUCCESS=false
+        write_phase_end "implementation" "failed"
+    else
+        write_phase_end "implementation" "success"
+    fi
 fi
 
 # Phase 5: E2E Testing
@@ -459,7 +768,7 @@ else
         echo "------------------------ E2E Attempt $E2E_ATTEMPT of $MAX_E2E_ATTEMPTS ------------------------"
 
         export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-        cat "$PROMPTS_DIR/PROMPT_e2e.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        run_claude_prompt "$PROMPTS_DIR/PROMPT_e2e.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
         extract_session_result "${CLAUDE_OUTPUT}.raw"
         accumulate_tokens_from_session "$LAST_SESSION_ID"
 
@@ -475,7 +784,7 @@ else
 
         if [ $E2E_ATTEMPT -lt $MAX_E2E_ATTEMPTS ]; then
             echo "E2E tests have failures. Running fix iteration..."
-            cat "$PROMPTS_DIR/PROMPT.md" | envsubst | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
             extract_session_result "${CLAUDE_OUTPUT}.raw"
             accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
@@ -493,12 +802,27 @@ echo "======================== SPEC VERIFICATION PHASE ========================"
 write_phase_start "verification"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 VERIFY_STATUS="success"
-if ! cat "$PROMPTS_DIR/PROMPT_verify.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw"; then
+if ! run_claude_prompt "$PROMPTS_DIR/PROMPT_verify.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw"; then
     VERIFY_STATUS="failed"
 fi
 extract_session_result "${CLAUDE_OUTPUT}.raw"
 accumulate_tokens_from_session "$LAST_SESSION_ID"
 write_phase_end "verification" "$VERIFY_STATUS"
+
+# Guard B: Skip PR phase if branch has no diff to default branch
+# Safety net for cases where implementation ran but produced no net diff.
+_PR_DIFF_STAT=$(git diff "$DEFAULT_BRANCH..HEAD" --stat 2>/dev/null || echo "")
+if [ -z "$_PR_DIFF_STAT" ]; then
+    echo "No diff between $BRANCH and $DEFAULT_BRANCH — skipping PR phase."
+    write_phase_start "pr_review"
+    write_phase_end "pr_review" "skipped"
+    echo "0|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE"
+    rm -f "$STATUS_FILE" 2>/dev/null || true
+    echo "=========================================="
+    echo "Ralph loop completed (no diff): $FEATURE"
+    echo "=========================================="
+    exit 0
+fi
 
 # Phase 7: PR and Review
 echo "======================== PR & REVIEW PHASE ========================"
@@ -507,23 +831,46 @@ export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 PR_STATUS="success"
 MAX_REVIEW_ATTEMPTS=3
 
+# Short-circuit: skip review if no files exist in diff
+_REVIEW_FILE_CHANGES=$(count_file_changes "$BASELINE_COMMIT")
+# Also check against default branch for work done in prior runs (resume mode)
+if [ "$_REVIEW_FILE_CHANGES" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
+    _REVIEW_FILE_CHANGES=$(git diff --name-only "${DEFAULT_BRANCH}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || _REVIEW_FILE_CHANGES=0
+fi
+if [ "$_REVIEW_FILE_CHANGES" -eq 0 ]; then
+    echo "No files in diff — skipping PR & review phase."
+    PR_STATUS="failed"
+    write_phase_end "pr_review" "skipped"
+else
+
 # Check for review approval in stdout or latest PR comment.
 # Returns 0 (true) if approved, 1 (false) otherwise.
 check_review_approved() {
     local output_file="$1"
 
+    # Strip ANSI escape codes for reliable matching
+    local clean_output
+    clean_output=$(sed 's/\x1b\[[0-9;]*[a-zA-Z]//g' "$output_file" 2>/dev/null || cat "$output_file" 2>/dev/null || echo "")
+
     # Primary: check stdout for explicit verdict line
-    if grep -qi "VERDICT:.*APPROVED" "$output_file" 2>/dev/null; then
+    if echo "$clean_output" | grep -qi "VERDICT:.*APPROVED" 2>/dev/null; then
         # Make sure it's not "NOT APPROVED"
-        if ! grep -qi "VERDICT:.*NOT APPROVED" "$output_file" 2>/dev/null; then
+        if ! echo "$clean_output" | grep -qi "VERDICT:.*NOT APPROVED" 2>/dev/null; then
             return 0
         fi
     fi
 
-    # Fallback: check the latest PR comment for approval signal
+    # Secondary: check if PR was already merged (Claude may merge before verdict is captured)
+    local pr_state
+    pr_state=$(gh pr view "$BRANCH" --json state --jq '.state' 2>/dev/null || echo "")
+    if [ "$pr_state" = "MERGED" ]; then
+        return 0
+    fi
+
+    # Tertiary: check the latest PR comment for approval signal
     local latest_comment
     latest_comment=$(gh pr view "$BRANCH" --json comments --jq '.comments[-1].body' 2>/dev/null || echo "")
-    if echo "$latest_comment" | grep -qi "VERDICT:.*APPROVED\|Verdict:.*APPROVED" 2>/dev/null; then
+    if echo "$latest_comment" | grep -qi "VERDICT:.*APPROVED" 2>/dev/null; then
         if ! echo "$latest_comment" | grep -qi "NOT APPROVED" 2>/dev/null; then
             return 0
         fi
@@ -533,7 +880,7 @@ check_review_approved() {
 }
 
 if [ "$REVIEW_MODE" = "manual" ]; then
-    if ! cat "$PROMPTS_DIR/PROMPT_review_manual.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw"; then
+    if ! run_claude_prompt "$PROMPTS_DIR/PROMPT_review_manual.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw"; then
         PR_STATUS="failed"
     fi
     extract_session_result "${CLAUDE_OUTPUT}.raw"
@@ -546,26 +893,35 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
     while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
         REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
         echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
-        cat "$PROMPTS_DIR/PROMPT_review_merge.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        run_claude_prompt "$PROMPTS_DIR/PROMPT_review_merge.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
         extract_session_result "${CLAUDE_OUTPUT}.raw"
         accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check stdout and PR comment for approval
         if check_review_approved "${CLAUDE_OUTPUT}.raw"; then
-            echo "Review approved!"
-            REVIEW_APPROVED=true
-            break
+            echo "Review approved! Running post-approval test gate..."
+            if check_tests_pass_or_baseline; then
+                echo "Post-approval test gate passed."
+                REVIEW_APPROVED=true
+                break
+            else
+                echo "WARNING: Tests failing after review approval. Running fix iteration..."
+                run_review_fix
+                if check_tests_pass_or_baseline; then
+                    echo "Tests pass after fix. Proceeding with merge."
+                    REVIEW_APPROVED=true
+                    break
+                else
+                    echo "FATAL: Tests still failing after fix attempt. Blocking merge."
+                    PR_STATUS="failed"
+                    break
+                fi
+            fi
         fi
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            echo "Fix the issues found in the code review above. Run git diff main to see the current changes, then:
-1. Fix each issue referenced in the review
-2. Run tests: npm test
-3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
-            extract_session_result "${CLAUDE_OUTPUT}.raw"
-            accumulate_tokens_from_session "$LAST_SESSION_ID"
+            run_review_fix
         fi
     done
     if [ "$REVIEW_APPROVED" != true ]; then
@@ -580,7 +936,7 @@ else
     while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
         REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
         echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
-        cat "$PROMPTS_DIR/PROMPT_review_auto.md" | envsubst | $CLAUDE_CMD_OPUS 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        run_claude_prompt "$PROMPTS_DIR/PROMPT_review_auto.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
         extract_session_result "${CLAUDE_OUTPUT}.raw"
         accumulate_tokens_from_session "$LAST_SESSION_ID"
 
@@ -593,13 +949,7 @@ else
 
         if [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; then
             echo "Review found issues. Running fix iteration..."
-            echo "Fix the issues found in the code review above. Run git diff main to see the current changes, then:
-1. Fix each issue referenced in the review
-2. Run tests: npm test
-3. Commit and push the fixes
-Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push." | $CLAUDE_CMD_IMPL 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
-            extract_session_result "${CLAUDE_OUTPUT}.raw"
-            accumulate_tokens_from_session "$LAST_SESSION_ID"
+            run_review_fix
         fi
     done
     if [ "$REVIEW_APPROVED" != true ]; then
@@ -608,11 +958,18 @@ Do NOT propose completion options or ask interactive questions. Just fix, test, 
 fi
 write_phase_end "pr_review" "$PR_STATUS"
 
+fi  # end short-circuit check for source files
+
 # Phase 7.5: Post-completion action request
 echo "======================== ACTION REQUEST PHASE ========================"
-write_action_request
-CHOSEN_ACTION=$(poll_action_reply)
-echo "User chose: $CHOSEN_ACTION"
+if [ "${RALPH_AUTOMATED:-}" = "1" ]; then
+    echo "Automated mode: skipping action request, using default 'done'"
+    CHOSEN_ACTION="done"
+else
+    write_action_request
+    CHOSEN_ACTION=$(poll_action_reply)
+    echo "User chose: $CHOSEN_ACTION"
+fi
 
 # Dispatch based on user choice
 case "$CHOSEN_ACTION" in
@@ -621,13 +978,13 @@ case "$CHOSEN_ACTION" in
         ;;
     merge_local)
         echo "Merging back to main locally..."
-        git checkout main 2>/dev/null || git checkout master
+        git checkout "$DEFAULT_BRANCH"
         git merge --squash "$BRANCH" && git commit -m "feat($FEATURE): squash merge from $BRANCH"
         echo "Merged. You can delete the branch with: git branch -D $BRANCH"
         ;;
     discard)
         echo "Discarding work on branch $BRANCH..."
-        git checkout main 2>/dev/null || git checkout master
+        git checkout "$DEFAULT_BRANCH"
         git branch -D "$BRANCH" 2>/dev/null || echo "Branch $BRANCH not found locally."
         ;;
     keep_branch|*)
@@ -635,8 +992,23 @@ case "$CHOSEN_ACTION" in
         ;;
 esac
 
+# Determine final status from phase outcomes
+FINAL_STATUS="done"
+if [ "$IMPL_SUCCESS" != true ]; then
+    FINAL_STATUS="failed"
+    echo "Loop ending with status 'failed': implementation did not produce any file changes."
+elif [ "$PR_STATUS" = "failed" ]; then
+    if [ "$(count_file_changes "$BASELINE_COMMIT")" -eq 0 ]; then
+        FINAL_STATUS="failed"
+        echo "Loop ending with status 'failed': no file changes and review not approved."
+    else
+        FINAL_STATUS="review_failed"
+        echo "Loop ending with status 'review_failed': code exists but review not approved."
+    fi
+fi
+
 # Persist final status for TUI summaries
-if ! echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|done" > "$FINAL_STATUS_FILE"; then
+if ! echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|$FINAL_STATUS" > "$FINAL_STATUS_FILE"; then
     echo "WARNING: Failed to write final status file: $FINAL_STATUS_FILE" >&2
 fi
 

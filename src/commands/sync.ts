@@ -20,16 +20,16 @@ import {
   normalizeModelId,
 } from '../ai/providers.js';
 
-export async function syncCommand(): Promise<void> {
-  const projectRoot = process.cwd();
-
+/**
+ * Pure sync logic — scans, enhances, persists context.
+ * Returns the context file path on success. Throws on failure.
+ * Safe to call from tools/agents (no process.exit).
+ */
+export async function syncProjectContext(projectRoot: string): Promise<string> {
   // Detect provider
   const provider = getAvailableProvider();
   if (!provider) {
-    console.error(
-      'Error: No AI provider available. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.',
-    );
-    process.exit(1);
+    throw new Error('No AI provider available. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.');
   }
 
   // Resolve model
@@ -56,8 +56,7 @@ export async function syncCommand(): Promise<void> {
   const enhanced = await enhancer.enhance(scanResult);
 
   if (enhanced.aiError) {
-    console.error(`Error: AI analysis failed: ${enhanced.aiError}`);
-    process.exit(1);
+    throw new Error(`AI analysis failed: ${enhanced.aiError}`);
   }
 
   // Step 3: Persist
@@ -73,7 +72,21 @@ export async function syncCommand(): Promise<void> {
     projectRoot,
   );
 
-  const contextPath = join(projectRoot, '.ralph', '.context.json');
+  return join(projectRoot, '.ralph', '.context.json');
+}
+
+/**
+ * CLI entry point — wraps syncProjectContext with process.exit behavior.
+ */
+export async function syncCommand(): Promise<void> {
+  let contextPath: string;
+  try {
+    contextPath = await syncProjectContext(process.cwd());
+  } catch (err) {
+    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+    return; // unreachable, but satisfies TS control flow
+  }
   console.log(contextPath);
   process.exit(0);
 }

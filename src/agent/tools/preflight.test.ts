@@ -1,0 +1,298 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const { mockExecFile, mockExistsSync, mockRealpathSync } = vi.hoisted(() => ({
+  mockExecFile: vi.fn(),
+  mockExistsSync: vi.fn(),
+  mockRealpathSync: vi.fn((p: string) => p),
+}));
+
+vi.mock('node:child_process', () => ({
+  execFile: mockExecFile,
+}));
+
+vi.mock('node:fs', () => ({
+  existsSync: mockExistsSync,
+  realpathSync: mockRealpathSync,
+}));
+
+import { runPreflightChecks } from './preflight.js';
+
+// Helper: make mockExecFile resolve/reject based on arguments
+function setupExecFile(responses: Record<string, { stdout?: string; error?: Error }>) {
+  mockExecFile.mockImplementation(
+    (cmd: string, args: string[], _opts: unknown, cb?: (err: Error | null, result: { stdout: string; stderr: string }) => void) => {
+      // promisify calls with (cmd, args, opts) and returns a promise — node:util wraps it
+      // But since we mock execFile directly, promisify will call it with a callback as the last arg
+      const key = `${cmd} ${args.join(' ')}`;
+      const match = Object.entries(responses).find(([pattern]) => key.includes(pattern));
+
+      if (cb) {
+        if (match && match[1].error) {
+          cb(match[1].error, { stdout: '', stderr: '' });
+        } else if (match) {
+          cb(null, { stdout: match[1].stdout ?? '', stderr: '' });
+        } else {
+          cb(new Error(`Unexpected command: ${key}`), { stdout: '', stderr: '' });
+        }
+      }
+    },
+  );
+}
+
+describe('runPreflightChecks', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(false);
+  });
+
+  it('detects default branch via symbolic-ref', async () => {
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': { stdout: '' },
+      'status --porcelain': { stdout: '' },
+    });
+
+    const result = await runPreflightChecks('/fake/root', 'my-feature');
+    expect(result).toEqual({ ok: true, defaultBranch: 'main', stashed: false });
+  });
+
+  it('falls back to main when symbolic-ref fails', async () => {
+    setupExecFile({
+      'symbolic-ref': { error: new Error('not set') },
+      'rev-parse --verify main': { stdout: 'abc123\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': { stdout: '' },
+      'status --porcelain': { stdout: '' },
+    });
+
+    const result = await runPreflightChecks('/fake/root', 'my-feature');
+    expect(result).toEqual({ ok: true, defaultBranch: 'main', stashed: false });
+  });
+
+  it('falls back to master when main does not exist', async () => {
+    setupExecFile({
+      'symbolic-ref': { error: new Error('not set') },
+      'rev-parse --verify main': { error: new Error('not found') },
+      'rev-parse --verify master': { stdout: 'abc123\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': { stdout: '' },
+      'status --porcelain': { stdout: '' },
+    });
+
+    const result = await runPreflightChecks('/fake/root', 'my-feature');
+    expect(result).toEqual({ ok: true, defaultBranch: 'master', stashed: false });
+  });
+
+  it('returns error when no default branch exists', async () => {
+    setupExecFile({
+      'symbolic-ref': { error: new Error('not set') },
+      'rev-parse --verify main': { error: new Error('not found') },
+      'rev-parse --verify master': { error: new Error('not found') },
+    });
+
+    const result = await runPreflightChecks('/fake/root', 'my-feature');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Cannot determine default branch');
+  });
+
+  it('auto-removes stale worktree when directory is missing', async () => {
+    mockExistsSync.mockReturnValue(false); // directory doesn't exist
+
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': {
+        stdout: [
+          'worktree /fake/root',
+          'HEAD abc123',
+          'branch refs/heads/main',
+          '',
+          'worktree /tmp/stale-wt',
+          'HEAD def456',
+          'branch refs/heads/feat/my-feature',
+          '',
+        ].join('\n'),
+      },
+      'worktree remove': { stdout: '' },
+      'status --porcelain': { stdout: '' },
+    });
+
+    const result = await runPreflightChecks('/fake/root', 'my-feature');
+    expect(result.ok).toBe(true);
+    expect(result.defaultBranch).toBe('main');
+
+    // Verify worktree remove was called
+    const removeCall = mockExecFile.mock.calls.find(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes('remove'),
+    );
+    expect(removeCall).toBeDefined();
+  });
+
+  it('returns error when branch is locked by active non-ephemeral worktree', async () => {
+    mockExistsSync.mockReturnValue(true); // directory exists → active worktree
+
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': {
+        stdout: [
+          'worktree /fake/root',
+          'HEAD abc123',
+          'branch refs/heads/main',
+          '',
+          'worktree /tmp/active-wt',
+          'HEAD def456',
+          'branch refs/heads/feat/my-feature',
+          '',
+        ].join('\n'),
+      },
+    });
+
+    const result = await runPreflightChecks('/fake/root', 'my-feature');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('Branch locked by active worktree');
+    expect(result.error).toContain('/tmp/active-wt');
+  });
+
+  it('auto-removes ephemeral .claude/worktrees even when directory exists', async () => {
+    mockExistsSync.mockReturnValue(true); // directory exists
+
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': {
+        stdout: [
+          'worktree /fake/root',
+          'HEAD abc123',
+          'branch refs/heads/main',
+          '',
+          'worktree /fake/root/.claude/worktrees/agent-a066e218',
+          'HEAD def456',
+          'branch refs/heads/feat/my-feature',
+          '',
+        ].join('\n'),
+      },
+      'worktree remove': { stdout: '' },
+      'status --porcelain': { stdout: '' },
+    });
+
+    const emitProgress = vi.fn();
+    const result = await runPreflightChecks('/fake/root', 'my-feature', emitProgress);
+    expect(result.ok).toBe(true);
+
+    // Verify it was removed
+    const removeCall = mockExecFile.mock.calls.find(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes('remove'),
+    );
+    expect(removeCall).toBeDefined();
+    expect(emitProgress).toHaveBeenCalledWith(
+      'preflight',
+      expect.stringContaining('ephemeral'),
+    );
+  });
+
+  it('allows branch checked out in the project root (main worktree)', async () => {
+    mockExistsSync.mockReturnValue(true); // directory exists
+
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': {
+        stdout: [
+          'worktree /fake/root',
+          'HEAD def456',
+          'branch refs/heads/feat/my-feature',
+          '',
+        ].join('\n'),
+      },
+      'status --porcelain': { stdout: '' },
+    });
+
+    const emitProgress = vi.fn();
+    const result = await runPreflightChecks('/fake/root', 'my-feature', emitProgress);
+    expect(result.ok).toBe(true);
+    expect(emitProgress).toHaveBeenCalledWith(
+      'preflight',
+      expect.stringContaining('already checked out in project root'),
+    );
+  });
+
+  it('worktree prune failure is non-fatal', async () => {
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { error: new Error('prune failed') },
+      'worktree list': { stdout: '' },
+      'status --porcelain': { stdout: '' },
+    });
+
+    const result = await runPreflightChecks('/fake/root', 'my-feature');
+    expect(result.ok).toBe(true);
+  });
+
+  it('emits progress during preflight', async () => {
+    const emitProgress = vi.fn();
+
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/develop\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': { stdout: '' },
+      'status --porcelain': { stdout: '' },
+    });
+
+    await runPreflightChecks('/fake/root', 'my-feature', emitProgress);
+    expect(emitProgress).toHaveBeenCalledWith('preflight', 'Default branch: develop');
+  });
+
+  it('auto-stashes dirty working tree', async () => {
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': { stdout: '' },
+      'status --porcelain': { stdout: ' M src/file.ts\n?? new-file.ts\n' },
+      'stash push': { stdout: 'Saved working directory\n' },
+    });
+
+    const emitProgress = vi.fn();
+    const result = await runPreflightChecks('/fake/root', 'my-feature', emitProgress);
+    expect(result.ok).toBe(true);
+    expect(result.stashed).toBe(true);
+
+    const stashCall = mockExecFile.mock.calls.find(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes('stash'),
+    );
+    expect(stashCall).toBeDefined();
+    expect(emitProgress).toHaveBeenCalledWith('preflight', 'Stashing uncommitted changes');
+  });
+
+  it('skips stash when working tree is clean', async () => {
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': { stdout: '' },
+      'status --porcelain': { stdout: '' },
+    });
+
+    const result = await runPreflightChecks('/fake/root', 'my-feature');
+    expect(result.stashed).toBe(false);
+
+    const stashCall = mockExecFile.mock.calls.find(
+      (c: unknown[]) => Array.isArray(c[1]) && (c[1] as string[]).includes('stash'),
+    );
+    expect(stashCall).toBeUndefined();
+  });
+
+  it('returns error when dirty tree and stash fails', async () => {
+    setupExecFile({
+      'symbolic-ref': { stdout: 'origin/main\n' },
+      'worktree prune': { stdout: '' },
+      'worktree list': { stdout: '' },
+      'status --porcelain': { stdout: ' M file.ts\n' },
+      'stash push': { error: new Error('stash failed') },
+    });
+
+    const result = await runPreflightChecks('/fake/root', 'my-feature');
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain('uncommitted changes');
+  });
+});

@@ -13,100 +13,10 @@ import type {
   PrSummary,
   IssueSummary,
 } from '../screens/RunScreen.js';
+import { execFileSync } from 'node:child_process';
 import { getCurrentCommitHash, getDiffStats, getCommitList } from './git-summary.js';
 import { getPrForBranch, getLinkedIssue, type PrInfo } from './pr-summary.js';
-
-/**
- * Phase ID to human-readable label mapping
- */
-const PHASE_LABELS: Record<string, string> = {
-  planning: 'Planning',
-  implementation: 'Implementation',
-  e2e_testing: 'E2E Testing',
-  verification: 'Verification',
-  pr_review: 'PR & Review',
-};
-
-const VALID_PHASE_STATUSES = new Set(['success', 'skipped', 'failed']);
-
-/**
- * Parse phase information from the phases file written by feature-loop.sh.
- *
- * Format: phase_id|status|start_timestamp|end_timestamp
- * The parser handles duplicate phase entries defensively (last status wins,
- * durations aggregate), though feature-loop.sh normally writes one final
- * line per phase.
- *
- * @param phasesFilePath - Path to the phases file
- * @returns Array of phase info objects
- */
-function parsePhases(phasesFilePath: string): PhaseInfo[] {
-  if (!existsSync(phasesFilePath)) {
-    logger.debug(`Phases file not found: ${phasesFilePath}`);
-    return [];
-  }
-
-  try {
-    const content = readFileSync(phasesFilePath, 'utf-8').trim();
-    if (!content) {
-      return [];
-    }
-
-    const lines = content.split('\n');
-    const phaseMap = new Map<string, PhaseInfo>();
-
-    for (const line of lines) {
-      const parts = line.split('|');
-      if (parts.length < 4) {
-        logger.warn(`Skipping malformed phase line: ${line}`);
-        continue;
-      }
-
-      const [id, status, startStr, endStr] = parts;
-
-      // Validate status
-      if (!VALID_PHASE_STATUSES.has(status)) {
-        logger.warn(`Unknown phase status "${status}" for phase "${id}", treating as failed`);
-      }
-      const validatedStatus: PhaseInfo['status'] = VALID_PHASE_STATUSES.has(status)
-        ? (status as PhaseInfo['status'])
-        : 'failed';
-
-      // Parse timestamps
-      const startTime = parseInt(startStr, 10) || 0;
-      const endTime = parseInt(endStr, 10) || 0;
-
-      // Calculate duration (end - start) in milliseconds
-      const durationMs = endTime > 0 && startTime > 0 ? (endTime - startTime) * 1000 : undefined;
-
-      // Get or create phase entry
-      let phase = phaseMap.get(id);
-      if (!phase) {
-        phase = {
-          id,
-          label: PHASE_LABELS[id] || id,
-          status: validatedStatus,
-          durationMs: 0,
-        };
-        phaseMap.set(id, phase);
-      }
-
-      // Update status (last status wins)
-      phase.status = validatedStatus;
-
-      // Aggregate duration
-      if (durationMs !== undefined) {
-        phase.durationMs = (phase.durationMs || 0) + durationMs;
-      }
-
-    }
-
-    return Array.from(phaseMap.values());
-  } catch (err) {
-    logger.warn(`Failed to parse phases file: ${err instanceof Error ? err.message : String(err)}`);
-    return [];
-  }
-}
+import { parsePhases } from './loop-status.js';
 
 /**
  * Read baseline commit hash from the baseline file.
@@ -156,7 +66,8 @@ function readBaselineCommit(baselineFilePath: string): string | null {
 export function buildEnhancedRunSummary(
   basicSummary: RunSummary,
   projectRoot: string,
-  feature: string
+  feature: string,
+  baselineOverride?: string | null,
 ): RunSummary {
   const phasesFilePath = `/tmp/ralph-loop-${feature}.phases`;
   const baselineFilePath = `/tmp/ralph-loop-${feature}.baseline`;
@@ -188,8 +99,10 @@ export function buildEnhancedRunSummary(
     total: basicSummary.tasksTotal,
   };
 
-  // Git changes and commits
-  const baselineCommit = readBaselineCommit(baselineFilePath);
+  // Git changes and commits — use override if provided (avoids re-reading a cleaned-up file)
+  const baselineCommit = baselineOverride !== undefined
+    ? (baselineOverride ? baselineOverride.substring(0, 7) : null)
+    : readBaselineCommit(baselineFilePath);
   const currentCommit = getCurrentCommitHash(projectRoot);
 
   let changes: ChangesSummary = { available: false };
@@ -245,18 +158,54 @@ export function buildEnhancedRunSummary(
           created: true,
         };
 
-        // Try to get linked issue, passing prInfo to avoid redundant gh call
-        const issueInfo = getLinkedIssue(projectRoot, basicSummary.branch, prInfo);
+        // Try to get linked issue, passing prInfo and feature name for fallback detection
+        const issueInfo = getLinkedIssue(projectRoot, basicSummary.branch, prInfo, feature);
         if (issueInfo) {
+          // When PR is merged with "Closes #N", GitHub auto-closes the issue.
+          // The summary may be built before GitHub processes the webhook, so
+          // infer closure from PR state to avoid showing stale "OPEN" status.
+          const inferredState =
+            prInfo.state === 'MERGED' && issueInfo.state === 'OPEN'
+              ? 'CLOSED'
+              : issueInfo.state;
           issue = {
             number: issueInfo.number,
             url: issueInfo.url,
-            status: issueInfo.state,
+            status: inferredState,
             available: true,
             linked: true,
           };
         } else {
           issue = { available: true, linked: false };
+        }
+        // Enrich commits from PR when squash-merge detected (1 local commit + merged PR)
+        if (
+          prInfo.state === 'MERGED' &&
+          commits.available &&
+          commits.commitList &&
+          commits.commitList.length <= 1
+        ) {
+          try {
+            const prCommitsOutput = execFileSync(
+              'gh',
+              ['pr', 'view', String(prInfo.number), '--json', 'commits'],
+              { cwd: projectRoot, encoding: 'utf-8', timeout: 10_000 },
+            ).trim();
+            const prCommitsData = JSON.parse(prCommitsOutput);
+            const prCommits = prCommitsData.commits;
+            if (Array.isArray(prCommits) && prCommits.length > 1) {
+              commits = {
+                ...commits,
+                commitList: prCommits.map((c: { oid: string; messageHeadline: string }) => ({
+                  hash: c.oid?.substring(0, 7) ?? '',
+                  title: c.messageHeadline ?? '',
+                })),
+                mergeType: 'squash',
+              };
+            }
+          } catch (err) {
+            logger.debug(`Failed to fetch PR commits: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
       } else {
         pr = { available: true, created: false };

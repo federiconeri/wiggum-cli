@@ -1,5 +1,5 @@
 ## Context
-Study @.ralph/AGENTS.md for commands and patterns.
+If @.ralph/guides/AGENTS.md exists, study it for commands and patterns.
 Study @.ralph/specs/$FEATURE.md for feature specification.
 Study @.ralph/specs/$FEATURE-implementation-plan.md for completed tasks.
 
@@ -9,6 +9,7 @@ Capture any review feedback patterns for future iterations.
 
 ## Task
 All implementation and E2E tasks are complete. Create PR, review, and merge.
+Complete ALL steps in a single pass — do not end the session between steps.
 
 ### Step 1: Verify Ready State
 1. Check all tasks are complete in implementation plan (no `- [ ]` items)
@@ -52,12 +53,14 @@ cd {{appDir}} && gh pr create --base main --head feat/$FEATURE \
 [Read from implementation plan - list completed phases]
 
 ## Testing
-- [x] Unit/integration tests: 97 passing
-- [x] E2E tests: All scenarios passed via Playwright MCP
+- [x] Unit/integration tests: passing
+- [x] E2E tests: All scenarios passed
 - [x] Build succeeds
 
 ## E2E Test Results
-[Copy from implementation plan Phase 9]
+[Copy from implementation plan E2E section]
+
+Closes #[Read the source issue number from the spec file metadata or context section]
 
 Generated with Claude Code
 EOF
@@ -88,16 +91,26 @@ Review the git diff against main and check:
 
 Run: git diff main
 
-Respond with:
-- APPROVED if everything looks good
-- Or list specific issues with file:line references that need to be fixed
-
-IMPORTANT: After posting any PR review comment, you MUST print your final verdict as the LAST line of your output. Print exactly one of:
-  VERDICT: APPROVED
-  VERDICT: NOT APPROVED
-This line is parsed by the automation — do not omit it."
+Then:
+1. Post your complete review as a comment on the PR using:
+   gh pr comment --body '<your review in markdown>'
+   Format the comment with: a summary, specific issues with file:line refs (if any), and the verdict.
+2. Print your final verdict as the LAST line of stdout. Print exactly one of:
+   VERDICT: APPROVED
+   VERDICT: NOT APPROVED
+   This line is parsed by the automation — do not omit it."
 fi
 ```
+
+After the review completes, check its output:
+- If it contains "VERDICT: APPROVED", echo that line so the automation detects it:
+  ```bash
+  echo "VERDICT: APPROVED"
+  ```
+- If issues were found, echo:
+  ```bash
+  echo "VERDICT: NOT APPROVED"
+  ```
 
 **Handle review feedback:**
 - If Claude outputs "VERDICT: APPROVED" -> Proceed to Step 5 (rebase and merge)
@@ -119,7 +132,10 @@ If rebase has conflicts:
 1. Resolve conflicts in affected files
 2. `git add .` the resolved files
 3. `git rebase --continue`
-4. Re-run tests: `{{testCommand}} && {{buildCommand}}`
+
+After rebase (whether or not there were conflicts), ALWAYS re-run tests and build:
+cd {{appDir}} && {{testCommand}} && {{buildCommand}}
+If any tests fail after rebase, fix them before proceeding. Do NOT merge with failing tests.
 
 Push rebased branch:
 ```bash
@@ -127,7 +143,9 @@ cd {{appDir}} && git push --force-with-lease origin feat/$FEATURE
 ```
 
 ### Step 6: Merge PR
-When Claude review is approved and branch is rebased:
+**Pre-merge gate:** Confirm ALL tests pass. Run `cd {{appDir}} && {{testCommand}}` one final time. If ANY test fails, STOP — do not merge. Fix the failures first, then re-run.
+
+When Claude review is approved, all tests pass, and branch is rebased:
 ```bash
 cd {{appDir}} && gh pr merge --squash --delete-branch
 ```
@@ -145,8 +163,15 @@ cd {{appDir}} && gh pr merge --squash --delete-branch
 
 Note: Spec status updates are handled in the Spec Verification phase before PR creation.
 
+## IMPORTANT: Review scope
+If you discover that no implementation code exists (empty diff, no source files changed),
+do NOT implement the feature yourself. Instead, report "VERDICT: NOT APPROVED —
+no implementation found" so the harness can trigger a new implementation iteration.
+
 ## Rules
+- **NEVER merge if any tests are failing.** If tests fail after rebase, fix them first. If unfixable, output "VERDICT: NOT APPROVED — test failures" and stop.
 - Do NOT merge without Claude Code approval
+- Do NOT implement missing features — only review and fix minor issues
 - Address ALL review comments before merging
 - Use squash merge to keep history clean
 - If gh CLI fails, check authentication: `gh auth status`
