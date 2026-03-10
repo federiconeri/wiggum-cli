@@ -14,106 +14,20 @@ Study @.ralph/specs/$FEATURE.md for feature specification.
 3. Create @.ralph/specs/$FEATURE-implementation-plan.md with tasks
 
 ## Implementation Plan Format
-```markdown
-# $FEATURE Implementation Plan
-
-**Spec:** .ralph/specs/$FEATURE.md
-**Branch:** feat/$FEATURE
-**Status:** Planning | In Progress | PR Review | Completed
-
-## Tasks
-
-### Phase 1: Setup
-- [ ] Task 1 - [complexity: S/M/L]
-- [ ] Task 2
-
-### Phase 2: Core Implementation
-- [ ] Task 3
-- [ ] Task 4
-
-### Phase 3: Tests (Unit/Integration)
-- [ ] Write tests for [component]
-- [ ] Write tests for [feature]
-
-### Phase 4: Polish & Design
-- [ ] Run design checklist from @.ralph/guides/FRONTEND.md (if UI changes)
-- [ ] Verify responsive design (mobile/tablet/desktop)
-- [ ] Add loading/empty/error states
-- [ ] Verify hover/focus states on interactive elements
-{{#if styling}}- [ ] For charts: use ChartContainer pattern with tooltips + legends{{/if}}
-- [ ] Task N (additional polish)
-
-### Phase 5: E2E Testing
-{{#if isTui}}
-TUI E2E tests executed via xterm.js bridge + agent-browser.
-Fixture projects in `e2e/fixtures/`. Bridge at `http://localhost:3999`.
-
-- [ ] E2E: [Scenario name] - [brief description]
-  - **Command:** [wiggum command, e.g., init, new auth-flow]
-  - **CWD:** [working directory, e.g., e2e/fixtures/bare-project]
-  - **Steps:**
-    1. [Action] -> [expected terminal output]
-    2. [Action] -> [expected terminal output]
-  - **Verify:** [text that should appear in terminal]
-
-Example TUI E2E scenario:
-- [ ] E2E: Init in bare project - happy path
-  - **Command:** init
-  - **CWD:** e2e/fixtures/bare-project
-  - **Steps:**
-    1. Open bridge with init command -> Welcome screen renders
-    2. Arrow down to select option -> Option highlighted
-    3. Press Enter -> Next screen appears
-  - **Verify:** "initialized" text visible in terminal
-{{else}}
-Browser-based tests executed via Playwright MCP tools.
-
-- [ ] E2E: [Scenario name] - [brief description]
-  - **URL:** [starting URL, use {placeholders} for dynamic IDs]
-  - **Preconditions:** [setup requirements, e.g., "Survey must be published"]
-  - **Steps:**
-    1. [Action] -> [expected result]
-    2. [Action] -> [expected result]
-  - **Verify:** [final assertion text to check]
-  - **Database check:** [optional SQL query to verify data]
-
-Example E2E scenario:
-- [ ] E2E: Submit survey response - happy path
-  - **URL:** /survey/{surveyId}?utm_source=e2e_test
-  - **Preconditions:** Published survey with required questions
-  - **Steps:**
-    1. Navigate to survey URL -> Form displays with all questions
-    2. Fill required text field -> No validation error
-    3. Select rating 4 -> Button shows selected state
-    4. Click "Submit Survey" -> Loading state appears
-    5. Wait for "Thank You!" -> Success card displays
-  - **Verify:** "successfully submitted" text visible
-  - **Database check:** SELECT * FROM survey_responses WHERE survey_id = '{surveyId}'
-{{/if}}
-
-## Done
-- [x] Completed task - [commit hash]
-- [x] E2E: Scenario name - PASSED
-```
+Create `@.ralph/specs/$FEATURE-implementation-plan.md` with:
+- **Header:** feature name, spec path (`$FEATURE.md`), branch (`feat/$FEATURE`), status
+- **Phases:** Setup | Core Implementation | Tests (Unit/Integration) | Polish & Design | E2E Testing
+- **Tasks:** `- [ ] Task description [S/M/L]` — every task MUST use `- [ ]` checkbox syntax
+- **E2E tasks:** `- [ ] E2E: Scenario name` with required fields:
+{{#if isTui}}  - Command, CWD, Steps (action → expected terminal output), Verify text{{else}}  - URL, Preconditions, Steps (action → expected result), Verify text, optional Database check{{/if}}
+- **Done section:** `- [x] Completed task - [commit hash]`
 
 ## CRITICAL CONSTRAINT — PLANNING ONLY
-**You are in the PLANNING phase. Your ONLY job is to produce an implementation plan.**
-- Do NOT write any source code, test code, or configuration files
-- Do NOT create, modify, or touch any files outside `.ralph/specs/`
-- Do NOT run build, test, or lint commands
-- Do NOT make git commits
-- If you feel the urge to "just implement a small piece", STOP — that is a phase violation
-- The implementation phase runs AFTER this session ends, in a separate session
-- Violation of this constraint wastes tokens and breaks the harness automation
+Planning only. Do NOT write code, tests, configs, or run builds/commits.
+The implementation phase runs in a separate session after planning ends.
+Violation wastes tokens and breaks harness automation.
 
 ## Rules
-- You MUST use `- [ ]` checkbox syntax for every task in the plan
-- Do NOT use heading-based task formats (e.g., `#### Task 1:`) for individual tasks
-- The harness parses `- [ ]` lines to track progress — other formats will break automation
-- Use `### Phase N:` headings only for phase grouping, not for individual tasks
-- One task = one commit-sized unit of work (but tasks can be grouped into phases for batch implementation)
+- MUST use `- [ ]` checkbox syntax for every task — harness parses this for progress tracking
+- Use `### Phase N:` headings for phases; one task = one commit-sized unit of work
 - Every implementation task needs a corresponding test task
-- Use Supabase MCP to check existing schema
-- Use PostHog MCP to check existing analytics setup
-- For UI-heavy features (new pages, dashboards, analytics, marketing pages), reference @.ralph/guides/FRONTEND.md
-- Consider `/frontend-design` skill for features needing distinctive aesthetics
