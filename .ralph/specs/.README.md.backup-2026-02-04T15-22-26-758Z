@@ -54,7 +54,4 @@ SPDX-License-Identifier: Proprietary
 
 | Spec | Status | Last Updated | Implementation Plan |
 |------|--------|--------------|---------------------|
-| use-resume-for-implementation-loop-iterations | Completed | 2026-03-09 | [Plan](use-resume-for-implementation-loop-iterations-implementation-plan.md) |
-| merge-verification-review-phase | Completed | 2026-03-10 | [Plan](merge-verification-review-phase-implementation-plan.md) |
-| use-resume-e2e-review-loops | Completed | 2026-03-10 | [Plan](use-resume-e2e-review-loops-implementation-plan.md) |
-| create-targeted-e2e-fix-prompt | Completed | 2026-03-10 | [Plan](create-targeted-e2e-fix-prompt-implementation-plan.md) |
+| [load-api-keys](./load-api-keys.md) | Completed | 2026-02-04 | [Plan](./load-api-keys-implementation-plan.md) |
