@@ -65,7 +65,7 @@ export const REPL_COMMANDS = {
   },
   agent: {
     description: 'Start the autonomous backlog agent',
-    usage: '/agent [--dry-run] [--max-items <n>]',
+    usage: '/agent [--dry-run] [--max-items <n>] [--max-steps <n>] [--review-mode manual|auto|merge] [--labels <l1,l2>] [--issues <n1,n2,...>]',
     aliases: ['a'],
   },
   config: {
