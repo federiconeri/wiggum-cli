@@ -115,7 +115,13 @@ const sampleActionRequest: ActionRequest = {
 
 const testConfig = {
   paths: { specs: '.ralph/specs', scripts: '.ralph/scripts', root: '.ralph' },
-  loop: { maxIterations: 10, maxE2eAttempts: 3, reviewMode: 'manual' as const },
+  loop: {
+    maxIterations: 10,
+    maxE2eAttempts: 3,
+    codingCli: 'claude' as const,
+    reviewCli: 'claude' as const,
+    reviewMode: 'manual' as const,
+  },
 };
 
 function makeProps(overrides: Partial<React.ComponentProps<typeof RunScreen>> = {}): React.ComponentProps<typeof RunScreen> {

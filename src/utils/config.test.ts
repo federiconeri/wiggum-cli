@@ -40,6 +40,8 @@ describe('config', () => {
         maxE2eAttempts: 5,
         defaultModel: 'sonnet',
         planningModel: 'opus',
+        codingCli: 'claude',
+        reviewCli: 'claude',
         reviewMode: 'manual',
       });
     });
@@ -142,6 +144,49 @@ describe('config', () => {
       expect(config.loop.maxIterations).toBe(15);
     });
 
+    it('merges user-provided codingCli and reviewCli correctly', async () => {
+      const configContent = `module.exports = {
+        name: 'test-project',
+        stack: {
+          framework: { name: 'react' },
+          packageManager: 'npm',
+          testing: { unit: 'vitest', e2e: 'playwright' },
+          styling: 'tailwind'
+        },
+        commands: {
+          dev: 'npm run dev',
+          build: 'npm run build',
+          test: 'npm test',
+          lint: 'npm run lint',
+          typecheck: 'npm run typecheck'
+        },
+        paths: {
+          root: '.ralph',
+          prompts: '.ralph/prompts',
+          guides: '.ralph/guides',
+          specs: '.ralph/specs',
+          scripts: '.ralph/scripts',
+          learnings: '.ralph/LEARNINGS.md',
+          agents: '.ralph/AGENTS.md'
+        },
+        loop: {
+          maxIterations: 15,
+          maxE2eAttempts: 3,
+          defaultModel: 'opus',
+          planningModel: 'sonnet',
+          codingCli: 'codex',
+          reviewCli: 'claude',
+          reviewMode: 'auto'
+        }
+      };`;
+
+      writeFileSync(join(tempDir, 'ralph.config.cjs'), configContent);
+
+      const config = await loadConfigWithDefaults(tempDir);
+      expect(config.loop.codingCli).toBe('codex');
+      expect(config.loop.reviewCli).toBe('claude');
+    });
+
     it('falls back to manual when reviewMode is absent from user config', async () => {
       const configContent = `module.exports = {
         name: 'test-project',
@@ -179,6 +224,46 @@ describe('config', () => {
 
       const config = await loadConfigWithDefaults(tempDir);
       expect(config.loop.reviewMode).toBe('manual');
+    });
+
+    it('falls back to claude for codingCli/reviewCli when absent from user config', async () => {
+      const configContent = `module.exports = {
+        name: 'test-project',
+        stack: {
+          framework: { name: 'react' },
+          packageManager: 'npm',
+          testing: { unit: 'vitest', e2e: 'playwright' },
+          styling: 'tailwind'
+        },
+        commands: {
+          dev: 'npm run dev',
+          build: 'npm run build',
+          test: 'npm test',
+          lint: 'npm run lint',
+          typecheck: 'npm run typecheck'
+        },
+        paths: {
+          root: '.ralph',
+          prompts: '.ralph/prompts',
+          guides: '.ralph/guides',
+          specs: '.ralph/specs',
+          scripts: '.ralph/scripts',
+          learnings: '.ralph/LEARNINGS.md',
+          agents: '.ralph/AGENTS.md'
+        },
+        loop: {
+          maxIterations: 15,
+          maxE2eAttempts: 3,
+          defaultModel: 'opus',
+          planningModel: 'sonnet'
+        }
+      };`;
+
+      writeFileSync(join(tempDir, 'ralph.config.cjs'), configContent);
+
+      const config = await loadConfigWithDefaults(tempDir);
+      expect(config.loop.codingCli).toBe('claude');
+      expect(config.loop.reviewCli).toBe('claude');
     });
   });
 
@@ -223,6 +308,49 @@ describe('config', () => {
       expect(loopSettings.reviewMode).toBe('auto');
       expect(loopSettings.maxIterations).toBe(15);
       expect(loopSettings.defaultModel).toBe('opus');
+    });
+
+    it('returns codingCli and reviewCli from config', async () => {
+      const configContent = `module.exports = {
+        name: 'test-project',
+        stack: {
+          framework: { name: 'react' },
+          packageManager: 'npm',
+          testing: { unit: 'vitest', e2e: 'playwright' },
+          styling: 'tailwind'
+        },
+        commands: {
+          dev: 'npm run dev',
+          build: 'npm run build',
+          test: 'npm test',
+          lint: 'npm run lint',
+          typecheck: 'npm run typecheck'
+        },
+        paths: {
+          root: '.ralph',
+          prompts: '.ralph/prompts',
+          guides: '.ralph/guides',
+          specs: '.ralph/specs',
+          scripts: '.ralph/scripts',
+          learnings: '.ralph/LEARNINGS.md',
+          agents: '.ralph/AGENTS.md'
+        },
+        loop: {
+          maxIterations: 15,
+          maxE2eAttempts: 3,
+          defaultModel: 'opus',
+          planningModel: 'sonnet',
+          codingCli: 'codex',
+          reviewCli: 'claude',
+          reviewMode: 'auto'
+        }
+      };`;
+
+      writeFileSync(join(tempDir, 'ralph.config.cjs'), configContent);
+
+      const loopSettings = await getLoopSettings(tempDir);
+      expect(loopSettings.codingCli).toBe('codex');
+      expect(loopSettings.reviewCli).toBe('claude');
     });
 
     it('falls back to default reviewMode when not in config', async () => {

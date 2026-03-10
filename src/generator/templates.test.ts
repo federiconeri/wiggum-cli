@@ -277,6 +277,60 @@ describe('feature-loop.sh.tmpl — resume invocation', () => {
   });
 });
 
+describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
+  it('defines implementation/review CLI defaults from config with claude fallback', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain("DEFAULT_CODING_CLI=$(node -e \"console.log(require('$CONFIG_PATH').loop?.codingCli || 'claude')\"");
+    expect(template).toContain("DEFAULT_REVIEW_CLI=$(node -e \"console.log(require('$CONFIG_PATH').loop?.reviewCli || require('$CONFIG_PATH').loop?.codingCli || 'claude')\"");
+  });
+
+  it('parses --cli and --review-cli flags', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('--cli)');
+    expect(template).toContain('--review-cli)');
+    expect(template).toContain('CODING_CLI="${CLI_OVERRIDE:-$DEFAULT_CODING_CLI}"');
+    expect(template).toContain('REVIEW_CLI="${REVIEW_CLI_OVERRIDE:-${DEFAULT_REVIEW_CLI:-$CODING_CLI}}"');
+  });
+
+  it('includes phase-aware CLI selection helpers', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('build_cli_cmd()');
+    expect(template).toContain('get_phase_cli()');
+    expect(template).toContain('get_phase_cmd()');
+    expect(template).toContain('PLANNING_CMD=$(get_phase_cmd "planning")');
+    expect(template).toContain('IMPL_CMD=$(get_phase_cmd "implementation")');
+    expect(template).toContain('REVIEW_CMD=$(get_phase_cmd "review")');
+  });
+
+  it('supports codex exec and codex exec resume JSON paths', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toMatch(/codex exec --full-auto -C \\"\$APP_DIR\\" --model \\"\$\{model\}\\"/);
+    expect(template).toContain('eval "$claude_cmd --json --output-last-message');
+    expect(template).toContain('local resume_cmd="${claude_cmd/ exec / exec resume }"');
+    expect(template).toContain('eval "$resume_cmd \\"$session_id\\" - --json --output-last-message \\"$LAST_MESSAGE_FILE\\""');
+  });
+
+  it('routes review phases independently from implementation phases', () => {
+    const template = readFeatureLoopTemplate();
+    const getPhaseCliSection = template.slice(
+      template.indexOf('get_phase_cli()'),
+      template.indexOf('get_phase_model()')
+    );
+    expect(getPhaseCliSection).toContain('review)');
+    expect(getPhaseCliSection).toContain('echo "$REVIEW_CLI"');
+    expect(getPhaseCliSection).toContain('echo "$CODING_CLI"');
+    expect(template).toContain('run_claude_prompt "$PROMPTS_DIR/PROMPT_review_manual.md" "$REVIEW_CMD"');
+    expect(template).toContain('run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$IMPL_CMD"');
+  });
+
+  it('checks required binaries for selected CLIs', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('check_cli_binary "$CODING_CLI"');
+    expect(template).toContain('if [ "$REVIEW_CLI" != "$CODING_CLI" ]; then');
+    expect(template).toContain('check_cli_binary "$REVIEW_CLI"');
+  });
+});
+
 describe('feature-loop.sh.tmpl — E2E loop resume', () => {
   it('initializes E2E_SESSION_ID variable before E2E loop', () => {
     const template = readFeatureLoopTemplate();

@@ -119,6 +119,34 @@ describe('App — runProps plumbing', () => {
     unmount();
   });
 
+  it('screen=run passes reviewMode, cli and reviewCli through runProps', async () => {
+    const sessionState = createTestSessionState();
+
+    const { unmount } = render(
+      <App
+        screen="run"
+        initialSessionState={sessionState}
+        runProps={{
+          featureName: 'cli-routed-feature',
+          reviewMode: 'merge',
+          cli: 'codex',
+          reviewCli: 'claude',
+        }}
+        onExit={vi.fn()}
+      />,
+    );
+
+    await wait(200);
+
+    expect(capturedRunScreenProps.current).not.toBeNull();
+    expect(capturedRunScreenProps.current?.featureName).toBe('cli-routed-feature');
+    expect(capturedRunScreenProps.current?.reviewMode).toBe('merge');
+    expect(capturedRunScreenProps.current?.cli).toBe('codex');
+    expect(capturedRunScreenProps.current?.reviewCli).toBe('claude');
+
+    unmount();
+  });
+
   it('screen=shell without runProps renders MainShell (not RunScreen)', async () => {
     const sessionState = createTestSessionState();
 
