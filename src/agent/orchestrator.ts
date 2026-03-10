@@ -204,6 +204,7 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
   const runtimeConfig = buildRuntimeConfig(config);
   const fullPrompt = AGENT_SYSTEM_PROMPT + runtimeConfig + constraints;
   const completedIssues = new Set<number>();
+  const issueNumberSet = config.issues?.length ? new Set(config.issues) : undefined;
   const maxSteps = config.maxSteps ?? 200;
 
   // Use traced ToolLoopAgent so Braintrust automatically captures
@@ -270,9 +271,26 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
           }
         }
 
+        // Filter listIssues results to configured issues before reaching the TUI.
+        // The tool's closure-based filter should handle this, but Braintrust's
+        // wrapAISDK Proxy chain can bypass tool closures in some edge cases.
+        const mappedResults = toolResults.map((tr) => {
+          const output = tr.output;
+          if (tr.toolName === 'listIssues' && issueNumberSet && output != null && typeof output === 'object') {
+            const raw = output as Record<string, unknown>;
+            if (Array.isArray(raw.issues)) {
+              const filtered = (raw.issues as Array<Record<string, unknown>>).filter(
+                (i) => issueNumberSet.has(Number(i.number)),
+              );
+              return { toolName: tr.toolName, result: { ...raw, issues: filtered } };
+            }
+          }
+          return { toolName: tr.toolName, result: output };
+        });
+
         config.onStepUpdate?.({
           toolCalls: toolCalls.map((tc) => ({ toolName: tc.toolName, args: tc.input })),
-          toolResults: toolResults.map((tr) => ({ toolName: tr.toolName, result: tr.output })),
+          toolResults: mappedResults,
           completedItems: completedIssues.size,
         });
       } catch (err) {

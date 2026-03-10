@@ -146,6 +146,73 @@ describe('buildConstraints', () => {
   });
 });
 
+describe('onStepFinish issue filtering', () => {
+  it('filters listIssues results to configured issue numbers', () => {
+    const mockModel = {} as any;
+    const stepEvents: any[] = [];
+
+    const agent = createAgentOrchestrator({
+      model: mockModel,
+      projectRoot: '/fake',
+      owner: 'test',
+      repo: 'repo',
+      issues: [3, 5],
+      onStepUpdate: (event: any) => { stepEvents.push(event); },
+    });
+
+    // Access onStepFinish from the agent settings to simulate a step
+    const settings = (agent as any).settings;
+    expect(settings.onStepFinish).toBeDefined();
+
+    // Simulate a step with listIssues returning unfiltered results
+    settings.onStepFinish({
+      toolCalls: [{ toolName: 'listIssues', input: {} }],
+      toolResults: [{
+        toolName: 'listIssues',
+        output: {
+          issues: [
+            { number: 1, title: 'Other' },
+            { number: 3, title: 'Target A' },
+            { number: 5, title: 'Target B' },
+            { number: 7, title: 'Other B' },
+          ],
+        },
+      }],
+    });
+
+    expect(stepEvents).toHaveLength(1);
+    const result = stepEvents[0].toolResults[0].result;
+    expect(result.issues).toHaveLength(2);
+    expect(result.issues.map((i: any) => i.number)).toEqual([3, 5]);
+  });
+
+  it('passes through listIssues results when no issues configured', () => {
+    const mockModel = {} as any;
+    const stepEvents: any[] = [];
+
+    const agent = createAgentOrchestrator({
+      model: mockModel,
+      projectRoot: '/fake',
+      owner: 'test',
+      repo: 'repo',
+      onStepUpdate: (event: any) => { stepEvents.push(event); },
+    });
+
+    const settings = (agent as any).settings;
+    settings.onStepFinish({
+      toolCalls: [{ toolName: 'listIssues', input: {} }],
+      toolResults: [{
+        toolName: 'listIssues',
+        output: { issues: [{ number: 1 }, { number: 2 }] },
+      }],
+    });
+
+    expect(stepEvents).toHaveLength(1);
+    const result = stepEvents[0].toolResults[0].result;
+    expect(result.issues).toHaveLength(2);
+  });
+});
+
 describe('buildRuntimeConfig', () => {
   const base = { model: {} as any, projectRoot: '/fake', owner: 'o', repo: 'r' };
 

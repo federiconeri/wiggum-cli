@@ -40,10 +40,11 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       if (result.error) return { issues: [], error: result.error };
       // Sort by issue number ascending — lower numbers are typically more foundational
       const sorted = [...result.issues].sort((a, b) => a.number - b.number);
-      const filtered = issueNumberSet
-        ? sorted.filter(i => issueNumberSet.has(Number(i.number)))
-        : sorted;
-      return { issues: filtered };
+      if (issueNumberSet) {
+        const filtered = sorted.filter(i => issueNumberSet.has(Number(i.number)));
+        return { issues: filtered };
+      }
+      return { issues: sorted };
     },
   });
 
