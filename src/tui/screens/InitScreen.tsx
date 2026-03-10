@@ -65,6 +65,11 @@ const PROVIDER_OPTIONS: SelectOption<AIProvider>[] = [
   { value: 'openrouter', label: 'OpenRouter', hint: 'multiple providers' },
 ];
 
+const CODING_CLI_OPTIONS: SelectOption<'claude' | 'codex'>[] = [
+  { value: 'claude', label: 'Claude Code', hint: 'default' },
+  { value: 'codex', label: 'Codex (OpenAI)' },
+];
+
 function getModelOptions(provider: AIProvider): SelectOption<string>[] {
   return AVAILABLE_MODELS[provider].map((m) => ({
     value: m.value,
@@ -94,6 +99,7 @@ export function InitScreen({
     setApiKey,
     setSaveKey,
     selectModel,
+    selectCodingCli,
     setAiProgress,
     updateToolCall,
     setEnhancedResult,
@@ -251,6 +257,8 @@ export function InitScreen({
         customVariables: {
           ...(state.provider ? { agentProvider: state.provider } : {}),
           ...(state.model ? { agentModel: state.model } : {}),
+          codingCli: state.codingCli,
+          reviewCli: state.codingCli,
         },
       });
 
@@ -346,6 +354,13 @@ export function InitScreen({
     [selectModel]
   );
 
+  const handleCodingCliSelect = useCallback(
+    (cli: 'claude' | 'codex') => {
+      selectCodingCli(cli);
+    },
+    [selectCodingCli]
+  );
+
   const handleConfirmGeneration = useCallback(
     (confirmed: boolean) => {
       confirmGeneration(confirmed);
@@ -420,6 +435,16 @@ export function InitScreen({
             message="Select model:"
             options={getModelOptions(state.provider)}
             onSelect={handleModelSelect}
+            onCancel={onCancel}
+          />
+        );
+
+      case 'coding-cli-select':
+        return (
+          <Select
+            message="Which coding CLI do you use for loops?"
+            options={CODING_CLI_OPTIONS}
+            onSelect={handleCodingCliSelect}
             onCancel={onCancel}
           />
         );

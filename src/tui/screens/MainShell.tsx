@@ -210,6 +210,8 @@ export function MainShell({
 
     // Parse optional flags, separating them from positional args
     let reviewMode: string | undefined;
+    let cli: string | undefined;
+    let reviewCli: string | undefined;
     const positional: string[] = [];
 
     for (let i = 0; i < args.length; i++) {
@@ -220,21 +222,49 @@ export function MainShell({
         }
         continue;
       }
+      if (args[i] === '--cli') {
+        if (i + 1 < args.length) {
+          cli = args[i + 1];
+          i++;
+        }
+        continue;
+      }
+      if (args[i] === '--review-cli') {
+        if (i + 1 < args.length) {
+          reviewCli = args[i + 1];
+          i++;
+        }
+        continue;
+      }
+      if (args[i]?.startsWith('--')) {
+        addSystemMessage(`Unknown flag '${args[i]}' for /run.`);
+        return;
+      }
       positional.push(args[i]!);
     }
 
-    if (reviewMode !== undefined && reviewMode !== 'manual' && reviewMode !== 'auto') {
-      addSystemMessage(`Invalid --review-mode value '${reviewMode}'. Use 'manual' or 'auto'.`);
+    if (reviewMode !== undefined && !['manual', 'auto', 'merge'].includes(reviewMode)) {
+      addSystemMessage(`Invalid --review-mode value '${reviewMode}'. Use 'manual', 'auto', or 'merge'.`);
+      return;
+    }
+
+    if (cli !== undefined && !['claude', 'codex'].includes(cli)) {
+      addSystemMessage(`Invalid --cli value '${cli}'. Use 'claude' or 'codex'.`);
+      return;
+    }
+
+    if (reviewCli !== undefined && !['claude', 'codex'].includes(reviewCli)) {
+      addSystemMessage(`Invalid --review-cli value '${reviewCli}'. Use 'claude' or 'codex'.`);
       return;
     }
 
     const featureName = positional[0];
     if (!featureName) {
-      addSystemMessage('Feature name required. Usage: /run <feature-name> [--review-mode auto|manual]');
+      addSystemMessage('Feature name required. Usage: /run <feature-name> [--review-mode manual|auto|merge] [--cli claude|codex] [--review-cli claude|codex]');
       return;
     }
 
-    onNavigate('run', { featureName, reviewMode });
+    onNavigate('run', { featureName, reviewMode, cli, reviewCli });
   }, [sessionState.initialized, addSystemMessage, onNavigate]);
 
   const handleMonitor = useCallback((args: string[]) => {
