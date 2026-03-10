@@ -14,6 +14,8 @@ export function generateConfig(scanResult: ScanResult, customVars: Record<string
   const vars = extractVariables(scanResult, customVars);
   const defaultModel = customVars.defaultModel || 'sonnet';
   const planningModel = customVars.planningModel || 'opus';
+  const codingCli = customVars.codingCli === 'codex' ? 'codex' : 'claude';
+  const reviewCli = customVars.reviewCli === 'codex' ? 'codex' : codingCli;
   const agentProvider = customVars.agentProvider || 'anthropic';
   const agentModel = customVars.agentModel || 'claude-sonnet-4-6';
 
@@ -53,6 +55,8 @@ export function generateConfig(scanResult: ScanResult, customVars: Record<string
       maxE2eAttempts: 5,
       defaultModel,
       planningModel,
+      codingCli,
+      reviewCli,
       reviewMode: 'manual',
     },
     agent: {
