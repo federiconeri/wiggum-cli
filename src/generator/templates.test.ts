@@ -452,6 +452,66 @@ describe('PROMPT_e2e_fix.md.tmpl — content requirements', () => {
   });
 });
 
+describe('PROMPT_e2e.md.tmpl — trimmed content requirements', () => {
+  function readE2ePromptTemplate(): string {
+    const templatePath = join(__dirname, '..', 'templates', 'prompts', 'PROMPT_e2e.md.tmpl');
+    return readFileSync(templatePath, 'utf-8');
+  }
+
+  it('does not contain Playwright MCP Tool Reference section', () => {
+    const template = readE2ePromptTemplate();
+    expect(template).not.toContain('Playwright MCP Tool Reference');
+  });
+
+  it('does not contain Assertion Patterns section', () => {
+    const template = readE2ePromptTemplate();
+    expect(template).not.toContain('## Assertion Patterns');
+  });
+
+  it('does not contain Browser State Management section', () => {
+    const template = readE2ePromptTemplate();
+    expect(template).not.toContain('## Browser State Management');
+  });
+
+  it('does not contain Troubleshooting section', () => {
+    const template = readE2ePromptTemplate();
+    expect(template).not.toContain('## Troubleshooting');
+  });
+
+  it('TUI cheatsheet has 4 or fewer data rows', () => {
+    const template = readE2ePromptTemplate();
+    const tuiBlock = template.slice(0, template.indexOf('{{else}}'));
+    const cheatsheetStart = tuiBlock.indexOf('### TUI Interaction Cheatsheet');
+    const cheatsheetEnd = tuiBlock.indexOf('### Key Rules');
+    const cheatsheet = tuiBlock.slice(cheatsheetStart, cheatsheetEnd);
+    // Count data rows (lines starting with | but not the header or separator rows)
+    const rows = cheatsheet.split('\n').filter((line) => {
+      return line.startsWith('|') && !line.includes('---') && !line.includes('Action');
+    });
+    expect(rows.length).toBeLessThanOrEqual(4);
+  });
+
+  it('Learning Capture is a single concise directive referencing LEARNINGS.md', () => {
+    const template = readE2ePromptTemplate();
+    // Check TUI Learning Capture (before {{else}})
+    const tuiBlock = template.slice(0, template.indexOf('{{else}}'));
+    const tuiLearningStart = tuiBlock.indexOf('## Learning Capture\n');
+    const tuiLearningContent = tuiBlock.slice(tuiLearningStart);
+    expect(tuiLearningContent).toContain('LEARNINGS.md');
+    // Should not have bullet-point list (was condensed from multi-line)
+    const tuiLines = tuiLearningContent.split('\n').filter((l) => l.startsWith('-'));
+    expect(tuiLines.length).toBe(0);
+
+    // Check non-TUI Learning Capture (after {{else}})
+    const nonTuiBlock = template.slice(template.indexOf('{{else}}'));
+    const nonTuiLearningStart = nonTuiBlock.indexOf('## Learning Capture\n');
+    const nonTuiLearningContent = nonTuiBlock.slice(nonTuiLearningStart);
+    expect(nonTuiLearningContent).toContain('LEARNINGS.md');
+    const nonTuiLines = nonTuiLearningContent.split('\n').filter((l) => l.startsWith('-'));
+    expect(nonTuiLines.length).toBe(0);
+  });
+});
+
 describe('feature-loop.sh.tmpl — E2E fix prompt reference', () => {
   it('E2E fix fallback uses PROMPT_e2e_fix.md not PROMPT.md', () => {
     const template = readFeatureLoopTemplate();
