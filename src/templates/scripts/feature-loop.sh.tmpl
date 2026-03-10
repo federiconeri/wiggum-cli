@@ -842,11 +842,11 @@ else
                 extract_session_result "${CLAUDE_OUTPUT}.raw"
                 if [ $E2E_FIX_EXIT -ne 0 ] || [ -z "$LAST_SESSION_ID" ]; then
                     echo "E2E fix: resume unavailable, using full prompt"
-                    run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+                    run_claude_prompt "$PROMPTS_DIR/PROMPT_e2e_fix.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
                 fi
             else
                 echo "E2E fix: resume unavailable, using full prompt"
-                run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+                run_claude_prompt "$PROMPTS_DIR/PROMPT_e2e_fix.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
             fi
             extract_session_result "${CLAUDE_OUTPUT}.raw"
             accumulate_tokens_from_session "$LAST_SESSION_ID"

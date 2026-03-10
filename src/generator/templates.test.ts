@@ -321,6 +321,74 @@ describe('feature-loop.sh.tmpl — E2E loop resume', () => {
   });
 });
 
+describe('PROMPT_e2e_fix.md.tmpl — content requirements', () => {
+  function readPromptTemplate(name: string): string {
+    const templatePath = join(__dirname, '..', 'templates', 'prompts', name);
+    return readFileSync(templatePath, 'utf-8');
+  }
+
+  it('PROMPT_e2e_fix.md.tmpl exists', () => {
+    expect(() => readPromptTemplate('PROMPT_e2e_fix.md.tmpl')).not.toThrow();
+  });
+
+  it('references implementation plan for failure details', () => {
+    const template = readPromptTemplate('PROMPT_e2e_fix.md.tmpl');
+    expect(template).toContain('$FEATURE-implementation-plan.md');
+  });
+
+  it('references spec file for behavioral constraints', () => {
+    const template = readPromptTemplate('PROMPT_e2e_fix.md.tmpl');
+    expect(template).toContain('$FEATURE.md');
+  });
+
+  it('includes testCommand validation step', () => {
+    const template = readPromptTemplate('PROMPT_e2e_fix.md.tmpl');
+    expect(template).toContain('{{testCommand}}');
+  });
+
+  it('contains isTui conditional block', () => {
+    const template = readPromptTemplate('PROMPT_e2e_fix.md.tmpl');
+    expect(template).toContain('{{#if isTui}}');
+    expect(template).toContain('{{else}}');
+  });
+
+  it('does not reference PERFORMANCE.md', () => {
+    const template = readPromptTemplate('PROMPT_e2e_fix.md.tmpl');
+    expect(template).not.toContain('PERFORMANCE.md');
+  });
+
+  it('does not reference SECURITY.md', () => {
+    const template = readPromptTemplate('PROMPT_e2e_fix.md.tmpl');
+    expect(template).not.toContain('SECURITY.md');
+  });
+
+  it('does not reference FRONTEND.md', () => {
+    const template = readPromptTemplate('PROMPT_e2e_fix.md.tmpl');
+    expect(template).not.toContain('FRONTEND.md');
+  });
+});
+
+describe('feature-loop.sh.tmpl — E2E fix prompt reference', () => {
+  it('E2E fix fallback uses PROMPT_e2e_fix.md not PROMPT.md', () => {
+    const template = readFeatureLoopTemplate();
+    const e2eFixSection = template.slice(
+      template.indexOf('E2E tests have failures'),
+      template.indexOf('E2E tests have failures') + 1000
+    );
+    expect(e2eFixSection).toContain('PROMPT_e2e_fix.md');
+    expect(e2eFixSection).not.toContain('"$PROMPTS_DIR/PROMPT.md"');
+  });
+
+  it('E2E initial attempt still uses PROMPT_e2e.md', () => {
+    const template = readFeatureLoopTemplate();
+    const e2eSection = template.slice(
+      template.indexOf('E2E TESTING PHASE'),
+      template.indexOf('Phase 6')
+    );
+    expect(e2eSection).toMatch(/run_claude_prompt "\$PROMPTS_DIR\/PROMPT_e2e\.md"/);
+  });
+});
+
 describe('feature-loop.sh.tmpl — review loop resume', () => {
   it('initializes REVIEW_SESSION_ID variable before review branches', () => {
     const template = readFeatureLoopTemplate();
