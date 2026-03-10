@@ -108,6 +108,7 @@ function interpretToolCalls(
   stopLoopPolling: () => void,
   ranLoopRef: React.MutableRefObject<Set<number>>,
   activeIssueRef: React.MutableRefObject<AgentIssueState | null>,
+  issueNumberFilter?: Set<number>,
 ): void {
   // If a new tool call arrives while polling, the runLoop tool has finished — stop polling
   for (const tc of event.toolCalls) {
@@ -305,7 +306,12 @@ function interpretToolCalls(
           // Only update queue from unfiltered listIssues calls (full backlog scan).
           // Filtered calls (e.g. labels: ["bug"]) are P0/blocker checks — not the backlog.
           if (!listIssuesHasLabelFilter) {
-            const queueItems: AgentIssueState[] = issues.map((issue) => ({
+            // When --issues is configured, defensively filter queue to only those issues
+            // (the tool should already filter, but this guards against edge cases)
+            const relevantIssues = issueNumberFilter
+              ? issues.filter(i => issueNumberFilter.has((i.number ?? i.issueNumber) as number))
+              : issues;
+            const queueItems: AgentIssueState[] = relevantIssues.map((issue) => ({
               issueNumber: (issue.number ?? issue.issueNumber) as number,
               title: (issue.title as string) ?? `Issue #${issue.number ?? issue.issueNumber}`,
               labels: Array.isArray(issue.labels) ? issue.labels as string[] : [],
@@ -510,6 +516,10 @@ export function useAgentOrchestrator(
           appendLog(prev, `Using ${env.provider}/${env.modelId ?? 'default'} on ${env.owner}/${env.repo}`),
         );
 
+        const issueFilter = options.issues?.length
+          ? new Set(options.issues)
+          : undefined;
+
         const agentConfig: AgentConfig = {
           model: env.model,
           modelId: env.modelId,
@@ -534,6 +544,7 @@ export function useAgentOrchestrator(
               stopLoopPolling,
               ranLoopRef,
               activeIssueRef,
+              issueFilter,
             );
           },
           onProgress: (toolName: string, line: string) => {

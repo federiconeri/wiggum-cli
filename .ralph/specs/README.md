@@ -55,3 +55,4 @@ SPDX-License-Identifier: Proprietary
 | Spec | Status | Last Updated | Implementation Plan |
 |------|--------|--------------|---------------------|
 | use-resume-for-implementation-loop-iterations | Completed | 2026-03-09 | [Plan](use-resume-for-implementation-loop-iterations-implementation-plan.md) |
+| merge-verification-review-phase | Completed | 2026-03-10 | [Plan](merge-verification-review-phase-implementation-plan.md) |

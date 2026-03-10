@@ -11,6 +11,34 @@ Capture any review feedback patterns for future iterations.
 All implementation and E2E tasks are complete. Create PR, review, and merge.
 Complete ALL steps in a single pass — do not end the session between steps.
 
+### Step 0: Verify Spec Requirements
+Before creating the PR, verify the implementation meets the spec requirements and update spec files.
+
+1. Read @.ralph/specs/$FEATURE.md and for each requirement under "## Requirements":
+   - Check if it was implemented (review implementation plan tasks)
+   - Mark as `[x]` if complete, leave as `[ ]` if not implemented (add a note explaining why)
+
+2. For each item under "## Acceptance Criteria":
+   - Verify against implementation and test results
+   - Mark as `[x]` if verified, leave as `[ ]` with a note if not met
+
+3. Update spec status:
+   - Change `**Status:** Planned` (or `Draft`) to `**Status:** Completed` if all requirements met, or `**Status:** Partial` if some are missing
+   - Update `**Last Updated:**` to today's date
+
+4. Update @.ralph/specs/README.md Active Specs table:
+   - Update ONLY the row for $FEATURE (do NOT remove or modify other rows)
+   - Change status and update Last Updated date
+
+5. If any requirements were not fully met, add an "## Implementation Notes" section documenting gaps and reasons.
+
+6. Commit spec updates:
+   ```bash
+   git -C {{appDir}} add ../.ralph/specs/
+   git -C {{appDir}} commit -m "docs($FEATURE): verify spec requirements"
+   git -C {{appDir}} push origin feat/$FEATURE
+   ```
+
 ### Step 1: Verify Ready State
 1. Check all tasks are complete in implementation plan (no `- [ ]` items)
 2. Verify tests pass: `cd {{appDir}} && {{testCommand}}`
@@ -161,7 +189,7 @@ cd {{appDir}} && gh pr merge --squash --delete-branch
    git -C {{appDir}} checkout main && git -C {{appDir}} pull
    ```
 
-Note: Spec status updates are handled in the Spec Verification phase before PR creation.
+Note: Spec status updates are handled in Step 0 above, before PR creation.
 
 ## IMPORTANT: Review scope
 If you discover that no implementation code exists (empty diff, no source files changed),

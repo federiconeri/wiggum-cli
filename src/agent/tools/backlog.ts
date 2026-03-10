@@ -16,6 +16,10 @@ function extractDependencyHints(body: string): number[] {
 }
 
 export function createBacklogTools(owner: string, repo: string, options: BacklogToolsOptions = {}) {
+  const issueNumberSet = options.issueNumbers?.length
+    ? new Set(options.issueNumbers)
+    : undefined;
+
   const listIssues = tool({
     description: 'List open GitHub issues from the backlog, optionally filtered by labels or milestone.',
     inputSchema: zodSchema(z.object({
@@ -36,8 +40,8 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       if (result.error) return { issues: [], error: result.error };
       // Sort by issue number ascending — lower numbers are typically more foundational
       const sorted = [...result.issues].sort((a, b) => a.number - b.number);
-      const filtered = options.issueNumbers?.length
-        ? sorted.filter(i => options.issueNumbers!.includes(i.number))
+      const filtered = issueNumberSet
+        ? sorted.filter(i => issueNumberSet.has(Number(i.number)))
         : sorted;
       return { issues: filtered };
     },

@@ -54,7 +54,7 @@ describe('buildEnhancedRunSummary', () => {
             'implementation|success|1135|1655',
             'implementation|success|1655|1695',
             'e2e_testing|skipped|0|0',
-            'verification|success|1695|1757',
+            'verification|skipped|0|0',
             'pr_review|success|1757|1792',
           ].join('\n');
         }
@@ -93,9 +93,9 @@ describe('buildEnhancedRunSummary', () => {
       expect(result.iterations).toBe(10);
       expect(result.exitCode).toBe(0);
 
-      // Total duration computed from phases
-      // planning: 135s, impl: 520s + 40s, verification: 62s, pr_review: 35s = 792s = 792000ms
-      expect(result.totalDurationMs).toBe(792000);
+      // Total duration computed from phases (verification is now skipped, no duration)
+      // planning: 135s, impl: 520s + 40s, pr_review: 35s = 730s = 730000ms
+      expect(result.totalDurationMs).toBe(730000);
 
       // Iteration breakdown
       expect(result.iterationBreakdown).toEqual({
@@ -134,8 +134,8 @@ describe('buildEnhancedRunSummary', () => {
           expect.objectContaining({
             id: 'verification',
             label: 'Verification',
-            status: 'success',
-            durationMs: 62000,
+            status: 'skipped',
+            durationMs: 0,
           }),
           expect.objectContaining({
             id: 'pr_review',

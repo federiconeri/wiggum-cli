@@ -145,6 +145,75 @@ describe('extractVariables - isTui detection', () => {
   });
 });
 
+describe('feature-loop.sh.tmpl — verify phase removal', () => {
+  it('does not invoke run_claude_prompt with PROMPT_verify.md', () => {
+    const template = readFeatureLoopTemplate();
+    // No line should call run_claude_prompt with PROMPT_verify.md
+    expect(template).not.toMatch(/run_claude_prompt[^#\n]*PROMPT_verify\.md/);
+  });
+
+  it('keeps write_phase_start and write_phase_end for verification as no-op marker', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('write_phase_start "verification"');
+    expect(template).toContain('write_phase_end "verification" "skipped"');
+  });
+});
+
+describe('review prompt templates — Step 0 verification', () => {
+  function readReviewTemplate(name: string): string {
+    const templatePath = join(__dirname, '..', 'templates', 'prompts', name);
+    return readFileSync(templatePath, 'utf-8');
+  }
+
+  it('PROMPT_review_manual.md.tmpl contains Step 0: Verify Spec Requirements', () => {
+    const template = readReviewTemplate('PROMPT_review_manual.md.tmpl');
+    expect(template).toMatch(/Step 0.*Verify Spec Requirements/i);
+  });
+
+  it('PROMPT_review_auto.md.tmpl contains Step 0: Verify Spec Requirements', () => {
+    const template = readReviewTemplate('PROMPT_review_auto.md.tmpl');
+    expect(template).toMatch(/Step 0.*Verify Spec Requirements/i);
+  });
+
+  it('PROMPT_review_merge.md.tmpl contains Step 0: Verify Spec Requirements', () => {
+    const template = readReviewTemplate('PROMPT_review_merge.md.tmpl');
+    expect(template).toMatch(/Step 0.*Verify Spec Requirements/i);
+  });
+
+  it('all 3 review templates include spec status update instruction', () => {
+    const templates = [
+      readReviewTemplate('PROMPT_review_manual.md.tmpl'),
+      readReviewTemplate('PROMPT_review_auto.md.tmpl'),
+      readReviewTemplate('PROMPT_review_merge.md.tmpl'),
+    ];
+    for (const template of templates) {
+      expect(template).toContain('**Status:**');
+    }
+  });
+
+  it('all 3 review templates include acceptance criteria check instruction', () => {
+    const templates = [
+      readReviewTemplate('PROMPT_review_manual.md.tmpl'),
+      readReviewTemplate('PROMPT_review_auto.md.tmpl'),
+      readReviewTemplate('PROMPT_review_merge.md.tmpl'),
+    ];
+    for (const template of templates) {
+      expect(template).toContain('Acceptance Criteria');
+    }
+  });
+
+  it('all 3 review templates include README/docs update instruction', () => {
+    const templates = [
+      readReviewTemplate('PROMPT_review_manual.md.tmpl'),
+      readReviewTemplate('PROMPT_review_auto.md.tmpl'),
+      readReviewTemplate('PROMPT_review_merge.md.tmpl'),
+    ];
+    for (const template of templates) {
+      expect(template).toContain('README.md');
+    }
+  });
+});
+
 describe('feature-loop.sh.tmpl — resume invocation', () => {
   it('contains run_claude_resume helper function', () => {
     const template = readFeatureLoopTemplate();

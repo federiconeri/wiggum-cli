@@ -112,7 +112,7 @@ Stop the loop when:
 - A critical failure requires human attention
 - The user has signaled to stop
 
-IMPORTANT: Generating text without tool calls terminates the session immediately. After completing an issue, you MUST call listIssues (step 6) — never ask "should I continue?" or summarize before checking. After assessFeatureState returns for the next issue, you MUST follow the Feature State Decision Tree and call the next tool (e.g. generateSpec for start_fresh). Stopping after assessFeatureState is a bug — the result tells you what to do next. After runLoop returns, you MUST execute steps 4–6 (readLoopLog → assessFeatureState → close/comment → reflectOnWork → listIssues). Stopping after runLoop is a bug — there is always post-loop work to do. Your only text-only response is the final summary when ALL issues are processed or a stop condition is met.
+IMPORTANT: Generating text without tool calls terminates the session immediately. After completing an issue, you MUST call listIssues (step 6) — never ask "should I continue?" or summarize before checking. After listIssues returns, scan the results for issues matching your constraints (if any). If actionable issues remain, immediately call assessFeatureState — do NOT generate a summary. After assessFeatureState returns for the next issue, you MUST follow the Feature State Decision Tree and call the next tool (e.g. generateSpec for start_fresh). Stopping after assessFeatureState is a bug — the result tells you what to do next. After runLoop returns, you MUST execute steps 4–6 (readLoopLog → assessFeatureState → close/comment → reflectOnWork → listIssues). Stopping after runLoop is a bug — there is always post-loop work to do. Your only text-only response is the final summary when ALL constrained issues are processed or a stop condition is met. If you were given specific issue numbers to work on, you MUST process ALL of them before stopping.
 
 ## Learning
 
@@ -158,7 +158,7 @@ export function buildConstraints(config: AgentConfig): string {
     lines.push(`- Only work on issues with these labels: ${config.labels.join(', ')}. Ignore all others.`);
   }
   if (config.issues?.length) {
-    lines.push(`- ONLY work on these specific issues: ${config.issues.map(n => `#${n}`).join(', ')}. Ignore all others.`);
+    lines.push(`- ONLY work on these specific issues: ${config.issues.map(n => `#${n}`).join(', ')}. Ignore all others. You MUST process ALL of these issues before stopping — do not stop after the first one.`);
   }
   if (config.dryRun) {
     lines.push('- DRY RUN MODE: Plan what you would do but do NOT execute. Execution and reporting tools return simulated results.');

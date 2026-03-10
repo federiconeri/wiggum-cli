@@ -73,8 +73,6 @@ detect_phase() {
         echo "Planning"
     elif pgrep -f "PROMPT_e2e.md" > /dev/null 2>&1; then
         echo "E2E Testing"
-    elif pgrep -f "PROMPT_verify.md" > /dev/null 2>&1; then
-        echo "Verification"
     elif pgrep -f "PROMPT_review_manual.md" > /dev/null 2>&1; then
         echo "PR Review"
     elif pgrep -f "PROMPT_review_auto.md" > /dev/null 2>&1; then

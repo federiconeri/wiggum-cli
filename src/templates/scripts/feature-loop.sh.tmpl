@@ -831,17 +831,12 @@ else
     fi
 fi
 
-# Phase 6: Spec Verification
-echo "======================== SPEC VERIFICATION PHASE ========================"
+# Phase 6: Spec Verification (merged into review phase)
+# Verification responsibilities (spec status, acceptance criteria, README updates)
+# are now handled in Step 0 of the review prompt templates.
+# This no-op marker preserves backward compatibility for TUI phase tracking.
 write_phase_start "verification"
-export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-VERIFY_STATUS="success"
-if ! run_claude_prompt "$PROMPTS_DIR/PROMPT_verify.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw"; then
-    VERIFY_STATUS="failed"
-fi
-extract_session_result "${CLAUDE_OUTPUT}.raw"
-accumulate_tokens_from_session "$LAST_SESSION_ID"
-write_phase_end "verification" "$VERIFY_STATUS"
+write_phase_end "verification" "skipped"
 
 # Guard B: Skip PR phase if branch has no diff to default branch
 # Safety net for cases where implementation ran but produced no net diff.
@@ -858,7 +853,7 @@ if [ -z "$_PR_DIFF_STAT" ]; then
     exit 0
 fi
 
-# Phase 7: PR and Review
+# Phase 7: PR and Review (includes spec verification via Step 0 in review prompts)
 echo "======================== PR & REVIEW PHASE ========================"
 write_phase_start "pr_review"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
