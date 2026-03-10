@@ -36,6 +36,9 @@ type LoopCli = 'claude' | 'codex';
 type LoopCliSetting = 'cli' | 'review-cli';
 const LOOP_CLI_SETTINGS: readonly LoopCliSetting[] = ['cli', 'review-cli'] as const;
 const LOOP_CLI_VALUES: readonly LoopCli[] = ['claude', 'codex'] as const;
+const DEFAULT_CLAUDE_IMPL_MODEL = 'sonnet';
+const DEFAULT_CLAUDE_REVIEW_MODEL = 'opus';
+const DEFAULT_CODEX_MODEL = 'gpt-5.3-codex';
 
 /**
  * Check if a service API key is configured
@@ -78,6 +81,36 @@ function isLoopCliValue(value: string): value is LoopCli {
   return LOOP_CLI_VALUES.includes(value as LoopCli);
 }
 
+function reconcileLoopModelsForCliSelection(
+  loop: RalphConfig['loop'],
+  codingCli: LoopCli,
+  reviewCli: LoopCli
+): Pick<RalphConfig['loop'], 'defaultModel' | 'planningModel'> {
+  let defaultModel = loop.defaultModel;
+  let planningModel = loop.planningModel;
+
+  const usesClaude = codingCli === 'claude' || reviewCli === 'claude';
+  const codexOnly = codingCli === 'codex' && reviewCli === 'codex';
+
+  if (usesClaude) {
+    if (defaultModel === DEFAULT_CODEX_MODEL) {
+      defaultModel = DEFAULT_CLAUDE_IMPL_MODEL;
+    }
+    if (planningModel === DEFAULT_CODEX_MODEL) {
+      planningModel = DEFAULT_CLAUDE_REVIEW_MODEL;
+    }
+  } else if (codexOnly) {
+    if (defaultModel === DEFAULT_CLAUDE_IMPL_MODEL) {
+      defaultModel = DEFAULT_CODEX_MODEL;
+    }
+    if (planningModel === DEFAULT_CLAUDE_REVIEW_MODEL) {
+      planningModel = DEFAULT_CODEX_MODEL;
+    }
+  }
+
+  return { defaultModel, planningModel };
+}
+
 async function saveLoopCliToConfig(projectRoot: string, setting: LoopCliSetting, value: LoopCli): Promise<void> {
   // Check that .ralph/ exists (project is initialized)
   const ralphDir = path.join(projectRoot, '.ralph');
@@ -87,12 +120,21 @@ async function saveLoopCliToConfig(projectRoot: string, setting: LoopCliSetting,
 
   const configPath = path.join(projectRoot, 'ralph.config.cjs');
   const config = await loadConfigWithDefaults(projectRoot);
+  const nextCodingCli = setting === 'cli' ? value : config.loop.codingCli;
+  const nextReviewCli = setting === 'review-cli' ? value : config.loop.reviewCli;
+  const { defaultModel, planningModel } = reconcileLoopModelsForCliSelection(
+    config.loop,
+    nextCodingCli,
+    nextReviewCli
+  );
   const nextConfig: RalphConfig = {
     ...config,
     loop: {
       ...config.loop,
-      codingCli: setting === 'cli' ? value : config.loop.codingCli,
-      reviewCli: setting === 'review-cli' ? value : config.loop.reviewCli,
+      defaultModel,
+      planningModel,
+      codingCli: nextCodingCli,
+      reviewCli: nextReviewCli,
     },
   };
 

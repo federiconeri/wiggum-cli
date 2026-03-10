@@ -756,8 +756,16 @@ except Exception:
 # Pipes the review output into the implementation CLI for targeted fixes.
 run_review_fix() {
     local findings
+    local impl_cli="$CODING_CLI"
+    local impl_cmd="$IMPL_CMD"
     findings=$(extract_review_findings "${CLAUDE_OUTPUT}.raw")
-    cat <<FIXEOF | eval "$IMPL_CMD" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+    if [ "$impl_cli" = "codex" ]; then
+        LAST_RUN_CLI="codex"
+        impl_cmd="$IMPL_CMD --json --output-last-message \"$LAST_MESSAGE_FILE\""
+    else
+        LAST_RUN_CLI="claude"
+    fi
+    cat <<FIXEOF | eval "$impl_cmd" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
 ## Code Review Findings
 
 The following issues were found during code review:
@@ -772,8 +780,8 @@ Fix each issue listed above. Run git diff $DEFAULT_BRANCH to see the current cha
 3. Commit and push the fixes
 Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push.
 FIXEOF
-    extract_session_result "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
-    accumulate_tokens_from_session "$LAST_SESSION_ID" "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
+    extract_session_result "${CLAUDE_OUTPUT}.raw" "$impl_cli"
+    accumulate_tokens_from_session "$LAST_SESSION_ID" "${CLAUDE_OUTPUT}.raw" "$impl_cli"
 }
 
 # Normalize test failure lines: extract test name, strip timing, deduplicate.

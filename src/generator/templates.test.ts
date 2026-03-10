@@ -351,6 +351,14 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
     expect(template).toContain('if [ "$REVIEW_CLI" != "$CODING_CLI" ]; then');
     expect(template).toContain('check_cli_binary "$REVIEW_CLI"');
   });
+
+  it('parses review-fix output with implementation CLI adapter', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('local impl_cli="$CODING_CLI"');
+    expect(template).toContain('impl_cmd="$IMPL_CMD --json --output-last-message \\"$LAST_MESSAGE_FILE\\""');
+    expect(template).toContain('extract_session_result "${CLAUDE_OUTPUT}.raw" "$impl_cli"');
+    expect(template).toContain('accumulate_tokens_from_session "$LAST_SESSION_ID" "${CLAUDE_OUTPUT}.raw" "$impl_cli"');
+  });
 });
 
 describe('feature-loop.sh.tmpl — E2E loop resume', () => {
