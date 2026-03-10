@@ -97,16 +97,9 @@ agent-browser close
 
 | Action | Command |
 |--------|---------|
-| Open TUI | `agent-browser open "http://localhost:3999?cmd=init&cwd=/path"` |
+| Open TUI | `agent-browser open "http://localhost:3999?cmd=<cmd>&cwd=<path>"` |
 | Read screen | `agent-browser eval "document.getElementById('terminal-mirror').textContent"` |
-| Take snapshot | `agent-browser snapshot -i` |
-| Click element | `agent-browser click @ref` |
-| Type text | `agent-browser type @ref "text"` |
-| Press Enter | `agent-browser key Enter` |
-| Arrow down | `agent-browser key ArrowDown` |
-| Escape | `agent-browser key Escape` |
-| Screenshot | `agent-browser screenshot e2e-failure.png` |
-| Wait for text | `agent-browser wait --text "expected" --timeout 10000` |
+| Type/key press | `agent-browser type @ref "text"` / `agent-browser key Enter` |
 | Close session | `agent-browser close` |
 
 ### Key Rules
@@ -160,12 +153,7 @@ When all scenarios are executed:
 6. If any failed: failures documented, loop will retry after fix iteration
 
 ## Learning Capture
-If E2E testing revealed issues worth remembering, append to @.ralph/LEARNINGS.md:
-- Flaky test patterns -> Add under "## Anti-Patterns" > "E2E Pitfalls"
-- TUI timing issues -> Add under "## Anti-Patterns"
-- Useful agent-browser techniques -> Add under "## Tool Usage"
-
-Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
+If useful E2E patterns found, append to @.ralph/LEARNINGS.md
 {{else}}
 ## Task
 Execute automated E2E tests for the completed feature using Playwright MCP tools.
@@ -282,56 +270,6 @@ Update @.ralph/specs/$FEATURE-implementation-plan.md for each scenario:
   - Fix needed: [suggested action]
 ```
 
-## Playwright MCP Tool Reference
-
-| Tool | Purpose | Key Parameters |
-|------|---------|----------------|
-| `browser_navigate` | Go to URL | `url` |
-| `browser_snapshot` | Get page state (use for assertions) | - |
-| `browser_click` | Click element | `element`, `ref` |
-| `browser_type` | Type into element | `element`, `ref`, `text`, `submit` |
-| `browser_fill_form` | Fill multiple fields | `fields[]` with name, type, ref, value |
-| `browser_select_option` | Select dropdown | `element`, `ref`, `values[]` |
-| `browser_wait_for` | Wait for text/time | `text`, `textGone`, `time` |
-| `browser_take_screenshot` | Capture visual state | `filename` (optional) |
-| `browser_console_messages` | Get JS console output | `level` (error/warning/info) |
-| `browser_press_key` | Press keyboard key | `key` (e.g., "Enter", "Tab") |
-| `browser_close` | Close browser/reset state | - |
-
-## Assertion Patterns
-
-### Text Verification
-```
-1. browser_snapshot -> get page content
-2. Check snapshot output for expected text strings
-3. If text not found, scenario fails
-```
-
-### Element State
-```
-1. browser_snapshot -> accessibility tree shows element states
-2. Check for: enabled/disabled, checked/unchecked, visible
-```
-
-### URL Verification
-```
-1. After navigation/action, snapshot shows current URL
-2. Verify URL contains expected path/params
-```
-
-{{#if hasSupabase}}### Database State
-```
-1. mcp__plugin_supabase_supabase__execute_sql with SELECT query
-2. Verify row count, column values match expectations
-```
-{{/if}}
-
-## Browser State Management
-
-- Use `browser_close` between unrelated scenarios to reset localStorage/cookies
-- Keep browser open for scenarios that test state persistence (e.g., duplicate submission)
-- Fresh browser state = clean localStorage, no prior submissions tracked
-
 ## Error Recovery
 
 If a scenario fails:
@@ -358,21 +296,6 @@ When all scenarios are executed:
 5. If all passed: signal ready for PR phase
 6. If any failed: failures documented, loop will retry after fix iteration
 
-## Troubleshooting
-
-### UI Changes Not Visible
-If code changes don't appear in the browser:
-1. Stop the dev server
-2. Clear cache: `rm -rf {{appDir}}/.next`
-3. Restart: `cd {{appDir}} && {{devCommand}}`
-4. Wait for full rebuild before testing
-
-### Stale Data
-- Clear browser storage: Use `browser_close` between scenarios
-{{#if hasSupabase}}- Check Supabase for stale test data from previous runs
-- Delete test data: `DELETE FROM table WHERE data->>'_test' = 'true'`
-{{/if}}
-
 ## Rules
 - Always get a fresh `browser_snapshot` after actions before making assertions
 - Use `browser_wait_for` when waiting for async operations (form submission, API calls)
@@ -382,10 +305,5 @@ If code changes don't appear in the browser:
 - Document failures clearly so fix iteration knows what to address
 
 ## Learning Capture
-If E2E testing revealed issues worth remembering, append to @.ralph/LEARNINGS.md:
-- Flaky test patterns -> Add under "## Anti-Patterns" > "E2E Pitfalls"
-- Useful Playwright techniques -> Add under "## Tool Usage"
-- Timing issues or race conditions -> Add under "## Anti-Patterns"
-
-Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
+If useful E2E patterns found, append to @.ralph/LEARNINGS.md
 {{/if}}
