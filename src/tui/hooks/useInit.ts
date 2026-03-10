@@ -28,6 +28,7 @@ export type InitPhase =
   | 'key-input'
   | 'key-save'
   | 'model-select'
+  | 'coding-cli-select'
   | 'ai-analysis'
   | 'confirm'
   | 'generating'
@@ -74,6 +75,11 @@ export const INIT_PHASE_CONFIGS: Record<InitPhase, InitPhaseConfig> = {
     number: 3,
     name: 'Model',
     description: 'Select AI model',
+  },
+  'coding-cli-select': {
+    number: 3,
+    name: 'Coding CLI',
+    description: 'Select coding CLI for loops',
   },
   'ai-analysis': {
     number: 4,
@@ -135,6 +141,8 @@ export interface InitState {
   provider: AIProvider | null;
   /** Selected model */
   model: string | null;
+  /** Selected coding CLI for generated loop config */
+  codingCli: 'claude' | 'codex';
   /** API key entered (not persisted in state for security) */
   hasApiKey: boolean;
   /** Whether API key was entered this session (needs save prompt) */
@@ -165,6 +173,7 @@ const initialState: InitState = {
   enhancedResult: null,
   provider: null,
   model: null,
+  codingCli: 'claude',
   hasApiKey: false,
   apiKeyEnteredThisSession: false,
   saveKeyToEnv: false,
@@ -203,6 +212,9 @@ export interface UseInitReturn {
 
   /** Select model and advance to AI analysis */
   selectModel: (model: string) => void;
+
+  /** Select coding CLI and advance to AI analysis */
+  selectCodingCli: (cli: 'claude' | 'codex') => void;
 
   /** Set AI analysis progress */
   setAiProgress: (status: string) => void;
@@ -319,12 +331,23 @@ export function useInit(): UseInitReturn {
   }, []);
 
   /**
-   * Select model and advance to AI analysis
+   * Select model and advance to coding CLI selection
    */
   const selectModel = useCallback((model: string) => {
     setState((prev) => ({
       ...prev,
       model,
+      phase: 'coding-cli-select',
+    }));
+  }, []);
+
+  /**
+   * Select coding CLI and advance to AI analysis
+   */
+  const selectCodingCli = useCallback((cli: 'claude' | 'codex') => {
+    setState((prev) => ({
+      ...prev,
+      codingCli: cli,
       phase: 'ai-analysis',
       isWorking: true,
       workingStatus: 'Initializing AI analysis...',
@@ -489,7 +512,8 @@ export function useInit(): UseInitReturn {
         'key-input': 'provider-select',
         'key-save': 'key-input',
         'model-select': prev.apiKeyEnteredThisSession ? 'key-save' : 'provider-select',
-        'ai-analysis': 'model-select',
+        'coding-cli-select': 'model-select',
+        'ai-analysis': 'coding-cli-select',
         confirm: 'ai-analysis',
         generating: 'confirm',
       };
@@ -511,6 +535,7 @@ export function useInit(): UseInitReturn {
     setApiKey,
     setSaveKey,
     selectModel,
+    selectCodingCli,
     setAiProgress,
     updateToolCall,
     setEnhancedResult,

@@ -52,6 +52,8 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
   // Flags that consume the next argument as their value
   const valueFlagSet = new Set([
     '--model',
+    '--cli',
+    '--review-cli',
     '--max-iterations',
     '--max-e2e-attempts',
     '--interval',
@@ -280,6 +282,8 @@ Options for run:
   --worktree                Use git worktree isolation
   --resume                  Resume from last checkpoint
   --model <model>           AI model to use
+  --cli <cli>               Implementation CLI: claude, codex
+  --review-cli <cli>        Review CLI: claude, codex
   --max-iterations <n>      Maximum loop iterations
   --max-e2e-attempts <n>    Maximum E2E test attempts
   --review-mode <mode>      Review mode: manual, auto, merge
@@ -387,13 +391,15 @@ Press Esc to cancel any operation.
       const feature = parsed.positionalArgs[0];
       if (!feature) {
         console.error('Error: <feature> is required for "run"');
-        console.error('Usage: wiggum run <feature> [--worktree] [--resume] [--model <model>] [--max-iterations <n>] [--max-e2e-attempts <n>]');
+        console.error('Usage: wiggum run <feature> [--worktree] [--resume] [--model <model>] [--cli <claude|codex>] [--review-cli <claude|codex>] [--max-iterations <n>] [--max-e2e-attempts <n>]');
         process.exit(1);
       }
       const runOptions: RunOptions = {
         worktree: parsed.flags.worktree === true,
         resume: parsed.flags.resume === true,
         model: typeof parsed.flags.model === 'string' ? parsed.flags.model : undefined,
+        cli: typeof parsed.flags.cli === 'string' ? parsed.flags.cli as RunOptions['cli'] : undefined,
+        reviewCli: typeof parsed.flags.reviewCli === 'string' ? parsed.flags.reviewCli as RunOptions['reviewCli'] : undefined,
         maxIterations: typeof parsed.flags.maxIterations === 'string' ? parseIntFlag(parsed.flags.maxIterations, '--max-iterations') : undefined,
         maxE2eAttempts: typeof parsed.flags.maxE2eAttempts === 'string' ? parseIntFlag(parsed.flags.maxE2eAttempts, '--max-e2e-attempts') : undefined,
         reviewMode: typeof parsed.flags.reviewMode === 'string' ? parsed.flags.reviewMode as RunOptions['reviewMode'] : undefined,

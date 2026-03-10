@@ -57,6 +57,8 @@ export interface LoopConfig {
   maxE2eAttempts: number;
   defaultModel: string;
   planningModel: string;
+  codingCli: 'claude' | 'codex';
+  reviewCli: 'claude' | 'codex';
   reviewMode: 'manual' | 'auto' | 'merge';
 }
 
@@ -119,6 +121,8 @@ export const DEFAULT_CONFIG: RalphConfig = {
     maxE2eAttempts: 5,
     defaultModel: 'sonnet',
     planningModel: 'opus',
+    codingCli: 'claude',
+    reviewCli: 'claude',
     reviewMode: 'manual',
   },
   agent: {
@@ -236,6 +240,8 @@ export async function getLoopSettings(projectRoot: string): Promise<LoopConfig> 
     maxE2eAttempts: config?.loop?.maxE2eAttempts || DEFAULT_CONFIG.loop.maxE2eAttempts,
     defaultModel: config?.loop?.defaultModel || DEFAULT_CONFIG.loop.defaultModel,
     planningModel: config?.loop?.planningModel || DEFAULT_CONFIG.loop.planningModel,
+    codingCli: config?.loop?.codingCli || DEFAULT_CONFIG.loop.codingCli,
+    reviewCli: config?.loop?.reviewCli || DEFAULT_CONFIG.loop.reviewCli,
     reviewMode: config?.loop?.reviewMode || DEFAULT_CONFIG.loop.reviewMode,
   };
 }

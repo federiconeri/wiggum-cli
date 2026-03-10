@@ -4,7 +4,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { logger } from '../utils/logger.js';
 import {
@@ -18,9 +18,39 @@ export interface RunOptions {
   worktree?: boolean;
   resume?: boolean;
   model?: string;
+  cli?: 'claude' | 'codex';
+  reviewCli?: 'claude' | 'codex';
   maxIterations?: number;
   maxE2eAttempts?: number;
   reviewMode?: 'manual' | 'auto' | 'merge';
+}
+
+const SUPPORTED_LOOP_CLIS = ['claude', 'codex'] as const;
+const DEFAULT_CODEX_LOOP_MODEL = 'gpt-5.3-codex';
+
+function isSupportedLoopCli(value: string): value is (typeof SUPPORTED_LOOP_CLIS)[number] {
+  return SUPPORTED_LOOP_CLIS.includes(value as (typeof SUPPORTED_LOOP_CLIS)[number]);
+}
+
+function scriptSupportsCliFlags(scriptPath: string): boolean {
+  try {
+    const script = readFileSync(scriptPath, 'utf-8');
+    return script.includes('--cli') && script.includes('--review-cli');
+  } catch {
+    return false;
+  }
+}
+
+function getModelDisplayLabel(
+  modelOverride: string | undefined,
+  codingCli: 'claude' | 'codex',
+  reviewCli: 'claude' | 'codex',
+  config: RalphConfig
+): string {
+  if (modelOverride) return modelOverride;
+  if (codingCli === 'codex' && reviewCli === 'codex') return DEFAULT_CODEX_LOOP_MODEL;
+  if (codingCli === 'claude' && reviewCli === 'claude') return config.loop.defaultModel;
+  return `${config.loop.defaultModel} (claude) / ${DEFAULT_CODEX_LOOP_MODEL} (codex)`;
 }
 
 /**
@@ -158,6 +188,30 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
     args.push('--model', options.model);
   }
 
+  // Resolve and validate coding CLI
+  const codingCli = options.cli ?? config.loop.codingCli ?? 'claude';
+  if (!isSupportedLoopCli(codingCli)) {
+    logger.error(`Invalid CLI '${codingCli}'. Allowed values are 'claude' or 'codex'.`);
+    process.exit(1);
+  }
+
+  // Resolve and validate review CLI
+  const reviewCli = options.reviewCli ?? config.loop.reviewCli ?? codingCli;
+  if (!isSupportedLoopCli(reviewCli)) {
+    logger.error(`Invalid review CLI '${reviewCli}'. Allowed values are 'claude' or 'codex'.`);
+    process.exit(1);
+  }
+
+  // Guard against stale generated scripts that don't support CLI flags.
+  if ((codingCli !== 'claude' || reviewCli !== 'claude') && !scriptSupportsCliFlags(scriptPath)) {
+    logger.error('The current feature-loop.sh does not support --cli/--review-cli flags.');
+    logger.info('Regenerate scripts with "wiggum init" (or re-run /init), then retry.');
+    process.exit(1);
+  }
+
+  args.push('--cli', codingCli);
+  args.push('--review-cli', reviewCli);
+
   // Resolve and validate reviewMode
   const reviewMode: string = options.reviewMode ?? config.loop.reviewMode ?? 'manual';
 
@@ -175,7 +229,9 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
 
   console.log(`  Max Iterations: ${maxIterations}`);
   console.log(`  Max E2E Attempts: ${maxE2eAttempts}`);
-  console.log(`  Model: ${options.model || config.loop.defaultModel}`);
+  console.log(`  Model: ${getModelDisplayLabel(options.model, codingCli, reviewCli, config)}`);
+  console.log(`  Implementation CLI: ${codingCli}`);
+  console.log(`  Review CLI: ${reviewCli}`);
   console.log(`  Review Mode: ${reviewMode}`);
   console.log(`  Worktree: ${options.worktree ? 'enabled' : 'disabled'}`);
   console.log(`  Resume: ${options.resume ? 'enabled' : 'disabled'}`);

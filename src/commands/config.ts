@@ -11,6 +11,7 @@ import { simpson } from '../utils/colors.js';
 import type { SessionState } from '../repl/session-state.js';
 import { getAvailableProvider, AVAILABLE_MODELS } from '../ai/providers.js';
 import { writeKeysToEnvFile } from '../utils/env.js';
+import { loadConfigWithDefaults, type RalphConfig } from '../utils/config.js';
 
 /**
  * Supported services for API key configuration
@@ -31,6 +32,13 @@ const CONFIGURABLE_SERVICES = {
 } as const;
 
 type ConfigurableService = keyof typeof CONFIGURABLE_SERVICES;
+type LoopCli = 'claude' | 'codex';
+type LoopCliSetting = 'cli' | 'review-cli';
+const LOOP_CLI_SETTINGS: readonly LoopCliSetting[] = ['cli', 'review-cli'] as const;
+const LOOP_CLI_VALUES: readonly LoopCli[] = ['claude', 'codex'] as const;
+const DEFAULT_CLAUDE_IMPL_MODEL = 'sonnet';
+const DEFAULT_CLAUDE_REVIEW_MODEL = 'opus';
+const DEFAULT_CODEX_MODEL = 'gpt-5.3-codex';
 
 /**
  * Check if a service API key is configured
@@ -52,6 +60,85 @@ function saveKeyToEnvLocal(projectRoot: string, envVar: string, value: string): 
 
   const envLocalPath = path.join(ralphDir, '.env.local');
   writeKeysToEnvFile(envLocalPath, { [envVar]: value });
+}
+
+function toConfigFileContent(config: RalphConfig): string {
+  const content = `module.exports = ${JSON.stringify(config, null, 2)};
+`;
+
+  return content
+    .replace(/"(\w+)":/g, '$1:')
+    .replace(/: "([^"]+)"/g, ": '$1'");
+}
+
+function normalizeLoopCliSetting(raw: string): LoopCliSetting | null {
+  if (raw === 'cli') return 'cli';
+  if (raw === 'review-cli' || raw === 'reviewCli') return 'review-cli';
+  return null;
+}
+
+function isLoopCliValue(value: string): value is LoopCli {
+  return LOOP_CLI_VALUES.includes(value as LoopCli);
+}
+
+function reconcileLoopModelsForCliSelection(
+  loop: RalphConfig['loop'],
+  codingCli: LoopCli,
+  reviewCli: LoopCli
+): Pick<RalphConfig['loop'], 'defaultModel' | 'planningModel'> {
+  let defaultModel = loop.defaultModel;
+  let planningModel = loop.planningModel;
+
+  const usesClaude = codingCli === 'claude' || reviewCli === 'claude';
+  const codexOnly = codingCli === 'codex' && reviewCli === 'codex';
+
+  if (usesClaude) {
+    if (defaultModel === DEFAULT_CODEX_MODEL) {
+      defaultModel = DEFAULT_CLAUDE_IMPL_MODEL;
+    }
+    if (planningModel === DEFAULT_CODEX_MODEL) {
+      planningModel = DEFAULT_CLAUDE_REVIEW_MODEL;
+    }
+  } else if (codexOnly) {
+    if (defaultModel === DEFAULT_CLAUDE_IMPL_MODEL) {
+      defaultModel = DEFAULT_CODEX_MODEL;
+    }
+    if (planningModel === DEFAULT_CLAUDE_REVIEW_MODEL) {
+      planningModel = DEFAULT_CODEX_MODEL;
+    }
+  }
+
+  return { defaultModel, planningModel };
+}
+
+async function saveLoopCliToConfig(projectRoot: string, setting: LoopCliSetting, value: LoopCli): Promise<void> {
+  // Check that .ralph/ exists (project is initialized)
+  const ralphDir = path.join(projectRoot, '.ralph');
+  if (!fs.existsSync(ralphDir) || !fs.statSync(ralphDir).isDirectory()) {
+    throw new Error('This project is not initialized. Run \'wiggum init\' before using loop CLI settings.');
+  }
+
+  const configPath = path.join(projectRoot, 'ralph.config.cjs');
+  const config = await loadConfigWithDefaults(projectRoot);
+  const nextCodingCli = setting === 'cli' ? value : config.loop.codingCli;
+  const nextReviewCli = setting === 'review-cli' ? value : config.loop.reviewCli;
+  const { defaultModel, planningModel } = reconcileLoopModelsForCliSelection(
+    config.loop,
+    nextCodingCli,
+    nextReviewCli
+  );
+  const nextConfig: RalphConfig = {
+    ...config,
+    loop: {
+      ...config.loop,
+      defaultModel,
+      planningModel,
+      codingCli: nextCodingCli,
+      reviewCli: nextReviewCli,
+    },
+  };
+
+  fs.writeFileSync(configPath, toConfigFileContent(nextConfig), 'utf-8');
 }
 
 /**
@@ -87,6 +174,8 @@ function displayConfigStatus(state: SessionState): void {
   console.log(`  ${simpson.yellow('/config set tavily')} ${pc.dim('<api-key>')}`);
   console.log(`  ${simpson.yellow('/config set context7')} ${pc.dim('<api-key>')}`);
   console.log(`  ${simpson.yellow('/config set braintrust')} ${pc.dim('<api-key>')}`);
+  console.log(`  ${simpson.yellow('/config set cli')} ${pc.dim('<claude|codex>')}`);
+  console.log(`  ${simpson.yellow('/config set review-cli')} ${pc.dim('<claude|codex>')}`);
   console.log('');
 }
 
@@ -112,18 +201,41 @@ export async function handleConfigCommand(
 
   // /config set <service> <key>
   if (args.length < 3) {
-    logger.error('Usage: /config set <service> <api-key>');
+    logger.error('Usage: /config set <service> <value>');
     console.log('');
     console.log('Available services:');
     for (const [service, config] of Object.entries(CONFIGURABLE_SERVICES)) {
       console.log(`  ${service.padEnd(12)} ${pc.dim(config.description)}`);
     }
+    for (const setting of LOOP_CLI_SETTINGS) {
+      console.log(`  ${setting.padEnd(12)} ${pc.dim('Loop CLI setting')}`);
+    }
     console.log('');
     return state;
   }
 
-  const service = args[1]?.toLowerCase() as ConfigurableService;
+  const rawService = args[1]?.toLowerCase() ?? '';
   const apiKey = args[2];
+  const loopCliSetting = normalizeLoopCliSetting(rawService);
+
+  if (loopCliSetting) {
+    if (!isLoopCliValue(apiKey)) {
+      logger.error(`Invalid ${loopCliSetting} value: '${apiKey}'. Allowed values: ${LOOP_CLI_VALUES.join(', ')}`);
+      return state;
+    }
+
+    try {
+      await saveLoopCliToConfig(state.projectRoot, loopCliSetting, apiKey);
+      logger.success(`${loopCliSetting} saved to ralph.config.cjs (${apiKey})`);
+      console.log('');
+    } catch (error) {
+      logger.error(`Failed to save ${loopCliSetting}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    return state;
+  }
+
+  const service = rawService as ConfigurableService;
 
   if (!(service in CONFIGURABLE_SERVICES)) {
     logger.error(`Unknown service: ${service}`);
@@ -131,6 +243,9 @@ export async function handleConfigCommand(
     console.log('Available services:');
     for (const [svc, config] of Object.entries(CONFIGURABLE_SERVICES)) {
       console.log(`  ${svc.padEnd(12)} ${pc.dim(config.description)}`);
+    }
+    for (const setting of LOOP_CLI_SETTINGS) {
+      console.log(`  ${setting.padEnd(12)} ${pc.dim('Loop CLI setting')}`);
     }
     console.log('');
     return state;

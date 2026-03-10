@@ -90,63 +90,33 @@ cd {{appDir}} && gh pr create --base main --head feat/$FEATURE \
 
 Closes #[Read the source issue number from the spec file metadata or context section]
 
-Generated with Claude Code
+Generated with Wiggum Loop
 EOF
 )"
 ```
 
-### Step 4: Request Claude Code Review
+### Step 4: Run Automated Review
 
-Run automated code review using Claude Code CLI:
+Use the current review CLI session (`$REVIEW_CLI`) to perform a full review:
 
-```bash
-# Check if Claude Code CLI is installed
-if ! command -v claude &> /dev/null; then
-    echo "WARNING: Claude Code CLI not installed. Manual review needed."
-    cd {{appDir}} && gh pr comment --body "Manual review requested - Claude Code CLI not available. Install: https://docs.anthropic.com/en/docs/claude-code/overview"
-else
-    echo "Running Claude Code review..."
-
-    cd {{appDir}} && claude -p "You are reviewing a PR for the $FEATURE feature.
-
-Review the git diff against main and check:
-- Code quality and patterns consistency
-- Test coverage adequacy
-- Potential bugs or edge cases
-- Security concerns (injection, XSS, etc.)
-- Performance implications
-- Error handling completeness
-
-Run: git diff main
-
-Then:
-1. Post your complete review as a comment on the PR using:
-   gh pr comment --body '<your review in markdown>'
-   Format the comment with: a summary, specific issues with file:line refs (if any), and the verdict.
-2. Print your final verdict as the LAST line of stdout. Print exactly one of:
-   VERDICT: APPROVED
-   VERDICT: NOT APPROVED
-   This line is parsed by the automation — do not omit it."
-fi
-```
-
-After the review completes, check its output:
-- If it contains "VERDICT: APPROVED", echo that line so the automation detects it:
-  ```bash
-  echo "VERDICT: APPROVED"
-  ```
-- If issues were found, echo:
-  ```bash
-  echo "VERDICT: NOT APPROVED"
-  ```
+1. Review `git diff main` for:
+   - Code quality and consistency
+   - Test coverage and missing tests
+   - Potential bugs and edge cases
+   - Security risks (injection, auth, data exposure)
+   - Performance and error handling
+2. Post review feedback to the PR with `gh pr comment --body ...`
+3. Print your final verdict as the **LAST** line of stdout, exactly one of:
+   - `VERDICT: APPROVED`
+   - `VERDICT: NOT APPROVED`
 
 **Handle review feedback:**
-- If Claude outputs "VERDICT: APPROVED" -> Proceed to Step 5 (rebase and merge)
-- If Claude lists issues:
+- If verdict is `VERDICT: APPROVED` -> Proceed to Step 5 (rebase and merge)
+- If verdict is `VERDICT: NOT APPROVED`:
   1. Address each issue with code fixes
   2. Commit: `git -C {{appDir}} add -A && git -C {{appDir}} commit -m "fix($FEATURE): address review feedback"`
   3. Push: `git -C {{appDir}} push origin feat/$FEATURE`
-  4. Re-run the Claude review command above
+  4. Re-run this review step
 - Max 3 review iterations before requiring manual intervention
 
 ### Step 5: Rebase Before Merge (for Parallel Execution)
@@ -198,7 +168,7 @@ no implementation found" so the harness can trigger a new implementation iterati
 
 ## Rules
 - **NEVER merge if any tests are failing.** If tests fail after rebase, fix them first. If unfixable, output "VERDICT: NOT APPROVED — test failures" and stop.
-- Do NOT merge without Claude Code approval
+- Do NOT merge without explicit review approval (`VERDICT: APPROVED`)
 - Do NOT implement missing features — only review and fix minor issues
 - Address ALL review comments before merging
 - Use squash merge to keep history clean
@@ -209,7 +179,7 @@ no implementation found" so the harness can trigger a new implementation iterati
 - **gh: command not found** -> Install GitHub CLI: `brew install gh`
 - **gh auth error** -> Run: `gh auth login`
 - **PR already exists** -> Use: `gh pr view` to see status
-- **Claude Code CLI not installed** -> Install: `npm install -g @anthropic-ai/claude-code`
+- **Review CLI missing** -> Install the configured `$REVIEW_CLI` binary and retry
 - **Rebase conflicts** -> Resolve carefully, re-run all tests after
 
 ## Learning Capture

@@ -231,12 +231,18 @@ Run the autonomous development loop.
 |------|-------------|
 | `--worktree` | Git worktree isolation (parallel features) |
 | `--resume` | Resume an interrupted loop |
-| `--model <model>` | Claude model (`opus`, `sonnet`) |
+| `--model <model>` | Model id override (applied per CLI; Codex defaults to `gpt-5.3-codex`) |
+| `--cli <cli>` | Implementation CLI: `claude` or `codex` |
+| `--review-cli <cli>` | Review CLI: `claude` or `codex` |
 | `--max-iterations <n>` | Max iterations (default: 10) |
 | `--max-e2e-attempts <n>` | Max E2E retries (default: 5) |
 | `--review-mode <mode>` | `manual` (stop at PR), `auto` (review, no merge), or `merge` (review + merge). Default: `manual` |
 
 </details>
+
+For loop models:
+- Claude CLI phases use `defaultModel` / `planningModel` (defaults: `sonnet` / `opus`).
+- Codex CLI phases default to `gpt-5.3-codex` across all phases.
 
 <details>
 <summary><code>wiggum monitor &lt;feature&gt; [options]</code></summary>
@@ -304,7 +310,7 @@ Keys are stored in `.ralph/.env.local` and never leave your machine.
 - **Node.js** >= 18.0.0
 - **Git** (for worktree features)
 - An AI provider API key (Anthropic, OpenAI, or OpenRouter)
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or another coding agent (for `wiggum run`)
+- A supported coding CLI for loop execution: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex CLI](https://github.com/openai/codex)
 
 ---
 

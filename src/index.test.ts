@@ -155,6 +155,11 @@ describe('parseCliArgs', () => {
       positionalArgs: [],
       flags: { reviewMode: 'auto' },
     });
+    expect(parseCliArgs(['--review-cli', 'codex'])).toEqual({
+      command: undefined,
+      positionalArgs: [],
+      flags: { reviewCli: 'codex' },
+    });
   });
 
   it('short flags normalized', () => {
@@ -172,11 +177,29 @@ describe('parseCliArgs', () => {
   });
 
   it('mixed: command + positional + multiple flags', () => {
-    const result = parseCliArgs(['run', 'my-feature', '--worktree', '--model', 'sonnet', '--max-iterations', '10']);
+    const result = parseCliArgs([
+      'run',
+      'my-feature',
+      '--worktree',
+      '--model',
+      'sonnet',
+      '--cli',
+      'codex',
+      '--review-cli',
+      'claude',
+      '--max-iterations',
+      '10',
+    ]);
     expect(result).toEqual({
       command: 'run',
       positionalArgs: ['my-feature'],
-      flags: { worktree: true, model: 'sonnet', maxIterations: '10' },
+      flags: {
+        worktree: true,
+        model: 'sonnet',
+        cli: 'codex',
+        reviewCli: 'claude',
+        maxIterations: '10',
+      },
     });
   });
 
@@ -432,6 +455,16 @@ describe('main', () => {
     expect(mockRunCommand).toHaveBeenCalledWith(
       'my-feature',
       expect.objectContaining({ reviewMode: 'auto' }),
+    );
+  });
+
+  it('run my-feature --cli codex --review-cli claude → passes split CLI selectors', async () => {
+    process.argv = ['node', 'ralph.js', 'run', 'my-feature', '--cli', 'codex', '--review-cli', 'claude'];
+    await main();
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      'my-feature',
+      expect.objectContaining({ cli: 'codex', reviewCli: 'claude' }),
     );
   });
 

@@ -30,6 +30,7 @@ vi.mock('node:child_process', () => ({
 // Mock fs
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
+  readFileSync: vi.fn(),
 }));
 
 describe('runCommand - reviewMode validation', () => {
@@ -353,5 +354,173 @@ describe('runCommand - reviewMode precedence', () => {
     expect(capturedArgs).toContain('--review-mode');
     const reviewModeIndex = capturedArgs.indexOf('--review-mode');
     expect(capturedArgs[reviewModeIndex + 1]).toBe('manual');
+  });
+});
+
+describe('runCommand - CLI selection', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    vi.spyOn(process, 'cwd').mockReturnValue('/fake/project');
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new Error(`process.exit(${code})`);
+    });
+
+    const { readFileSync } = await import('node:fs');
+    const mockReadFileSync = readFileSync as any;
+    mockReadFileSync.mockReturnValue('usage: feature-loop.sh --cli --review-cli');
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rejects invalid implementation CLI', async () => {
+    const { existsSync } = await import('node:fs');
+    const mockExistsSync = existsSync as any;
+
+    vi.spyOn(config, 'hasConfig').mockReturnValue(true);
+    vi.spyOn(config, 'loadConfigWithDefaults').mockResolvedValue({
+      paths: { root: '.ralph', specs: '.ralph/specs', scripts: '.ralph/scripts' },
+      loop: {
+        maxIterations: 10,
+        maxE2eAttempts: 5,
+        defaultModel: 'sonnet',
+        planningModel: 'opus',
+        codingCli: 'claude',
+        reviewCli: 'claude',
+        reviewMode: 'manual',
+      },
+    } as any);
+    mockExistsSync.mockReturnValue(true);
+
+    const { logger } = await import('../utils/logger.js');
+    await expect(runCommand('test-feature', { cli: 'gemini' as any })).rejects.toThrow('process.exit(1)');
+    expect(logger.error).toHaveBeenCalledWith("Invalid CLI 'gemini'. Allowed values are 'claude' or 'codex'.");
+  });
+
+  it('rejects invalid review CLI', async () => {
+    const { existsSync } = await import('node:fs');
+    const mockExistsSync = existsSync as any;
+
+    vi.spyOn(config, 'hasConfig').mockReturnValue(true);
+    vi.spyOn(config, 'loadConfigWithDefaults').mockResolvedValue({
+      paths: { root: '.ralph', specs: '.ralph/specs', scripts: '.ralph/scripts' },
+      loop: {
+        maxIterations: 10,
+        maxE2eAttempts: 5,
+        defaultModel: 'sonnet',
+        planningModel: 'opus',
+        codingCli: 'claude',
+        reviewCli: 'claude',
+        reviewMode: 'manual',
+      },
+    } as any);
+    mockExistsSync.mockReturnValue(true);
+
+    const { logger } = await import('../utils/logger.js');
+    await expect(runCommand('test-feature', { reviewCli: 'gemini' as any })).rejects.toThrow('process.exit(1)');
+    expect(logger.error).toHaveBeenCalledWith("Invalid review CLI 'gemini'. Allowed values are 'claude' or 'codex'.");
+  });
+
+  it('passes config CLIs when CLI flags are not provided', async () => {
+    const { existsSync } = await import('node:fs');
+    const { spawn } = await import('node:child_process');
+    const mockExistsSync = existsSync as any;
+    const mockSpawn = spawn as any;
+
+    vi.spyOn(config, 'hasConfig').mockReturnValue(true);
+    vi.spyOn(config, 'loadConfigWithDefaults').mockResolvedValue({
+      paths: { root: '.ralph', specs: '.ralph/specs', scripts: '.ralph/scripts' },
+      loop: {
+        maxIterations: 10,
+        maxE2eAttempts: 5,
+        defaultModel: 'sonnet',
+        planningModel: 'opus',
+        codingCli: 'codex',
+        reviewCli: 'claude',
+        reviewMode: 'manual',
+      },
+    } as any);
+    mockExistsSync.mockReturnValue(true);
+
+    let capturedArgs: string[] = [];
+    mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+      capturedArgs = args;
+      return {
+        on: vi.fn((event: string, handler: Function) => {
+          if (event === 'close') setTimeout(() => handler(0), 0);
+        }),
+      };
+    });
+
+    await runCommand('test-feature', {});
+
+    expect(capturedArgs).toContain('--cli');
+    expect(capturedArgs[capturedArgs.indexOf('--cli') + 1]).toBe('codex');
+    expect(capturedArgs).toContain('--review-cli');
+    expect(capturedArgs[capturedArgs.indexOf('--review-cli') + 1]).toBe('claude');
+  });
+
+  it('CLI flags override config CLIs', async () => {
+    const { existsSync } = await import('node:fs');
+    const { spawn } = await import('node:child_process');
+    const mockExistsSync = existsSync as any;
+    const mockSpawn = spawn as any;
+
+    vi.spyOn(config, 'hasConfig').mockReturnValue(true);
+    vi.spyOn(config, 'loadConfigWithDefaults').mockResolvedValue({
+      paths: { root: '.ralph', specs: '.ralph/specs', scripts: '.ralph/scripts' },
+      loop: {
+        maxIterations: 10,
+        maxE2eAttempts: 5,
+        defaultModel: 'sonnet',
+        planningModel: 'opus',
+        codingCli: 'claude',
+        reviewCli: 'claude',
+        reviewMode: 'manual',
+      },
+    } as any);
+    mockExistsSync.mockReturnValue(true);
+
+    let capturedArgs: string[] = [];
+    mockSpawn.mockImplementation((_cmd: string, args: string[]) => {
+      capturedArgs = args;
+      return {
+        on: vi.fn((event: string, handler: Function) => {
+          if (event === 'close') setTimeout(() => handler(0), 0);
+        }),
+      };
+    });
+
+    await runCommand('test-feature', { cli: 'codex', reviewCli: 'codex' });
+
+    expect(capturedArgs[capturedArgs.indexOf('--cli') + 1]).toBe('codex');
+    expect(capturedArgs[capturedArgs.indexOf('--review-cli') + 1]).toBe('codex');
+  });
+
+  it('blocks non-default CLI flags when script lacks CLI support', async () => {
+    const { existsSync, readFileSync } = await import('node:fs');
+    const mockExistsSync = existsSync as any;
+    const mockReadFileSync = readFileSync as any;
+
+    vi.spyOn(config, 'hasConfig').mockReturnValue(true);
+    vi.spyOn(config, 'loadConfigWithDefaults').mockResolvedValue({
+      paths: { root: '.ralph', specs: '.ralph/specs', scripts: '.ralph/scripts' },
+      loop: {
+        maxIterations: 10,
+        maxE2eAttempts: 5,
+        defaultModel: 'sonnet',
+        planningModel: 'opus',
+        codingCli: 'claude',
+        reviewCli: 'claude',
+        reviewMode: 'manual',
+      },
+    } as any);
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue('legacy script content');
+
+    const { logger } = await import('../utils/logger.js');
+    await expect(runCommand('test-feature', { cli: 'codex' })).rejects.toThrow('process.exit(1)');
+    expect(logger.error).toHaveBeenCalledWith('The current feature-loop.sh does not support --cli/--review-cli flags.');
   });
 });

@@ -192,7 +192,11 @@ export interface RunScreenProps {
   /** Monitor-only mode: don't spawn, just poll status */
   monitorOnly?: boolean;
   /** Override review mode from CLI flags (takes precedence over config) */
-  reviewMode?: 'manual' | 'auto';
+  reviewMode?: 'manual' | 'auto' | 'merge';
+  /** Override implementation CLI from CLI flags (takes precedence over config) */
+  cli?: 'claude' | 'codex';
+  /** Override review CLI from CLI flags (takes precedence over config) */
+  reviewCli?: 'claude' | 'codex';
   onComplete: (summary: RunSummary) => void;
   /** Called when user presses Esc to background the run */
   onBackground?: (featureName: string) => void;
@@ -203,6 +207,19 @@ const POLL_INTERVAL_MS = 2500;
 const ERROR_TAIL_LINES = 12;
 const RUN_REVIEW_MODES = ['manual', 'auto', 'merge'] as const;
 type RunReviewMode = typeof RUN_REVIEW_MODES[number];
+const RUN_LOOP_CLIS = ['claude', 'codex'] as const;
+type RunLoopCli = typeof RUN_LOOP_CLIS[number];
+const DEFAULT_CODEX_LOOP_MODEL = 'gpt-5.3-codex';
+
+function getLoopModelLabel(
+  defaultClaudeModel: string,
+  codingCli: RunLoopCli,
+  reviewCli: RunLoopCli
+): string {
+  if (codingCli === 'codex' && reviewCli === 'codex') return DEFAULT_CODEX_LOOP_MODEL;
+  if (codingCli === 'claude' && reviewCli === 'claude') return defaultClaudeModel;
+  return `${defaultClaudeModel} (claude) / ${DEFAULT_CODEX_LOOP_MODEL} (codex)`;
+}
 
 function findFeatureLoopScript(projectRoot: string, scriptsDir: string): string | null {
   const localScript = join(projectRoot, scriptsDir, 'feature-loop.sh');
@@ -221,6 +238,15 @@ function findFeatureLoopScript(projectRoot: string, scriptsDir: string): string 
   }
 
   return null;
+}
+
+function scriptSupportsCliFlags(scriptPath: string): boolean {
+  try {
+    const script = readFileSync(scriptPath, 'utf-8');
+    return script.includes('--cli') && script.includes('--review-cli');
+  } catch {
+    return false;
+  }
 }
 
 function findSpecFile(projectRoot: string, feature: string, specsDir: string): string | null {
@@ -278,6 +304,8 @@ export function RunScreen({
   sessionState,
   monitorOnly = false,
   reviewMode: reviewModeProp,
+  cli: cliProp,
+  reviewCli: reviewCliProp,
   onComplete,
   onBackground,
   onCancel,
@@ -308,6 +336,8 @@ export function RunScreen({
   const [baselineCommit, setBaselineCommit] = useState<string | null>(null);
   const [recentCommits, setRecentCommits] = useState<CommitLogEntry[]>([]);
   const [reviewMode, setReviewMode] = useState<RunReviewMode>(reviewModeProp ?? 'manual');
+  const [loopCli, setLoopCli] = useState<RunLoopCli>('claude');
+  const [reviewCli, setReviewCli] = useState<RunLoopCli>('claude');
   const [loopModel, setLoopModel] = useState<string | null>(null);
 
   const childRef = useRef<ChildProcess | null>(null);
@@ -553,8 +583,12 @@ export function RunScreen({
           const config = sessionState.config ?? await loadConfigWithDefaults(projectRoot);
           specsDirRef.current = config.paths.specs;
           if (!cancelled) {
-            setLoopModel(config.loop.defaultModel);
             setReviewMode((prev) => reviewModeProp ?? config.loop.reviewMode ?? prev);
+            const effectiveCli = (cliProp ?? config.loop.codingCli ?? 'claude') as RunLoopCli;
+            const effectiveReviewCli = (reviewCliProp ?? config.loop.reviewCli ?? effectiveCli) as RunLoopCli;
+            setLoopModel(getLoopModelLabel(config.loop.defaultModel, effectiveCli, effectiveReviewCli));
+            setLoopCli(effectiveCli);
+            setReviewCli(effectiveReviewCli);
           }
         } catch (err) {
           const reason = err instanceof Error ? err.message : String(err);
@@ -597,7 +631,11 @@ export function RunScreen({
         configRootRef.current = config.paths.root;
         maxIterationsRef.current = config.loop.maxIterations;
         maxE2eAttemptsRef.current = config.loop.maxE2eAttempts;
-        setLoopModel(config.loop.defaultModel);
+        const effectiveCli = (cliProp ?? config.loop.codingCli ?? 'claude') as RunLoopCli;
+        const effectiveReviewCli = (reviewCliProp ?? config.loop.reviewCli ?? effectiveCli) as RunLoopCli;
+        setLoopModel(getLoopModelLabel(config.loop.defaultModel, effectiveCli, effectiveReviewCli));
+        setLoopCli(effectiveCli);
+        setReviewCli(effectiveReviewCli);
 
         const specFile = findSpecFile(projectRoot, featureName, config.paths.specs);
         if (!specFile) {
@@ -609,6 +647,18 @@ export function RunScreen({
         const scriptPath = findFeatureLoopScript(projectRoot, config.paths.scripts);
         if (!scriptPath) {
           setError('feature-loop.sh script not found. Run /init to generate scripts.');
+          setIsStarting(false);
+          return;
+        }
+
+        if (!RUN_LOOP_CLIS.includes(effectiveCli) || !RUN_LOOP_CLIS.includes(effectiveReviewCli)) {
+          setError(`Invalid CLI selection. Allowed values are: ${RUN_LOOP_CLIS.join(', ')}`);
+          setIsStarting(false);
+          return;
+        }
+
+        if ((effectiveCli !== 'claude' || effectiveReviewCli !== 'claude') && !scriptSupportsCliFlags(scriptPath)) {
+          setError('Your feature-loop.sh is outdated and does not support --cli/--review-cli. Re-run /init, then try again.');
           setIsStarting(false);
           return;
         }
@@ -635,6 +685,10 @@ export function RunScreen({
             featureName,
             String(config.loop.maxIterations),
             String(config.loop.maxE2eAttempts),
+            '--cli',
+            effectiveCli,
+            '--review-cli',
+            effectiveReviewCli,
             '--review-mode',
             effectiveReviewMode,
           ];
@@ -754,7 +808,7 @@ export function RunScreen({
   // Note: refreshStatusRef (not refreshStatus) is used inside to avoid re-spawning
   // the child process when the callback identity changes due to actionRequest updates.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [featureName, projectRoot, monitorOnly, sessionState.config]);
+  }, [featureName, projectRoot, monitorOnly, sessionState.config, reviewModeProp, cliProp, reviewCliProp]);
 
   const totalTasks = tasks.tasksDone + tasks.tasksPending;
   const totalE2e = tasks.e2eDone + tasks.e2ePending;
@@ -845,7 +899,7 @@ export function RunScreen({
         action: 'Run Loop',
         phase: phaseLine,
         path: featureName,
-        extra: `review: ${reviewMode}`,
+        extra: `review: ${reviewMode} | cli: ${loopCli} | review-cli: ${reviewCli}`,
       }}
     >
       {completionSummary ? (
@@ -870,6 +924,11 @@ export function RunScreen({
                   <Text color={colors.blue}>{loopModel}</Text>
                 </>
               )}
+              <Text dimColor>{theme.statusLine.separator}</Text>
+              <Text>CLI: </Text>
+              <Text color={colors.blue}>{loopCli}</Text>
+              <Text dimColor>/</Text>
+              <Text color={colors.blue}>{reviewCli}</Text>
             </Box>
 
             <Box marginTop={1} flexDirection="row">

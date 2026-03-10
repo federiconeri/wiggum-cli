@@ -142,7 +142,7 @@ describe('MainShell', () => {
     pressEnter(instance);
     await wait(50);
 
-    expect(onNavigate).toHaveBeenCalledWith('run', { featureName: 'my-feat', reviewMode: 'auto' });
+    expect(onNavigate).toHaveBeenCalledWith('run', expect.objectContaining({ featureName: 'my-feat', reviewMode: 'auto' }));
     instance.unmount();
   });
 
@@ -172,7 +172,7 @@ describe('MainShell', () => {
     pressEnter(instance);
     await wait(50);
 
-    expect(onNavigate).toHaveBeenCalledWith('run', { featureName: 'my-feat', reviewMode: 'auto' });
+    expect(onNavigate).toHaveBeenCalledWith('run', expect.objectContaining({ featureName: 'my-feat', reviewMode: 'auto' }));
     instance.unmount();
   });
 
@@ -186,7 +186,76 @@ describe('MainShell', () => {
     pressEnter(instance);
     await wait(50);
 
-    expect(onNavigate).toHaveBeenCalledWith('run', { featureName: 'my-feat', reviewMode: undefined });
+    expect(onNavigate).toHaveBeenCalledWith('run', expect.objectContaining({ featureName: 'my-feat', reviewMode: undefined }));
+    instance.unmount();
+  });
+
+  it('/run feature --cli codex --review-cli claude passes CLI selectors in navigation', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/run my-feat --cli codex --review-cli claude');
+    pressEnter(instance);
+    await wait(50);
+
+    expect(onNavigate).toHaveBeenCalledWith(
+      'run',
+      expect.objectContaining({
+        featureName: 'my-feat',
+        cli: 'codex',
+        reviewCli: 'claude',
+      }),
+    );
+    instance.unmount();
+  });
+
+  it('/run feature --cli invalid shows error', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/run my-feat --cli bad');
+    pressEnter(instance);
+    await wait(50);
+
+    const frame = stripAnsi(instance.lastFrame() ?? '');
+    expect(frame).toContain("Invalid --cli value 'bad'");
+    expect(onNavigate).not.toHaveBeenCalled();
+    instance.unmount();
+  });
+
+  it('/run feature --review-cli invalid shows error', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/run my-feat --review-cli bad');
+    pressEnter(instance);
+    await wait(50);
+
+    const frame = stripAnsi(instance.lastFrame() ?? '');
+    expect(frame).toContain("Invalid --review-cli value 'bad'");
+    expect(onNavigate).not.toHaveBeenCalled();
+    instance.unmount();
+  });
+
+  it('/run feature with unknown flag shows error', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/run my-feat --unknown');
+    pressEnter(instance);
+    await wait(50);
+
+    const frame = stripAnsi(instance.lastFrame() ?? '');
+    expect(frame).toContain("Unknown flag '--unknown' for /run.");
+    expect(onNavigate).not.toHaveBeenCalled();
     instance.unmount();
   });
 

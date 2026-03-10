@@ -222,4 +222,123 @@ describe('handleConfigCommand - init guard', () => {
     await handleConfigCommand(['set', 'braintrust', 'bt-key-1234567890'], mockState);
     expect(writeSpy).toHaveBeenLastCalledWith(envLocalPath, 'BRAINTRUST_API_KEY=bt-key-1234567890\n');
   });
+
+  it('persists /config set cli codex into ralph.config.cjs', async () => {
+    const ralphDir = path.join(mockState.projectRoot, '.ralph');
+    const configPath = path.join(mockState.projectRoot, 'ralph.config.cjs');
+
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphDir);
+    vi.spyOn(fs, 'statSync').mockReturnValue({
+      isDirectory: () => true,
+    } as any);
+    const writeSpy = vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    const configModule = await import('../utils/config.js');
+    vi.spyOn(configModule, 'loadConfigWithDefaults').mockResolvedValue({
+      paths: { root: '.ralph', specs: '.ralph/specs', scripts: '.ralph/scripts' },
+      loop: {
+        maxIterations: 10,
+        maxE2eAttempts: 5,
+        defaultModel: 'sonnet',
+        planningModel: 'opus',
+        codingCli: 'claude',
+        reviewCli: 'claude',
+        reviewMode: 'manual',
+      },
+      ai: { provider: 'openai', defaultModel: 'gpt-4', planningModel: 'gpt-4' },
+    } as any);
+
+    await handleConfigCommand(['set', 'cli', 'codex'], mockState);
+
+    expect(writeSpy).toHaveBeenCalled();
+    const [writtenPath, writtenContent] = (writeSpy as any).mock.calls.at(-1);
+    expect(writtenPath).toBe(configPath);
+    expect(writtenContent).toContain("codingCli: 'codex'");
+    expect(writtenContent).toContain("reviewCli: 'claude'");
+  });
+
+  it('persists /config set review-cli codex into ralph.config.cjs', async () => {
+    const ralphDir = path.join(mockState.projectRoot, '.ralph');
+    const configPath = path.join(mockState.projectRoot, 'ralph.config.cjs');
+
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphDir);
+    vi.spyOn(fs, 'statSync').mockReturnValue({
+      isDirectory: () => true,
+    } as any);
+    const writeSpy = vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    const configModule = await import('../utils/config.js');
+    vi.spyOn(configModule, 'loadConfigWithDefaults').mockResolvedValue({
+      paths: { root: '.ralph', specs: '.ralph/specs', scripts: '.ralph/scripts' },
+      loop: {
+        maxIterations: 10,
+        maxE2eAttempts: 5,
+        defaultModel: 'sonnet',
+        planningModel: 'opus',
+        codingCli: 'codex',
+        reviewCli: 'claude',
+        reviewMode: 'manual',
+      },
+      ai: { provider: 'openai', defaultModel: 'gpt-4', planningModel: 'gpt-4' },
+    } as any);
+
+    await handleConfigCommand(['set', 'review-cli', 'codex'], mockState);
+
+    expect(writeSpy).toHaveBeenCalled();
+    const [writtenPath, writtenContent] = (writeSpy as any).mock.calls.at(-1);
+    expect(writtenPath).toBe(configPath);
+    expect(writtenContent).toContain("codingCli: 'codex'");
+    expect(writtenContent).toContain("reviewCli: 'codex'");
+  });
+
+  it('normalizes codex-only loop models when switching CLI back to claude', async () => {
+    const ralphDir = path.join(mockState.projectRoot, '.ralph');
+    const configPath = path.join(mockState.projectRoot, 'ralph.config.cjs');
+
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphDir);
+    vi.spyOn(fs, 'statSync').mockReturnValue({
+      isDirectory: () => true,
+    } as any);
+    const writeSpy = vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+
+    const configModule = await import('../utils/config.js');
+    vi.spyOn(configModule, 'loadConfigWithDefaults').mockResolvedValue({
+      paths: { root: '.ralph', specs: '.ralph/specs', scripts: '.ralph/scripts' },
+      loop: {
+        maxIterations: 10,
+        maxE2eAttempts: 5,
+        defaultModel: 'gpt-5.3-codex',
+        planningModel: 'gpt-5.3-codex',
+        codingCli: 'codex',
+        reviewCli: 'codex',
+        reviewMode: 'manual',
+      },
+      ai: { provider: 'openai', defaultModel: 'gpt-4', planningModel: 'gpt-4' },
+    } as any);
+
+    await handleConfigCommand(['set', 'cli', 'claude'], mockState);
+
+    expect(writeSpy).toHaveBeenCalled();
+    const [writtenPath, writtenContent] = (writeSpy as any).mock.calls.at(-1);
+    expect(writtenPath).toBe(configPath);
+    expect(writtenContent).toContain("defaultModel: 'sonnet'");
+    expect(writtenContent).toContain("planningModel: 'opus'");
+    expect(writtenContent).toContain("codingCli: 'claude'");
+    expect(writtenContent).toContain("reviewCli: 'codex'");
+  });
+
+  it('rejects invalid /config set cli values', async () => {
+    const ralphDir = path.join(mockState.projectRoot, '.ralph');
+    vi.spyOn(fs, 'existsSync').mockImplementation((p) => p === ralphDir);
+    vi.spyOn(fs, 'statSync').mockReturnValue({
+      isDirectory: () => true,
+    } as any);
+    const writeSpy = vi.spyOn(fs, 'writeFileSync');
+
+    const { logger } = await import('../utils/logger.js');
+    await handleConfigCommand(['set', 'cli', 'gemini'], mockState);
+
+    expect(writeSpy).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledWith("Invalid cli value: 'gemini'. Allowed values: claude, codex");
+  });
 });

@@ -73,7 +73,11 @@ export interface RunAppProps {
   /** If true, opens in monitor-only (read-only) mode — no loop is spawned */
   monitorOnly?: boolean;
   /** Review mode override */
-  reviewMode?: 'manual' | 'auto';
+  reviewMode?: 'manual' | 'auto' | 'merge';
+  /** Implementation CLI override */
+  cli?: 'claude' | 'codex';
+  /** Review CLI override */
+  reviewCli?: 'claude' | 'codex';
 }
 
 /**
@@ -117,7 +121,13 @@ export function App({
   const [currentScreen, setCurrentScreen] = useState<AppScreen>(initialScreen);
   const [screenProps, setScreenProps] = useState<NavigationProps | null>(() => {
     if (initialScreen === 'run' && runProps) {
-      return { featureName: runProps.featureName, monitorOnly: runProps.monitorOnly, reviewMode: runProps.reviewMode };
+      return {
+        featureName: runProps.featureName,
+        monitorOnly: runProps.monitorOnly,
+        reviewMode: runProps.reviewMode,
+        cli: runProps.cli,
+        reviewCli: runProps.reviewCli,
+      };
     }
     if (interviewProps) {
       return { featureName: interviewProps.featureName };
@@ -353,7 +363,9 @@ export function App({
         return null; // useEffect will redirect to shell
       }
 
-      const reviewMode = screenProps?.reviewMode as 'manual' | 'auto' | undefined;
+      const reviewMode = screenProps?.reviewMode as 'manual' | 'auto' | 'merge' | undefined;
+      const cli = screenProps?.cli as 'claude' | 'codex' | undefined;
+      const reviewCli = screenProps?.reviewCli as 'claude' | 'codex' | undefined;
 
       return (
         <RunScreen
@@ -363,6 +375,8 @@ export function App({
           sessionState={sessionState}
           monitorOnly={monitorOnly}
           reviewMode={reviewMode}
+          cli={cli}
+          reviewCli={reviewCli}
           onComplete={handleRunComplete}
           onBackground={handleRunBackground}
           onCancel={() => navigate('shell')}
