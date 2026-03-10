@@ -1,0 +1,51 @@
+## Context
+If @.ralph/guides/AGENTS.md exists, study it for commands and patterns.
+Study @.ralph/specs/$FEATURE-implementation-plan.md for E2E failure details.
+Study @.ralph/specs/$FEATURE.md for behavioral constraints and acceptance criteria.
+{{#if frameworkVariant}}For detailed architecture, see @{{appDir}}/.claude/CLAUDE.md{{/if}}
+
+## Learnings
+Read @.ralph/LEARNINGS.md — pay attention to the "E2E Pitfalls" section to avoid repeating known issues.
+
+## Task
+Fix all E2E test scenarios marked `- [ ] E2E: ... - FAILED` in @.ralph/specs/$FEATURE-implementation-plan.md.
+
+1. Read the implementation plan and identify every line matching `- [ ] E2E: ... - FAILED`.
+2. For each failure, read the `Error:` and `Fix needed:` fields to understand what went wrong.
+3. Cross-reference @.ralph/specs/$FEATURE.md to ensure fixes respect behavioral constraints.
+4. Apply the minimal code change needed to make the failing scenario pass.
+5. Do NOT touch passing scenarios or non-E2E implementation code unless required by the fix.
+
+{{#if isTui}}
+### TUI E2E Fix Notes
+- Fixes typically involve Ink component state, key handling, or terminal output formatting.
+- Verify fix with the agent-browser bridge: `curl -s http://localhost:3999/health` to confirm it is running.
+- After fixing, re-run the failed scenario manually via agent-browser to confirm it passes before updating the plan.
+{{else}}
+### Web E2E Fix Notes
+- Fixes typically involve DOM structure, async timing, or data state issues.
+- Verify fix with the dev server running at http://localhost:3000.
+- After fixing, re-run the failed scenario via Playwright MCP to confirm it passes before updating the plan.
+{{/if}}
+
+## Validation
+After applying fixes, run ONLY the E2E validation command:
+```bash
+cd {{appDir}} && {{testCommand}}
+```
+
+Unit tests and build are already passing — do not re-run lint, typecheck, or build unless the fix touches non-E2E source files.
+
+## Completion
+When fixes are applied and validation passes:
+1. Update @.ralph/specs/$FEATURE-implementation-plan.md — for each fixed scenario, change `- [ ] E2E: ... - FAILED` to `- [x] E2E: ... - PASSED`.
+2. `git -C {{appDir}} add -A`
+3. `git -C {{appDir}} commit -m "fix($FEATURE): resolve failing E2E scenarios"`
+4. `git -C {{appDir}} push origin feat/$FEATURE`
+
+## Learning Capture
+If this fix iteration revealed E2E-specific patterns worth remembering, append to @.ralph/LEARNINGS.md:
+- Flaky test patterns or timing issues -> Add under "## Anti-Patterns (What to Avoid)" > "E2E Pitfalls"
+- Useful debugging techniques -> Add under "## Tool Usage"
+
+Format: `- [YYYY-MM-DD] [$FEATURE] Brief description`
