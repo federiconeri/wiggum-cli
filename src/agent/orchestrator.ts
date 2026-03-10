@@ -86,7 +86,7 @@ After calling assessFeatureState, follow the recommendation:
 
 When calling generateSpec, ALWAYS forward the model and provider so the spec generation uses the same AI model as this agent session. The values are provided in the Runtime Config section below.
 
-Do NOT forward model/provider to runLoop — the development loop uses Claude Code internally, which has its own model configuration (opus for planning, sonnet for implementation). Passing a non-Claude model would break the loop.
+Do NOT forward model/provider to runLoop — the development loop resolves its own coding/review CLI and model configuration from project config.
 
 When calling runLoop, pass the reviewMode from the Runtime Config below (if configured). This controls how the loop handles the PR phase:
 - 'manual': stop at PR creation (default)

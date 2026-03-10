@@ -108,7 +108,7 @@ export function createExecutionTools(projectRoot: string, options?: ExecutionToo
   });
 
   const runLoop = tool({
-    description: 'Run the development loop for a feature. Spawns a background process and returns when complete. The loop uses Claude Code internally with its own model config — do NOT forward the agent model here.',
+    description: 'Run the development loop for a feature. Spawns a background process and returns when complete. The loop uses the coding CLI configured in ralph.config.cjs; do NOT forward the agent model here.',
     inputSchema: zodSchema(z.object({
       featureName: FEATURE_NAME_SCHEMA,
       worktree: z.boolean().default(true).describe('Use git worktree isolation'),
