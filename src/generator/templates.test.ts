@@ -282,6 +282,7 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
     const template = readFeatureLoopTemplate();
     expect(template).toContain("DEFAULT_CODING_CLI=$(node -e \"console.log(require('$CONFIG_PATH').loop?.codingCli || 'claude')\"");
     expect(template).toContain("DEFAULT_REVIEW_CLI=$(node -e \"console.log(require('$CONFIG_PATH').loop?.reviewCli || require('$CONFIG_PATH').loop?.codingCli || 'claude')\"");
+    expect(template).toContain("DEFAULT_CODEX_MODEL=$(node -e \"console.log(require('$CONFIG_PATH').loop?.codexModel || 'gpt-5.3-codex')\"");
   });
 
   it('parses --cli and --review-cli flags', () => {
@@ -296,6 +297,7 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
     const template = readFeatureLoopTemplate();
     expect(template).toContain('build_cli_cmd()');
     expect(template).toContain('get_phase_cli()');
+    expect(template).toContain('resolve_codex_model()');
     expect(template).toContain('get_phase_cmd()');
     expect(template).toContain('PLANNING_CMD=$(get_phase_cmd "planning")');
     expect(template).toContain('IMPL_CMD=$(get_phase_cmd "implementation")');
@@ -321,6 +323,18 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
     expect(getPhaseCliSection).toContain('echo "$CODING_CLI"');
     expect(template).toContain('run_claude_prompt "$PROMPTS_DIR/PROMPT_review_manual.md" "$REVIEW_CMD"');
     expect(template).toContain('run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$IMPL_CMD"');
+  });
+
+  it('uses a Codex model default across Codex phases and keeps Claude models Claude-only', () => {
+    const template = readFeatureLoopTemplate();
+    const getPhaseModelSection = template.slice(
+      template.indexOf('get_phase_model()'),
+      template.indexOf('get_phase_cmd()')
+    );
+    expect(getPhaseModelSection).toContain('if [ "$cli" = "codex" ]; then');
+    expect(getPhaseModelSection).toContain('resolve_codex_model');
+    expect(getPhaseModelSection).toContain('planning|review');
+    expect(template).toContain("WARNING: --model '$MODEL' is Claude-specific. Codex phases will use '$DEFAULT_CODEX_MODEL'.");
   });
 
   it('checks required binaries for selected CLIs', () => {

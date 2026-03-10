@@ -209,6 +209,17 @@ const RUN_REVIEW_MODES = ['manual', 'auto', 'merge'] as const;
 type RunReviewMode = typeof RUN_REVIEW_MODES[number];
 const RUN_LOOP_CLIS = ['claude', 'codex'] as const;
 type RunLoopCli = typeof RUN_LOOP_CLIS[number];
+const DEFAULT_CODEX_LOOP_MODEL = 'gpt-5.3-codex';
+
+function getLoopModelLabel(
+  defaultClaudeModel: string,
+  codingCli: RunLoopCli,
+  reviewCli: RunLoopCli
+): string {
+  if (codingCli === 'codex' && reviewCli === 'codex') return DEFAULT_CODEX_LOOP_MODEL;
+  if (codingCli === 'claude' && reviewCli === 'claude') return defaultClaudeModel;
+  return `${defaultClaudeModel} (claude) / ${DEFAULT_CODEX_LOOP_MODEL} (codex)`;
+}
 
 function findFeatureLoopScript(projectRoot: string, scriptsDir: string): string | null {
   const localScript = join(projectRoot, scriptsDir, 'feature-loop.sh');
@@ -572,10 +583,10 @@ export function RunScreen({
           const config = sessionState.config ?? await loadConfigWithDefaults(projectRoot);
           specsDirRef.current = config.paths.specs;
           if (!cancelled) {
-            setLoopModel(config.loop.defaultModel);
             setReviewMode((prev) => reviewModeProp ?? config.loop.reviewMode ?? prev);
             const effectiveCli = (cliProp ?? config.loop.codingCli ?? 'claude') as RunLoopCli;
             const effectiveReviewCli = (reviewCliProp ?? config.loop.reviewCli ?? effectiveCli) as RunLoopCli;
+            setLoopModel(getLoopModelLabel(config.loop.defaultModel, effectiveCli, effectiveReviewCli));
             setLoopCli(effectiveCli);
             setReviewCli(effectiveReviewCli);
           }
@@ -620,9 +631,9 @@ export function RunScreen({
         configRootRef.current = config.paths.root;
         maxIterationsRef.current = config.loop.maxIterations;
         maxE2eAttemptsRef.current = config.loop.maxE2eAttempts;
-        setLoopModel(config.loop.defaultModel);
         const effectiveCli = (cliProp ?? config.loop.codingCli ?? 'claude') as RunLoopCli;
         const effectiveReviewCli = (reviewCliProp ?? config.loop.reviewCli ?? effectiveCli) as RunLoopCli;
+        setLoopModel(getLoopModelLabel(config.loop.defaultModel, effectiveCli, effectiveReviewCli));
         setLoopCli(effectiveCli);
         setReviewCli(effectiveReviewCli);
 

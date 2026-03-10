@@ -25,6 +25,7 @@ if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
     PROMPTS_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
     DEFAULT_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
     PLANNING_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
+    DEFAULT_CODEX_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.codexModel || 'gpt-5.3-codex')" 2>/dev/null || echo "gpt-5.3-codex")
     DEFAULT_CODING_CLI=$(node -e "console.log(require('$CONFIG_PATH').loop?.codingCli || 'claude')" 2>/dev/null || echo "claude")
     DEFAULT_REVIEW_CLI=$(node -e "console.log(require('$CONFIG_PATH').loop?.reviewCli || require('$CONFIG_PATH').loop?.codingCli || 'claude')" 2>/dev/null || echo "claude")
     DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
@@ -38,6 +39,7 @@ elif [ -f "$SCRIPT_DIR/../../ralph.config.cjs" ]; then
     PROMPTS_DIR=$(node -e "console.log(require('$CONFIG_PATH').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
     DEFAULT_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
     PLANNING_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.planningModel || 'opus')" 2>/dev/null || echo "opus")
+    DEFAULT_CODEX_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.codexModel || 'gpt-5.3-codex')" 2>/dev/null || echo "gpt-5.3-codex")
     DEFAULT_CODING_CLI=$(node -e "console.log(require('$CONFIG_PATH').loop?.codingCli || 'claude')" 2>/dev/null || echo "claude")
     DEFAULT_REVIEW_CLI=$(node -e "console.log(require('$CONFIG_PATH').loop?.reviewCli || require('$CONFIG_PATH').loop?.codingCli || 'claude')" 2>/dev/null || echo "claude")
     DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
@@ -51,6 +53,7 @@ else
     PROMPTS_DIR=".ralph/prompts"
     DEFAULT_MODEL="sonnet"
     PLANNING_MODEL="opus"
+    DEFAULT_CODEX_MODEL="gpt-5.3-codex"
     DEFAULT_CODING_CLI="claude"
     DEFAULT_REVIEW_CLI="claude"
     DEFAULT_MAX_ITERATIONS="10"
@@ -150,6 +153,29 @@ if [ "$REVIEW_CLI" != "claude" ] && [ "$REVIEW_CLI" != "codex" ]; then
     exit 1
 fi
 
+is_claude_only_model() {
+    local candidate="$1"
+    case "$candidate" in
+        sonnet|opus|haiku|claude-*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+resolve_codex_model() {
+    local candidate="${MODEL:-$DEFAULT_CODEX_MODEL}"
+    if is_claude_only_model "$candidate"; then
+        echo "$DEFAULT_CODEX_MODEL"
+    else
+        echo "$candidate"
+    fi
+}
+
+if [ -n "$MODEL" ] && { [ "$CODING_CLI" = "codex" ] || [ "$REVIEW_CLI" = "codex" ]; }; then
+    if is_claude_only_model "$MODEL"; then
+        echo "WARNING: --model '$MODEL' is Claude-specific. Codex phases will use '$DEFAULT_CODEX_MODEL'." >&2
+    fi
+fi
+
 build_cli_cmd() {
     local cli="$1"
     local model="$2"
@@ -181,6 +207,13 @@ get_phase_cli() {
 
 get_phase_model() {
     local phase="$1"
+    local cli
+    cli=$(get_phase_cli "$phase")
+    if [ "$cli" = "codex" ]; then
+        resolve_codex_model
+        return
+    fi
+
     case "$phase" in
         planning|review)
             echo "$PLANNING_MODEL"
@@ -821,8 +854,17 @@ echo "Resume mode: $RESUME"
 echo "Coding CLI (impl/e2e): $CODING_CLI"
 echo "Review CLI: $REVIEW_CLI"
 echo "Review mode: $REVIEW_MODE"
-echo "Model (planning): $PLANNING_MODEL"
-echo "Model (impl): ${MODEL:-$DEFAULT_MODEL}"
+if [ "$CODING_CLI" = "codex" ] && [ "$REVIEW_CLI" = "codex" ]; then
+    echo "Model (all phases): $(resolve_codex_model)"
+else
+    if [ "$CODING_CLI" = "claude" ] || [ "$REVIEW_CLI" = "claude" ]; then
+        echo "Model (Claude planning/review): $PLANNING_MODEL"
+        echo "Model (Claude impl/e2e): ${MODEL:-$DEFAULT_MODEL}"
+    fi
+    if [ "$CODING_CLI" = "codex" ] || [ "$REVIEW_CLI" = "codex" ]; then
+        echo "Model (Codex phases): $(resolve_codex_model)"
+    fi
+fi
 echo "Max iterations: $MAX_ITERATIONS"
 echo "Max E2E attempts: $MAX_E2E_ATTEMPTS"
 echo "=========================================="

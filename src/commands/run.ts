@@ -26,6 +26,7 @@ export interface RunOptions {
 }
 
 const SUPPORTED_LOOP_CLIS = ['claude', 'codex'] as const;
+const DEFAULT_CODEX_LOOP_MODEL = 'gpt-5.3-codex';
 
 function isSupportedLoopCli(value: string): value is (typeof SUPPORTED_LOOP_CLIS)[number] {
   return SUPPORTED_LOOP_CLIS.includes(value as (typeof SUPPORTED_LOOP_CLIS)[number]);
@@ -38,6 +39,18 @@ function scriptSupportsCliFlags(scriptPath: string): boolean {
   } catch {
     return false;
   }
+}
+
+function getModelDisplayLabel(
+  modelOverride: string | undefined,
+  codingCli: 'claude' | 'codex',
+  reviewCli: 'claude' | 'codex',
+  config: RalphConfig
+): string {
+  if (modelOverride) return modelOverride;
+  if (codingCli === 'codex' && reviewCli === 'codex') return DEFAULT_CODEX_LOOP_MODEL;
+  if (codingCli === 'claude' && reviewCli === 'claude') return config.loop.defaultModel;
+  return `${config.loop.defaultModel} (claude) / ${DEFAULT_CODEX_LOOP_MODEL} (codex)`;
 }
 
 /**
@@ -216,7 +229,7 @@ export async function runCommand(feature: string, options: RunOptions = {}): Pro
 
   console.log(`  Max Iterations: ${maxIterations}`);
   console.log(`  Max E2E Attempts: ${maxE2eAttempts}`);
-  console.log(`  Model: ${options.model || config.loop.defaultModel}`);
+  console.log(`  Model: ${getModelDisplayLabel(options.model, codingCli, reviewCli, config)}`);
   console.log(`  Implementation CLI: ${codingCli}`);
   console.log(`  Review CLI: ${reviewCli}`);
   console.log(`  Review Mode: ${reviewMode}`);

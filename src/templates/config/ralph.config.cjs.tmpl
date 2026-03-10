@@ -32,8 +32,9 @@ module.exports = {
   loop: {
     maxIterations: 10,
     maxE2eAttempts: 5,
-    defaultModel: 'sonnet',
-    planningModel: 'opus',
+    defaultModel: 'sonnet', // Claude implementation/e2e default
+    planningModel: 'opus',  // Claude planning/review default
+    // Codex phases use gpt-5.3-codex by default (single model across phases)
     codingCli: 'claude',   // Implementation CLI: 'claude' | 'codex'
     reviewCli: 'claude',   // Review CLI: 'claude' | 'codex'
     reviewMode: 'manual', // 'manual' = stop at PR, 'auto' = review (no merge), 'merge' = review + auto-merge
