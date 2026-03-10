@@ -190,6 +190,64 @@ describe('MainShell', () => {
     instance.unmount();
   });
 
+  it('/agent --issues forwards issue list to navigation', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/agent --issues 140,141 --review-mode merge');
+    pressEnter(instance);
+    await wait(50);
+
+    expect(onNavigate).toHaveBeenCalledWith(
+      'agent',
+      expect.objectContaining({
+        issues: [140, 141],
+        reviewMode: 'merge',
+      }),
+    );
+    instance.unmount();
+  });
+
+  it('/agent validates --issues values', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/agent --issues 140,abc');
+    pressEnter(instance);
+    await wait(50);
+
+    const frame = stripAnsi(instance.lastFrame() ?? '');
+    expect(frame).toContain("Invalid --issues value '140,abc'");
+    expect(onNavigate).not.toHaveBeenCalled();
+    instance.unmount();
+  });
+
+  it('/agent forwards --max-steps and --labels', async () => {
+    const state = createTestSessionState({ initialized: true });
+    const instance = await renderAndWait(
+      () => render(<MainShell header={testHeader} sessionState={state} onNavigate={onNavigate} />),
+    );
+
+    await typeText(instance, '/agent --dry-run --max-items 2 --max-steps 250 --labels bug,P0');
+    pressEnter(instance);
+    await wait(50);
+
+    expect(onNavigate).toHaveBeenCalledWith(
+      'agent',
+      expect.objectContaining({
+        dryRun: true,
+        maxItems: 2,
+        maxSteps: 250,
+        labels: ['bug', 'P0'],
+      }),
+    );
+    instance.unmount();
+  });
+
   describe('spec autocomplete integration', () => {
     it('shows spec dropdown from sessionState.specNames when typing /run ', async () => {
       const state = createTestSessionState({

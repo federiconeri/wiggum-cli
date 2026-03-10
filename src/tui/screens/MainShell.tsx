@@ -282,20 +282,52 @@ export function MainShell({
     // Parse optional flags
     let dryRun = false;
     let maxItems: number | undefined;
+    let maxSteps: number | undefined;
     let reviewMode: string | undefined;
+    let labels: string[] | undefined;
+    let issues: number[] | undefined;
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '--dry-run') {
         dryRun = true;
       } else if (args[i] === '--max-items' && i + 1 < args.length) {
         maxItems = parseInt(args[i + 1]!, 10);
-        if (Number.isNaN(maxItems)) {
+        if (Number.isNaN(maxItems) || maxItems < 1) {
           addSystemMessage(`Invalid --max-items value '${args[i + 1]}'. Must be a number.`);
           return;
         }
         i++;
+      } else if (args[i] === '--max-steps' && i + 1 < args.length) {
+        maxSteps = parseInt(args[i + 1]!, 10);
+        if (Number.isNaN(maxSteps) || maxSteps < 1) {
+          addSystemMessage(`Invalid --max-steps value '${args[i + 1]}'. Must be a number.`);
+          return;
+        }
+        i++;
+      } else if (args[i] === '--labels' && i + 1 < args.length) {
+        labels = args[i + 1]!.split(',').map(l => l.trim()).filter(Boolean);
+        if (labels.length === 0) {
+          addSystemMessage(`Invalid --labels value '${args[i + 1]}'. Use comma-separated labels.`);
+          return;
+        }
+        i++;
+      } else if (args[i] === '--issues' && i + 1 < args.length) {
+        const raw = args[i + 1]!;
+        const parsed = raw.split(',').map((s) => {
+          const n = parseInt(s.trim(), 10);
+          return Number.isNaN(n) || n < 1 ? null : n;
+        });
+        if (parsed.some((n) => n == null)) {
+          addSystemMessage(`Invalid --issues value '${raw}'. Use comma-separated issue numbers.`);
+          return;
+        }
+        issues = parsed as number[];
+        i++;
       } else if (args[i] === '--review-mode' && i + 1 < args.length) {
         reviewMode = args[i + 1];
         i++;
+      } else if (args[i]?.startsWith('--')) {
+        addSystemMessage(`Unknown flag '${args[i]}' for /agent.`);
+        return;
       }
     }
 
@@ -304,7 +336,7 @@ export function MainShell({
       return;
     }
 
-    onNavigate('agent', { dryRun, maxItems, reviewMode } as NavigationProps);
+    onNavigate('agent', { dryRun, maxItems, maxSteps, reviewMode, labels, issues } as NavigationProps);
   }, [sessionState.initialized, addSystemMessage, onNavigate]);
 
   const handleIssueCommand = useCallback(async (searchQuery?: string) => {

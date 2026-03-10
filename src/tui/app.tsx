@@ -376,6 +376,8 @@ export function App({
         ...agentProps,
         ...(screenProps?.dryRun != null ? { dryRun: screenProps.dryRun as boolean } : {}),
         ...(screenProps?.maxItems != null ? { maxItems: screenProps.maxItems as number } : {}),
+        ...(screenProps?.maxSteps != null ? { maxSteps: screenProps.maxSteps as number } : {}),
+        ...(screenProps?.labels != null ? { labels: screenProps.labels as string[] } : {}),
         ...(screenProps?.reviewMode != null ? { reviewMode: screenProps.reviewMode as AgentAppProps['reviewMode'] } : {}),
         ...(screenProps?.issues != null ? { issues: screenProps.issues as number[] } : {}),
       };
