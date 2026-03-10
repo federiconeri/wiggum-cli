@@ -276,3 +276,123 @@ describe('feature-loop.sh.tmpl — resume invocation', () => {
     expect(teeMatches.length).toBeGreaterThanOrEqual(3); // fresh, resume, and fallback paths
   });
 });
+
+describe('feature-loop.sh.tmpl — E2E loop resume', () => {
+  it('initializes E2E_SESSION_ID variable before E2E loop', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('E2E_SESSION_ID=""');
+  });
+
+  it('E2E loop branches on attempt 1 for full prompt', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('[ $E2E_ATTEMPT -eq 1 ]');
+    expect(template).toContain('E2E attempt $E2E_ATTEMPT: using full prompt');
+  });
+
+  it('E2E loop uses run_claude_resume for attempts 2+', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('E2E attempt $E2E_ATTEMPT: using resume session');
+    expect(template).toContain('run_claude_resume "$E2E_SESSION_ID"');
+  });
+
+  it('E2E_CONTINUATION_PROMPT contains instruction about unchecked E2E entries', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('E2E_CONTINUATION_PROMPT=');
+    expect(template).toContain('unchecked');
+    expect(template).toContain('E2E:');
+  });
+
+  it('E2E resume fallback logs warning and uses full prompt', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('E2E attempt $E2E_ATTEMPT: resume unavailable, using full prompt');
+    // Fallback path re-runs run_claude_prompt with PROMPT_e2e.md
+    const e2eSection = template.slice(
+      template.indexOf('E2E TESTING PHASE'),
+      template.indexOf('Phase 6')
+    );
+    const e2ePromptMatches = e2eSection.match(/run_claude_prompt "\$PROMPTS_DIR\/PROMPT_e2e\.md"/g) ?? [];
+    expect(e2ePromptMatches.length).toBeGreaterThanOrEqual(2); // first attempt + fallback
+  });
+
+  it('E2E fix iteration uses resume when session ID available', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('E2E fix: using resume session');
+    expect(template).toContain('E2E fix: resume unavailable, using full prompt');
+  });
+});
+
+describe('feature-loop.sh.tmpl — review loop resume', () => {
+  it('initializes REVIEW_SESSION_ID variable before review branches', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('REVIEW_SESSION_ID=""');
+  });
+
+  it('REVIEW_CONTINUATION_PROMPT contains re-review instruction', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('REVIEW_CONTINUATION_PROMPT=');
+    expect(template).toContain('issues from the previous review have been fixed');
+  });
+
+  it('merge review loop branches on attempt 1 for full prompt', () => {
+    const template = readFeatureLoopTemplate();
+    const mergeSection = template.slice(
+      template.indexOf("REVIEW_MODE\" = \"merge\""),
+      template.indexOf("REVIEW_MODE\" = \"merge\"") + 2000
+    );
+    expect(mergeSection).toContain('Review attempt $REVIEW_ATTEMPT: using full prompt');
+    expect(mergeSection).toContain('PROMPT_review_merge.md');
+  });
+
+  it('merge review loop uses run_claude_resume for attempts 2+', () => {
+    const template = readFeatureLoopTemplate();
+    const mergeSection = template.slice(
+      template.indexOf("REVIEW_MODE\" = \"merge\""),
+      template.indexOf("REVIEW_MODE\" = \"merge\"") + 2000
+    );
+    expect(mergeSection).toContain('Review attempt $REVIEW_ATTEMPT: using resume session');
+    expect(mergeSection).toContain('run_claude_resume "$REVIEW_SESSION_ID"');
+  });
+
+  it('auto review loop branches on attempt 1 for full prompt', () => {
+    const template = readFeatureLoopTemplate();
+    // auto mode is in the else branch after merge
+    const autoSection = template.slice(
+      template.indexOf('Auto mode: create PR'),
+      template.indexOf('Auto mode: create PR') + 2000
+    );
+    expect(autoSection).toContain('Review attempt $REVIEW_ATTEMPT: using full prompt');
+    expect(autoSection).toContain('PROMPT_review_auto.md');
+  });
+
+  it('auto review loop uses run_claude_resume for attempts 2+', () => {
+    const template = readFeatureLoopTemplate();
+    const autoSection = template.slice(
+      template.indexOf('Auto mode: create PR'),
+      template.indexOf('Auto mode: create PR') + 2000
+    );
+    expect(autoSection).toContain('Review attempt $REVIEW_ATTEMPT: using resume session');
+    expect(autoSection).toContain('run_claude_resume "$REVIEW_SESSION_ID"');
+  });
+
+  it('review resume fallback logs warning and uses full prompt', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('Review attempt $REVIEW_ATTEMPT: resume unavailable, using full prompt');
+  });
+
+  it('manual review mode does NOT contain resume logic', () => {
+    const template = readFeatureLoopTemplate();
+    const manualSection = template.slice(
+      template.indexOf("REVIEW_MODE\" = \"manual\""),
+      template.indexOf("REVIEW_MODE\" = \"merge\"")
+    );
+    expect(manualSection).not.toContain('run_claude_resume');
+  });
+
+  it('E2E and review use separate session ID variables', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('E2E_SESSION_ID');
+    expect(template).toContain('REVIEW_SESSION_ID');
+    // They should be different variables
+    expect(template.indexOf('E2E_SESSION_ID')).not.toBe(template.indexOf('REVIEW_SESSION_ID'));
+  });
+});

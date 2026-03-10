@@ -797,13 +797,30 @@ else
     write_phase_start "e2e_testing"
     E2E_SUCCESS=false
     E2E_ATTEMPT=0
+    E2E_SESSION_ID=""
+    E2E_CONTINUATION_PROMPT="Continue remaining E2E scenarios. Check the implementation plan for unchecked \`- [ ] E2E:\` entries and implement/run those tests. Run validation after completing each scenario."
     while [ $E2E_ATTEMPT -lt $MAX_E2E_ATTEMPTS ]; do
         E2E_ATTEMPT=$((E2E_ATTEMPT + 1))
         echo "------------------------ E2E Attempt $E2E_ATTEMPT of $MAX_E2E_ATTEMPTS ------------------------"
 
         export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
-        run_claude_prompt "$PROMPTS_DIR/PROMPT_e2e.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        if [ $E2E_ATTEMPT -eq 1 ] || [ -z "$E2E_SESSION_ID" ]; then
+            echo "E2E attempt $E2E_ATTEMPT: using full prompt"
+            run_claude_prompt "$PROMPTS_DIR/PROMPT_e2e.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        else
+            echo "E2E attempt $E2E_ATTEMPT: using resume session $E2E_SESSION_ID"
+            E2E_RESUME_EXIT=0
+            run_claude_resume "$E2E_SESSION_ID" "$E2E_CONTINUATION_PROMPT" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || E2E_RESUME_EXIT=$?
+            extract_session_result "${CLAUDE_OUTPUT}.raw"
+            if [ $E2E_RESUME_EXIT -ne 0 ] || [ -z "$LAST_SESSION_ID" ]; then
+                echo "E2E attempt $E2E_ATTEMPT: resume unavailable, using full prompt"
+                run_claude_prompt "$PROMPTS_DIR/PROMPT_e2e.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            fi
+        fi
         extract_session_result "${CLAUDE_OUTPUT}.raw"
+        if [ $E2E_ATTEMPT -eq 1 ] && [ -n "$LAST_SESSION_ID" ]; then
+            E2E_SESSION_ID="$LAST_SESSION_ID"
+        fi
         accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check if all E2E tests passed
@@ -818,7 +835,19 @@ else
 
         if [ $E2E_ATTEMPT -lt $MAX_E2E_ATTEMPTS ]; then
             echo "E2E tests have failures. Running fix iteration..."
-            run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            if [ -n "$E2E_SESSION_ID" ]; then
+                echo "E2E fix: using resume session $E2E_SESSION_ID"
+                E2E_FIX_EXIT=0
+                run_claude_resume "$E2E_SESSION_ID" "Fix the failing E2E tests identified above. Run validation after fixing." "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || E2E_FIX_EXIT=$?
+                extract_session_result "${CLAUDE_OUTPUT}.raw"
+                if [ $E2E_FIX_EXIT -ne 0 ] || [ -z "$LAST_SESSION_ID" ]; then
+                    echo "E2E fix: resume unavailable, using full prompt"
+                    run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+                fi
+            else
+                echo "E2E fix: resume unavailable, using full prompt"
+                run_claude_prompt "$PROMPTS_DIR/PROMPT.md" "$CLAUDE_CMD_IMPL" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            fi
             extract_session_result "${CLAUDE_OUTPUT}.raw"
             accumulate_tokens_from_session "$LAST_SESSION_ID"
         fi
@@ -859,6 +888,8 @@ write_phase_start "pr_review"
 export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR
 PR_STATUS="success"
 MAX_REVIEW_ATTEMPTS=3
+REVIEW_SESSION_ID=""
+REVIEW_CONTINUATION_PROMPT="The issues from the previous review have been fixed. Re-run the code review, checking only for remaining issues. Report your verdict."
 
 # Short-circuit: skip review if no files exist in diff
 _REVIEW_FILE_CHANGES=$(count_file_changes "$BASELINE_COMMIT")
@@ -922,8 +953,23 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
     while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
         REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
         echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
-        run_claude_prompt "$PROMPTS_DIR/PROMPT_review_merge.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        if [ $REVIEW_ATTEMPT -eq 1 ] || [ -z "$REVIEW_SESSION_ID" ]; then
+            echo "Review attempt $REVIEW_ATTEMPT: using full prompt"
+            run_claude_prompt "$PROMPTS_DIR/PROMPT_review_merge.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        else
+            echo "Review attempt $REVIEW_ATTEMPT: using resume session $REVIEW_SESSION_ID"
+            REVIEW_RESUME_EXIT=0
+            run_claude_resume "$REVIEW_SESSION_ID" "$REVIEW_CONTINUATION_PROMPT" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || REVIEW_RESUME_EXIT=$?
+            extract_session_result "${CLAUDE_OUTPUT}.raw"
+            if [ $REVIEW_RESUME_EXIT -ne 0 ] || [ -z "$LAST_SESSION_ID" ]; then
+                echo "Review attempt $REVIEW_ATTEMPT: resume unavailable, using full prompt"
+                run_claude_prompt "$PROMPTS_DIR/PROMPT_review_merge.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            fi
+        fi
         extract_session_result "${CLAUDE_OUTPUT}.raw"
+        if [ $REVIEW_ATTEMPT -eq 1 ] && [ -n "$LAST_SESSION_ID" ]; then
+            REVIEW_SESSION_ID="$LAST_SESSION_ID"
+        fi
         accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check stdout and PR comment for approval
@@ -965,8 +1011,23 @@ else
     while [ $REVIEW_ATTEMPT -lt $MAX_REVIEW_ATTEMPTS ]; do
         REVIEW_ATTEMPT=$((REVIEW_ATTEMPT + 1))
         echo "--- Review attempt $REVIEW_ATTEMPT of $MAX_REVIEW_ATTEMPTS ---"
-        run_claude_prompt "$PROMPTS_DIR/PROMPT_review_auto.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        if [ $REVIEW_ATTEMPT -eq 1 ] || [ -z "$REVIEW_SESSION_ID" ]; then
+            echo "Review attempt $REVIEW_ATTEMPT: using full prompt"
+            run_claude_prompt "$PROMPTS_DIR/PROMPT_review_auto.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        else
+            echo "Review attempt $REVIEW_ATTEMPT: using resume session $REVIEW_SESSION_ID"
+            REVIEW_RESUME_EXIT=0
+            run_claude_resume "$REVIEW_SESSION_ID" "$REVIEW_CONTINUATION_PROMPT" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || REVIEW_RESUME_EXIT=$?
+            extract_session_result "${CLAUDE_OUTPUT}.raw"
+            if [ $REVIEW_RESUME_EXIT -ne 0 ] || [ -z "$LAST_SESSION_ID" ]; then
+                echo "Review attempt $REVIEW_ATTEMPT: resume unavailable, using full prompt"
+                run_claude_prompt "$PROMPTS_DIR/PROMPT_review_auto.md" "$CLAUDE_CMD_OPUS" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+            fi
+        fi
         extract_session_result "${CLAUDE_OUTPUT}.raw"
+        if [ $REVIEW_ATTEMPT -eq 1 ] && [ -n "$LAST_SESSION_ID" ]; then
+            REVIEW_SESSION_ID="$LAST_SESSION_ID"
+        fi
         accumulate_tokens_from_session "$LAST_SESSION_ID"
 
         # Check stdout and PR comment for approval
