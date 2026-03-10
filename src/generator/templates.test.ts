@@ -312,6 +312,14 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
     expect(template).toContain('eval "$resume_cmd \\"$session_id\\" - --json --output-last-message \\"$LAST_MESSAGE_FILE\\""');
   });
 
+  it('extracts Codex token usage using multiple key shapes without overcounting repeated events', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain("or to_int(usage.get('prompt_tokens'))");
+    expect(template).toContain("or to_int(usage.get('completion_tokens'))");
+    expect(template).toContain('Use the highest observed values from a single run to avoid overcounting');
+    expect(template).toContain('print(f\\"{max_input}|{max_output}|0|0\\")');
+  });
+
   it('routes review phases independently from implementation phases', () => {
     const template = readFeatureLoopTemplate();
     const getPhaseCliSection = template.slice(
