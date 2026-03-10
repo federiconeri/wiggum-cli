@@ -59,3 +59,4 @@ SPDX-License-Identifier: Proprietary
 | use-resume-e2e-review-loops | Completed | 2026-03-10 | [Plan](use-resume-e2e-review-loops-implementation-plan.md) |
 | create-targeted-e2e-fix-prompt | Completed | 2026-03-10 | [Plan](create-targeted-e2e-fix-prompt-implementation-plan.md) |
 | trim-prompt-e2e | Completed | 2026-03-10 | [Plan](trim-prompt-e2e-implementation-plan.md) |
+| trim-prompt-feature | Completed | 2026-03-10 | [Plan](trim-prompt-feature-implementation-plan.md) |

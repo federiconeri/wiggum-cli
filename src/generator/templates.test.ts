@@ -533,6 +533,57 @@ describe('feature-loop.sh.tmpl — E2E fix prompt reference', () => {
   });
 });
 
+describe('PROMPT_feature.md.tmpl — trimmed content requirements', () => {
+  function readFeaturePromptTemplate(): string {
+    const templatePath = join(__dirname, '..', 'templates', 'prompts', 'PROMPT_feature.md.tmpl');
+    return readFileSync(templatePath, 'utf-8');
+  }
+
+  it('does not contain the full worked Implementation Plan example', () => {
+    const template = readFeaturePromptTemplate();
+    expect(template).not.toContain('Submit Survey');
+    expect(template).not.toContain('Init in bare project');
+  });
+
+  it('contains checkbox syntax instruction', () => {
+    const template = readFeaturePromptTemplate();
+    expect(template).toContain('- [ ]');
+  });
+
+  it('contains E2E task pattern instruction', () => {
+    const template = readFeaturePromptTemplate();
+    expect(template).toContain('- [ ] E2E:');
+  });
+
+  it('contains required phase names', () => {
+    const template = readFeaturePromptTemplate();
+    expect(template).toContain('Setup');
+    expect(template).toContain('Core Implementation');
+    expect(template).toContain('Tests');
+    expect(template).toContain('Polish');
+    expect(template).toContain('E2E Testing');
+  });
+
+  it('contains complexity markers', () => {
+    const template = readFeaturePromptTemplate();
+    expect(template).toContain('[S');
+    expect(template).toContain('M/L');
+  });
+
+  it('does not contain explicit MCP tool references', () => {
+    const template = readFeaturePromptTemplate();
+    expect(template).not.toContain('Supabase MCP');
+    expect(template).not.toContain('PostHog MCP');
+    expect(template).not.toContain('/frontend-design');
+  });
+
+  it('is 50 lines or fewer', () => {
+    const template = readFeaturePromptTemplate();
+    const lines = template.split('\n').length;
+    expect(lines).toBeLessThanOrEqual(50);
+  });
+});
+
 describe('feature-loop.sh.tmpl — review loop resume', () => {
   it('initializes REVIEW_SESSION_ID variable before review branches', () => {
     const template = readFeatureLoopTemplate();
