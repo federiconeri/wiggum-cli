@@ -12,7 +12,7 @@ This directory contains configuration and guidance for AI-assisted development o
 |   |-- PROMPT.md                # Main implementation prompt
 |   |-- PROMPT_feature.md        # Feature planning prompt
 |   |-- PROMPT_e2e.md            # E2E testing prompt
-|   |-- PROMPT_verify.md         # Verification prompt
+|   |-- PROMPT_verify.md         # Verification prompt (reference only, not invoked by loop)
 |   |-- PROMPT_review_manual.md  # PR review prompt (manual)
 |   |-- PROMPT_review_auto.md    # PR review prompt (auto merge)
 |-- guides/            # Reference documentation
@@ -39,8 +39,7 @@ Reference these files in your prompts:
 1. **Plan**: Use `PROMPT_feature.md` to create implementation plan
 2. **Implement**: Use `PROMPT.md` for iterative task completion
 3. **Test**: Use `PROMPT_e2e.md` for browser-based testing
-4. **Verify**: Use `PROMPT_verify.md` to verify spec requirements
-5. **Review**: Use `PROMPT_review_manual.md` (manual) or `PROMPT_review_auto.md` (auto merge) to create PR
+4. **Review**: Use `PROMPT_review_manual.md` (manual) or `PROMPT_review_auto.md` (auto merge) to create PR — includes spec verification (Step 0)
 
 ### Specs
 

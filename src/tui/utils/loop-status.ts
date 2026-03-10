@@ -143,7 +143,6 @@ export function getLoopLogPath(feature: string): string {
 export function detectPhase(feature: string): string {
   if (isProcessRunning('PROMPT_feature.md')) return 'Planning';
   if (isProcessRunning('PROMPT_e2e.md')) return 'E2E Testing';
-  if (isProcessRunning('PROMPT_verify.md')) return 'Verification';
   if (isProcessRunning('PROMPT_review_manual.md')) return 'PR Review';
   if (isProcessRunning('PROMPT_review_auto.md')) return 'PR Review';
   if (isProcessRunning('PROMPT.md')) return 'Implementation';
