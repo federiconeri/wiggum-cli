@@ -429,6 +429,22 @@ describe('feature-loop.sh.tmpl — E2E loop resume', () => {
   });
 });
 
+describe('feature-loop.sh.tmpl — change detection guards', () => {
+  it('captures pre-run dirty tracked snapshot and excludes unchanged entries from file-change counts', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('PRE_RUN_DIRTY_FILE="/tmp/ralph-loop-${1}.dirty"');
+    expect(template).toContain('capture_pre_run_dirty_snapshot "$BASELINE_COMMIT"');
+    expect(template).toContain('snapshot.get(path)');
+    expect(template).toContain('if current_marker != start_marker');
+  });
+
+  it('uses committed branch diff semantics for default-branch short-circuit guards', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('git diff "${DEFAULT_BRANCH}..HEAD" --stat');
+    expect(template).toContain('git diff --name-only "${DEFAULT_BRANCH}..HEAD"');
+  });
+});
+
 describe('PROMPT_e2e_fix.md.tmpl — content requirements', () => {
   function readPromptTemplate(name: string): string {
     const templatePath = join(__dirname, '..', 'templates', 'prompts', name);
