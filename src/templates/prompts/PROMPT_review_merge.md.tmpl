@@ -109,6 +109,10 @@ Use the current review CLI session (`$REVIEW_CLI`) to perform a full review:
 3. Print your final verdict as the **LAST** line of stdout, exactly one of:
    - `VERDICT: APPROVED`
    - `VERDICT: NOT APPROVED`
+4. Before printing `VERDICT: APPROVED`, wait for CI to complete and pass:
+   - Run `cd {{appDir}} && gh pr checks feat/$FEATURE --watch --interval 10`
+   - If checks are pending, keep waiting
+   - If any check fails, output `VERDICT: NOT APPROVED` and list failing checks
 
 **Handle review feedback:**
 - If verdict is `VERDICT: APPROVED` -> Proceed to Step 5 (rebase and merge)
@@ -140,24 +144,11 @@ Push rebased branch:
 cd {{appDir}} && git push --force-with-lease origin feat/$FEATURE
 ```
 
-### Step 6: Merge PR
-**Pre-merge gate:** Confirm ALL tests pass. Run `cd {{appDir}} && {{testCommand}}` one final time. If ANY test fails, STOP — do not merge. Fix the failures first, then re-run.
-
-When Claude review is approved, all tests pass, and branch is rebased:
-```bash
-cd {{appDir}} && gh pr merge --squash --delete-branch
-```
-
-### Step 7: Post-Merge Cleanup
-1. If using worktree, remove it:
-   ```bash
-   # Only if this feature used a worktree ({{appDir}}-$FEATURE directory exists)
-   git -C {{appDir}} worktree remove "../{{appDir}}-$FEATURE" 2>/dev/null || true
-   ```
-2. Checkout main and pull:
-   ```bash
-   git -C {{appDir}} checkout main && git -C {{appDir}} pull
-   ```
+### Step 6: Hand Off For Merge
+After review is approved, CI is green, and branch is rebased:
+- Do **NOT** run `gh pr merge` in this prompt.
+- The loop harness performs the final merge after enforcing CI and post-approval gates.
+- End this review session after handoff. Do not run local post-merge cleanup commands here.
 
 Note: Spec status updates are handled in Step 0 above, before PR creation.
 
@@ -169,6 +160,7 @@ no implementation found" so the harness can trigger a new implementation iterati
 ## Rules
 - **NEVER merge if any tests are failing.** If tests fail after rebase, fix them first. If unfixable, output "VERDICT: NOT APPROVED — test failures" and stop.
 - Do NOT merge without explicit review approval (`VERDICT: APPROVED`)
+- Do NOT merge directly in this prompt; hand off to the harness after approval
 - Do NOT implement missing features — only review and fix minor issues
 - Address ALL review comments before merging
 - Use squash merge to keep history clean
