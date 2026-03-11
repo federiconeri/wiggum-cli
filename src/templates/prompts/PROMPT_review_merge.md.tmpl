@@ -148,17 +148,7 @@ cd {{appDir}} && git push --force-with-lease origin feat/$FEATURE
 After review is approved, CI is green, and branch is rebased:
 - Do **NOT** run `gh pr merge` in this prompt.
 - The loop harness performs the final merge after enforcing CI and post-approval gates.
-
-### Step 7: Post-Merge Cleanup
-1. If using worktree, remove it:
-   ```bash
-   # Only if this feature used a worktree ({{appDir}}-$FEATURE directory exists)
-   git -C {{appDir}} worktree remove "../{{appDir}}-$FEATURE" 2>/dev/null || true
-   ```
-2. Checkout main and pull:
-   ```bash
-   git -C {{appDir}} checkout main && git -C {{appDir}} pull
-   ```
+- End this review session after handoff. Do not run local post-merge cleanup commands here.
 
 Note: Spec status updates are handled in Step 0 above, before PR creation.
 

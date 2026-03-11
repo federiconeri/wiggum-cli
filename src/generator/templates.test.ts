@@ -224,6 +224,8 @@ describe('review prompt templates — Step 0 verification', () => {
     const template = readReviewTemplate('PROMPT_review_merge.md.tmpl');
     expect(template).toContain('Do **NOT** run `gh pr merge` in this prompt.');
     expect(template).toContain('The loop harness performs the final merge');
+    expect(template).not.toContain('### Step 7: Post-Merge Cleanup');
+    expect(template).not.toContain('git -C {{appDir}} checkout main && git -C {{appDir}} pull');
   });
 });
 
