@@ -344,9 +344,8 @@ extract_session_result() {
     if [ "$cli" = "codex" ]; then
         local result
         result=$(python3 -c "
-import json, re, sys
+import json, sys
 session = ''
-uuid_re = re.compile(r'^[0-9a-fA-F-]{36}$')
 for line in open(sys.argv[1], encoding='utf-8', errors='ignore'):
     line = line.strip()
     if not line:
@@ -359,8 +358,19 @@ for line in open(sys.argv[1], encoding='utf-8', errors='ignore'):
     while stack:
         cur = stack.pop()
         if isinstance(cur, dict):
-            for key in ('session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId'):
+            for key in ('session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId', 'response_id', 'responseId', 'run_id', 'runId'):
                 val = cur.get(key)
+                if isinstance(val, str) and val:
+                    session = val
+            # Newer Codex JSON can nest thread/session identifiers under typed objects.
+            node_type = cur.get('type')
+            if node_type in ('thread.started', 'session.started'):
+                val = cur.get('id')
+                if isinstance(val, str) and val:
+                    session = val
+            thread_obj = cur.get('thread')
+            if isinstance(thread_obj, dict):
+                val = thread_obj.get('id')
                 if isinstance(val, str) and val:
                     session = val
             for val in cur.values():
@@ -1181,7 +1191,7 @@ else
             fi
         fi
         extract_session_result "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
-        if [ $E2E_ATTEMPT -eq 1 ] && [ -n "$LAST_SESSION_ID" ]; then
+        if [ -n "$LAST_SESSION_ID" ]; then
             E2E_SESSION_ID="$LAST_SESSION_ID"
         fi
         accumulate_tokens_from_session "$LAST_SESSION_ID" "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
@@ -1212,6 +1222,9 @@ else
                 run_claude_prompt "$PROMPTS_DIR/PROMPT_e2e_fix.md" "$IMPL_CMD" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
             fi
             extract_session_result "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
+            if [ -n "$LAST_SESSION_ID" ]; then
+                E2E_SESSION_ID="$LAST_SESSION_ID"
+            fi
             accumulate_tokens_from_session "$LAST_SESSION_ID" "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
         fi
     done

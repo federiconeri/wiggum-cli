@@ -421,6 +421,12 @@ describe('feature-loop.sh.tmpl — E2E loop resume', () => {
     expect(template).toContain('E2E fix: using resume session');
     expect(template).toContain('E2E fix: resume unavailable, using full prompt');
   });
+
+  it('updates E2E_SESSION_ID whenever a new LAST_SESSION_ID is available', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('if [ -n "$LAST_SESSION_ID" ]; then');
+    expect(template).toContain('E2E_SESSION_ID="$LAST_SESSION_ID"');
+  });
 });
 
 describe('PROMPT_e2e_fix.md.tmpl — content requirements', () => {
@@ -467,6 +473,12 @@ describe('PROMPT_e2e_fix.md.tmpl — content requirements', () => {
   it('does not reference FRONTEND.md', () => {
     const template = readPromptTemplate('PROMPT_e2e_fix.md.tmpl');
     expect(template).not.toContain('FRONTEND.md');
+  });
+
+  it('documents sandbox bridge/socket blocker handling for TUI runs', () => {
+    const template = readPromptTemplate('PROMPT_e2e_fix.md.tmpl');
+    expect(template).toContain('listen EPERM');
+    expect(template).toContain('FAILED: bridge unavailable in sandbox');
   });
 });
 
@@ -527,6 +539,13 @@ describe('PROMPT_e2e.md.tmpl — trimmed content requirements', () => {
     expect(nonTuiLearningContent).toContain('LEARNINGS.md');
     const nonTuiLines = nonTuiLearningContent.split('\n').filter((l) => l.startsWith('-'));
     expect(nonTuiLines.length).toBe(0);
+  });
+
+  it('TUI instructions keep one browser session until all scenarios finish', () => {
+    const template = readE2ePromptTemplate();
+    const tuiBlock = template.slice(0, template.indexOf('{{else}}'));
+    expect(tuiBlock).toContain('Keep one browser session across all scenarios');
+    expect(tuiBlock).toContain('Close browser once at the end');
   });
 });
 

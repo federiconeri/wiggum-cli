@@ -28,7 +28,13 @@ Check the bridge is running:
 ```bash
 curl -s http://localhost:3999/health || (cd {{projectRoot}} && npm run e2e:bridge &)
 sleep 3
+curl -s http://localhost:3999/health
 ```
+
+If bridge health still fails (for example `listen EPERM` / socket permission errors), do not keep retrying commands in this run:
+- Mark each unchecked `- [ ] E2E:` scenario as `- [ ] E2E: ... - FAILED: bridge unavailable in sandbox`
+- Add the concrete error text under each failed scenario
+- Continue to Step 4 and record a clear blocked summary
 
 ### Step 2: Parse E2E Test Scenarios
 Read E2E test scenarios from @.ralph/specs/$FEATURE-implementation-plan.md.
@@ -88,9 +94,10 @@ CONTENT=$(agent-browser eval "document.getElementById('terminal-mirror').textCon
 # Verify CONTENT contains expected strings
 ```
 
-6. **Reset between scenarios:**
+6. **Reset between scenarios (without ending the browser session):**
 ```bash
-agent-browser close
+# Re-open the next scenario URL directly in the same session.
+agent-browser open "http://localhost:3999?cmd=<next-command>&cwd=<next-path>"
 ```
 
 ### TUI Interaction Cheatsheet
@@ -106,7 +113,8 @@ agent-browser close
 - Always wait for expected text before asserting (TUI renders async via React)
 - Use `agent-browser eval` with `terminal-mirror` for reliable text reading
 - Take screenshots on failures for debugging
-- Each scenario navigates to a fresh URL (clean state)
+- Keep one browser session across all scenarios; do not call `agent-browser close` until all scenarios are done
+- Each scenario should navigate to a fresh URL (clean state)
 - Wait 500ms after key presses before reading (Ink re-render delay)
 
 ### Step 4: Report Results
@@ -151,6 +159,7 @@ When all scenarios are executed:
    ```
 5. If all passed: signal ready for PR phase
 6. If any failed: failures documented, loop will retry after fix iteration
+7. Close browser once at the end: `agent-browser close`
 
 ## Learning Capture
 If useful E2E patterns found, append to @.ralph/LEARNINGS.md
