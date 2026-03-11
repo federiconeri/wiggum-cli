@@ -429,6 +429,15 @@ export interface ActivityEvent {
 }
 
 /**
+ * Incremental parse result for loop logs.
+ * `nextCursor` is a character offset for the next poll.
+ */
+export interface LoopLogDelta {
+  events: ActivityEvent[];
+  nextCursor: number;
+}
+
+/**
  * Lines matching any of these patterns are filtered out of the activity feed.
  * Order: most common patterns first for faster short-circuit.
  */
@@ -497,6 +506,63 @@ function inferStatus(message: string): ActivityEvent['status'] {
   return 'in-progress';
 }
 
+function extractJsonActivityMessage(rawLine: string): string | null {
+  const trimmed = rawLine.trim();
+  if (!trimmed.startsWith('{')) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    if (parsed.type === 'item.completed' || parsed.type === 'item.started') {
+      const item = parsed.item;
+      if (item && typeof item === 'object') {
+        const itemObj = item as Record<string, unknown>;
+        if (itemObj.type === 'agent_message' && typeof itemObj.text === 'string') {
+          const firstLine = itemObj.text
+            .split('\n')
+            .map((part) => part.trim())
+            .find((part) => part.length > 0);
+          return firstLine ?? null;
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function parseLogLines(lines: string[], fallbackTimestamp: number, since?: number): ActivityEvent[] {
+  const events: ActivityEvent[] = [];
+
+  for (const line of lines) {
+    let timestamp = fallbackTimestamp;
+    const isoMatch = line.match(/^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})/);
+    if (isoMatch) {
+      const parsed = Date.parse(isoMatch[1]);
+      if (!Number.isNaN(parsed)) timestamp = parsed;
+    }
+
+    let rawMessage = line.replace(/^\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]\s*/, '').trim();
+    if (!rawMessage) continue;
+
+    const jsonMessage = extractJsonActivityMessage(rawMessage);
+    if (jsonMessage) rawMessage = jsonMessage;
+
+    if (shouldSkipLine(rawMessage)) continue;
+
+    const message = stripMarkdown(rawMessage);
+    if (!message) continue;
+    if (shouldSkipLine(message)) continue;
+
+    if (since !== undefined && timestamp < since) continue;
+
+    events.push({ timestamp, message, status: inferStatus(message) });
+  }
+
+  return events;
+}
+
 /**
  * Parse the loop log file into structured activity events.
  *
@@ -528,34 +594,45 @@ export function parseLoopLog(logPath: string, since?: number): ActivityEvent[] {
   }
 
   const lines = content.split('\n').filter((l) => l.trim().length > 0);
-  const events: ActivityEvent[] = [];
+  return parseLogLines(lines, fileMtimeMs, since);
+}
 
-  for (const line of lines) {
-    // Try to extract a timestamp from common prefixes like "[2024-01-15 10:30:45]" or "2024-01-15T10:30:45"
-    let timestamp = fileMtimeMs;
-    const isoMatch = line.match(/^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2})/);
-    if (isoMatch) {
-      const parsed = Date.parse(isoMatch[1]);
-      if (!Number.isNaN(parsed)) timestamp = parsed;
+/**
+ * Incrementally parse only the new portion of a loop log.
+ *
+ * The cursor is a character offset in UTF-16 code units. If the file shrinks,
+ * parsing restarts from the beginning.
+ */
+export function parseLoopLogDelta(logPath: string, cursor = 0): LoopLogDelta {
+  let content: string;
+  try {
+    content = readFileSync(logPath, 'utf-8');
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.warn(`parseLoopLogDelta: failed to read ${logPath}: ${err instanceof Error ? err.message : String(err)}`);
     }
-
-    const rawMessage = line.replace(/^\[\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}[^\]]*\]\s*/, '').trim();
-    if (!rawMessage) continue;
-
-    // Skip noise lines
-    if (shouldSkipLine(rawMessage)) continue;
-
-    // Strip markdown formatting
-    const message = stripMarkdown(rawMessage);
-    if (!message) continue;
-    if (shouldSkipLine(message)) continue;
-
-    if (since !== undefined && timestamp < since) continue;
-
-    events.push({ timestamp, message, status: inferStatus(message) });
+    return { events: [], nextCursor: cursor };
   }
 
-  return events;
+  let fileMtimeMs: number;
+  try {
+    fileMtimeMs = statSync(logPath).mtimeMs;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      logger.debug(`parseLoopLogDelta: statSync failed for ${logPath}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    fileMtimeMs = Date.now();
+  }
+
+  const safeCursor = cursor > content.length ? 0 : Math.max(0, cursor);
+  if (safeCursor >= content.length) {
+    return { events: [], nextCursor: content.length };
+  }
+
+  const newChunk = content.slice(safeCursor);
+  const lines = newChunk.split('\n').filter((l) => l.trim().length > 0);
+  const events = parseLogLines(lines, fileMtimeMs);
+  return { events, nextCursor: content.length };
 }
 
 /**

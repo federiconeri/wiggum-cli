@@ -716,7 +716,8 @@ count_file_changes() {
         return
     fi
     local count
-    count=$(git diff --name-only "${baseline}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || count=0
+    # Compare baseline commit against working tree so uncommitted changes count.
+    count=$(git diff --name-only "${baseline}" 2>/dev/null | wc -l | tr -d ' ') || count=0
     echo "$count"
 }
 
@@ -949,7 +950,7 @@ fi
 # tasks to be checked — the checkboxes may be stale if the work shipped under a
 # different branch name that never updated this plan file.
 if [ -f "$PLAN_FILE" ]; then
-    _DIFF_STAT=$(git diff "$DEFAULT_BRANCH..HEAD" --stat 2>/dev/null || echo "")
+    _DIFF_STAT=$(git diff "$DEFAULT_BRANCH" --stat 2>/dev/null || echo "")
     if [ -z "$_DIFF_STAT" ]; then
         echo "Plan exists but branch has no diff to $DEFAULT_BRANCH — work already merged."
         > "$PHASES_FILE"
@@ -1090,7 +1091,7 @@ Run validation (lint, typecheck, test) after completing tasks."
         # When baseline == HEAD (no new commits this run), the above returns 0 even
         # though the branch has real implementation work from a previous run.
         if [ "$_EXISTING_SOURCE" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
-            _EXISTING_SOURCE=$(git diff --stat "${DEFAULT_BRANCH}..HEAD" 2>/dev/null \
+            _EXISTING_SOURCE=$(git diff --stat "${DEFAULT_BRANCH}" 2>/dev/null \
                 | grep -cE '\.(ts|tsx|js|jsx|py|rb|go|rs|java|swift|kt)\s') || _EXISTING_SOURCE=0
         fi
         if [ "$_EXISTING_SOURCE" -gt 0 ]; then
@@ -1121,7 +1122,7 @@ if [ "$IMPL_SUCCESS" = true ]; then
     SOURCE_CHANGES=$(count_file_changes "$BASELINE_COMMIT")
     # Also check against default branch for work done in prior runs (resume mode)
     if [ "$SOURCE_CHANGES" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
-        SOURCE_CHANGES=$(git diff --name-only "${DEFAULT_BRANCH}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || SOURCE_CHANGES=0
+        SOURCE_CHANGES=$(git diff --name-only "${DEFAULT_BRANCH}" 2>/dev/null | wc -l | tr -d ' ') || SOURCE_CHANGES=0
     fi
     if [ "$SOURCE_CHANGES" -eq 0 ]; then
         echo "WARNING: Implementation phase completed but no files were changed."
@@ -1131,6 +1132,20 @@ if [ "$IMPL_SUCCESS" = true ]; then
     else
         write_phase_end "implementation" "success"
     fi
+fi
+
+# Stop early when implementation failed to avoid wasting E2E/review cycles.
+if [ "$IMPL_SUCCESS" != true ]; then
+    echo "Implementation phase failed. Skipping remaining phases."
+    write_phase_start "e2e_testing"
+    write_phase_end "e2e_testing" "skipped"
+    write_phase_start "verification"
+    write_phase_end "verification" "skipped"
+    write_phase_start "pr_review"
+    write_phase_end "pr_review" "skipped"
+    echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|failed" > "$FINAL_STATUS_FILE"
+    rm -f "$STATUS_FILE" 2>/dev/null || true
+    exit 1
 fi
 
 # Phase 5: E2E Testing
@@ -1148,6 +1163,7 @@ else
     E2E_CONTINUATION_PROMPT="Continue remaining E2E scenarios. Check the implementation plan for unchecked \`- [ ] E2E:\` entries and implement/run those tests. Run validation after completing each scenario."
     while [ $E2E_ATTEMPT -lt $MAX_E2E_ATTEMPTS ]; do
         E2E_ATTEMPT=$((E2E_ATTEMPT + 1))
+        echo "$E2E_ATTEMPT|$MAX_E2E_ATTEMPTS|$(date +%s)" > "$STATUS_FILE"
         echo "------------------------ E2E Attempt $E2E_ATTEMPT of $MAX_E2E_ATTEMPTS ------------------------"
 
         export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR CODING_CLI REVIEW_CLI REVIEW_MODE
@@ -1216,7 +1232,7 @@ write_phase_end "verification" "skipped"
 
 # Guard B: Skip PR phase if branch has no diff to default branch
 # Safety net for cases where implementation ran but produced no net diff.
-_PR_DIFF_STAT=$(git diff "$DEFAULT_BRANCH..HEAD" --stat 2>/dev/null || echo "")
+_PR_DIFF_STAT=$(git diff "$DEFAULT_BRANCH" --stat 2>/dev/null || echo "")
 if [ -z "$_PR_DIFF_STAT" ]; then
     echo "No diff between $BRANCH and $DEFAULT_BRANCH — skipping PR phase."
     write_phase_start "pr_review"
@@ -1242,7 +1258,7 @@ REVIEW_CONTINUATION_PROMPT="The issues from the previous review have been fixed.
 _REVIEW_FILE_CHANGES=$(count_file_changes "$BASELINE_COMMIT")
 # Also check against default branch for work done in prior runs (resume mode)
 if [ "$_REVIEW_FILE_CHANGES" -eq 0 ] && [ -n "$DEFAULT_BRANCH" ]; then
-    _REVIEW_FILE_CHANGES=$(git diff --name-only "${DEFAULT_BRANCH}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || _REVIEW_FILE_CHANGES=0
+    _REVIEW_FILE_CHANGES=$(git diff --name-only "${DEFAULT_BRANCH}" 2>/dev/null | wc -l | tr -d ' ') || _REVIEW_FILE_CHANGES=0
 fi
 if [ "$_REVIEW_FILE_CHANGES" -eq 0 ]; then
     echo "No files in diff — skipping PR & review phase."
