@@ -17,7 +17,7 @@ import { initTracing, flushTracing } from '../../utils/tracing.js';
 import {
   readCurrentPhase,
   readLoopStatus,
-  parseLoopLog,
+  parseLoopLogDelta,
   parsePhaseChanges,
   parseImplementationPlan,
   getLoopLogPath,
@@ -90,7 +90,7 @@ function appendLog(
 interface PollingState {
   interval: ReturnType<typeof setInterval>;
   featureName: string;
-  lastLogTimestamp?: number;
+  lastLogCursor: number;
   lastPhases?: PhaseInfo[];
 }
 
@@ -389,7 +389,7 @@ export function useAgentOrchestrator(
     const state: PollingState = {
       featureName,
       interval: null as unknown as ReturnType<typeof setInterval>,
-      lastLogTimestamp: undefined,
+      lastLogCursor: 0,
       lastPhases: undefined,
     };
 
@@ -433,9 +433,10 @@ export function useAgentOrchestrator(
 
       // Parse loop log for new events
       const logPath = getLoopLogPath(featureName);
-      const logEvents = parseLoopLog(logPath, state.lastLogTimestamp);
+      const logDelta = parseLoopLogDelta(logPath, state.lastLogCursor);
+      const logEvents = logDelta.events;
+      state.lastLogCursor = logDelta.nextCursor;
       if (logEvents.length > 0) {
-        state.lastLogTimestamp = logEvents[logEvents.length - 1].timestamp + 1;
         activityEventsAcc.push(...logEvents);
         if (activityEventsAcc.length > MAX_ACTIVITY) {
           activityEventsAcc.splice(0, activityEventsAcc.length - MAX_ACTIVITY);

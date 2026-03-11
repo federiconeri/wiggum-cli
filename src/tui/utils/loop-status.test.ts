@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 
 vi.mock('node:fs');
 
-import { findImplementationPlan, formatRelativeTime, parseImplementationPlan, parseLoopLog, parsePhaseChanges, readCurrentPhase, readLoopStatus } from './loop-status.js';
+import { findImplementationPlan, formatRelativeTime, parseImplementationPlan, parseLoopLog, parseLoopLogDelta, parsePhaseChanges, readCurrentPhase, readLoopStatus } from './loop-status.js';
 import * as child_process from 'node:child_process';
 
 vi.mock('node:child_process');
@@ -185,6 +185,17 @@ describe('parseLoopLog', () => {
     expect(events[0].message).toBe('Tests passed');
   });
 
+  it('extracts first line from Codex JSON agent_message entries', () => {
+    vi.mocked(fs.statSync).mockReturnValue({ mtimeMs: 0 } as fs.Stats);
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      '{"type":"item.completed","item":{"type":"agent_message","text":"Implemented schema limits\\nRan tests"}}\n'
+    );
+
+    const events = parseLoopLog(logPath);
+    expect(events).toHaveLength(1);
+    expect(events[0].message).toBe('Implemented schema limits');
+  });
+
   it('returns empty array and does not throw on non-ENOENT read error', () => {
     vi.mocked(fs.readFileSync).mockImplementation(() => {
       throw Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' });
@@ -289,6 +300,42 @@ describe('parseLoopLog', () => {
       expect(events).toHaveLength(1);
       expect(events[0].message).toBe('Meaningful update');
     });
+  });
+});
+
+describe('parseLoopLogDelta', () => {
+  const logPath = '/tmp/ralph-loop-test-feature.log';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns only appended lines when using cursor-based polling', () => {
+    vi.mocked(fs.readFileSync)
+      .mockReturnValueOnce('line one\n')
+      .mockReturnValueOnce('line one\nline two\n');
+    vi.mocked(fs.statSync)
+      .mockReturnValueOnce({ mtimeMs: 1000 } as fs.Stats)
+      .mockReturnValueOnce({ mtimeMs: 2000 } as fs.Stats);
+
+    const first = parseLoopLogDelta(logPath, 0);
+    expect(first.events.map((evt) => evt.message)).toEqual(['line one']);
+
+    const second = parseLoopLogDelta(logPath, first.nextCursor);
+    expect(second.events.map((evt) => evt.message)).toEqual(['line two']);
+  });
+
+  it('resets cursor when log file shrinks', () => {
+    vi.mocked(fs.readFileSync)
+      .mockReturnValueOnce('line one\nline two\n')
+      .mockReturnValueOnce('line three\n');
+    vi.mocked(fs.statSync)
+      .mockReturnValueOnce({ mtimeMs: 1000 } as fs.Stats)
+      .mockReturnValueOnce({ mtimeMs: 2000 } as fs.Stats);
+
+    const first = parseLoopLogDelta(logPath, 0);
+    const second = parseLoopLogDelta(logPath, first.nextCursor);
+    expect(second.events.map((evt) => evt.message)).toEqual(['line three']);
   });
 });
 

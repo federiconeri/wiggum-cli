@@ -320,6 +320,7 @@ STATUS_FILE="/tmp/ralph-loop-${1}.status"
 FINAL_STATUS_FILE="/tmp/ralph-loop-${1}.final"
 PHASES_FILE="/tmp/ralph-loop-${1}.phases"
 BASELINE_FILE="/tmp/ralph-loop-${1}.baseline"
+PRE_RUN_DIRTY_FILE="/tmp/ralph-loop-${1}.dirty"
 SESSIONS_FILE="/tmp/ralph-loop-${1}.sessions"
 LOG_FILE="/tmp/ralph-loop-${1}.log"
 LAST_RUN_CLI=""
@@ -344,9 +345,8 @@ extract_session_result() {
     if [ "$cli" = "codex" ]; then
         local result
         result=$(python3 -c "
-import json, re, sys
+import json, sys
 session = ''
-uuid_re = re.compile(r'^[0-9a-fA-F-]{36}$')
 for line in open(sys.argv[1], encoding='utf-8', errors='ignore'):
     line = line.strip()
     if not line:
@@ -359,8 +359,19 @@ for line in open(sys.argv[1], encoding='utf-8', errors='ignore'):
     while stack:
         cur = stack.pop()
         if isinstance(cur, dict):
-            for key in ('session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId'):
+            for key in ('session_id', 'sessionId', 'conversation_id', 'conversationId', 'thread_id', 'threadId', 'response_id', 'responseId', 'run_id', 'runId'):
                 val = cur.get(key)
+                if isinstance(val, str) and val:
+                    session = val
+            # Newer Codex JSON can nest thread/session identifiers under typed objects.
+            node_type = cur.get('type')
+            if node_type in ('thread.started', 'session.started'):
+                val = cur.get('id')
+                if isinstance(val, str) and val:
+                    session = val
+            thread_obj = cur.get('thread')
+            if isinstance(thread_obj, dict):
+                val = thread_obj.get('id')
                 if isinstance(val, str) and val:
                     session = val
             for val in cur.values():
@@ -707,7 +718,51 @@ detect_plan_format() {
     echo "unknown"
 }
 
-# Check if any tracked files were changed since baseline.
+# Snapshot tracked dirty files before loop execution starts.
+# Each entry stores <path>\t<working-tree blob hash or __MISSING__ marker>.
+capture_pre_run_dirty_snapshot() {
+    local baseline="$1"
+    > "$PRE_RUN_DIRTY_FILE"
+    if [ -z "$baseline" ]; then
+        return
+    fi
+    python3 - "$baseline" "$PRE_RUN_DIRTY_FILE" <<'PY' 2>/dev/null || true
+import os
+import subprocess
+import sys
+
+baseline = sys.argv[1]
+output_path = sys.argv[2]
+
+try:
+    changed = subprocess.check_output(
+        ["git", "diff", "--name-only", baseline],
+        stderr=subprocess.DEVNULL,
+    ).splitlines()
+except Exception:
+    changed = []
+
+with open(output_path, "w", encoding="utf-8", errors="surrogateescape") as fh:
+    for raw_path in changed:
+        if not raw_path:
+            continue
+        path = raw_path.decode("utf-8", errors="surrogateescape")
+        marker = "__MISSING__"
+        if os.path.exists(path):
+            try:
+                marker = subprocess.check_output(
+                    ["git", "hash-object", "--", path],
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                ).strip()
+            except Exception:
+                marker = "__HASH_ERROR__"
+        fh.write(f"{path}\t{marker}\n")
+PY
+}
+
+# Check if any tracked files were changed since baseline (excluding unchanged
+# tracked edits that already existed before the loop started).
 # Counts ALL file types (code, docs, config) — not just source code.
 count_file_changes() {
     local baseline="$1"
@@ -716,7 +771,61 @@ count_file_changes() {
         return
     fi
     local count
-    count=$(git diff --name-only "${baseline}..HEAD" 2>/dev/null | wc -l | tr -d ' ') || count=0
+    # Compare baseline commit against working tree; subtract pre-run dirty files
+    # unless that specific file changed again after loop start.
+    count=$(python3 - "$baseline" "$PRE_RUN_DIRTY_FILE" <<'PY' 2>/dev/null || echo "0"
+import os
+import subprocess
+import sys
+
+baseline = sys.argv[1]
+snapshot_path = sys.argv[2]
+snapshot = {}
+
+if os.path.exists(snapshot_path):
+    with open(snapshot_path, "r", encoding="utf-8", errors="surrogateescape") as fh:
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line or "\t" not in line:
+                continue
+            path, marker = line.split("\t", 1)
+            snapshot[path] = marker
+
+try:
+    changed = subprocess.check_output(
+        ["git", "diff", "--name-only", baseline],
+        stderr=subprocess.DEVNULL,
+    ).splitlines()
+except Exception:
+    print("0")
+    raise SystemExit(0)
+
+count = 0
+for raw_path in changed:
+    if not raw_path:
+        continue
+    path = raw_path.decode("utf-8", errors="surrogateescape")
+    start_marker = snapshot.get(path)
+    if start_marker is None:
+        count += 1
+        continue
+
+    current_marker = "__MISSING__"
+    if os.path.exists(path):
+        try:
+            current_marker = subprocess.check_output(
+                ["git", "hash-object", "--", path],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+        except Exception:
+            current_marker = "__HASH_ERROR__"
+    if current_marker != start_marker:
+        count += 1
+
+print(count)
+PY
+)
     echo "$count"
 }
 
@@ -949,7 +1058,7 @@ fi
 # tasks to be checked — the checkboxes may be stale if the work shipped under a
 # different branch name that never updated this plan file.
 if [ -f "$PLAN_FILE" ]; then
-    _DIFF_STAT=$(git diff "$DEFAULT_BRANCH..HEAD" --stat 2>/dev/null || echo "")
+    _DIFF_STAT=$(git diff "${DEFAULT_BRANCH}..HEAD" --stat 2>/dev/null || echo "")
     if [ -z "$_DIFF_STAT" ]; then
         echo "Plan exists but branch has no diff to $DEFAULT_BRANCH — work already merged."
         > "$PHASES_FILE"
@@ -973,6 +1082,7 @@ if git rev-parse --git-dir > /dev/null 2>&1; then
     if [ -n "$BASELINE_COMMIT" ]; then
         echo "$BASELINE_COMMIT" > "$BASELINE_FILE"
         echo "Baseline commit: $BASELINE_COMMIT"
+        capture_pre_run_dirty_snapshot "$BASELINE_COMMIT"
     fi
 fi
 
@@ -1133,6 +1243,20 @@ if [ "$IMPL_SUCCESS" = true ]; then
     fi
 fi
 
+# Stop early when implementation failed to avoid wasting E2E/review cycles.
+if [ "$IMPL_SUCCESS" != true ]; then
+    echo "Implementation phase failed. Skipping remaining phases."
+    write_phase_start "e2e_testing"
+    write_phase_end "e2e_testing" "skipped"
+    write_phase_start "verification"
+    write_phase_end "verification" "skipped"
+    write_phase_start "pr_review"
+    write_phase_end "pr_review" "skipped"
+    echo "$ITERATION|$MAX_ITERATIONS|$(date +%s)|failed" > "$FINAL_STATUS_FILE"
+    rm -f "$STATUS_FILE" 2>/dev/null || true
+    exit 1
+fi
+
 # Phase 5: E2E Testing
 echo "======================== E2E TESTING PHASE ========================"
 E2E_TOTAL=$({ grep "^- \[.\].*E2E:" "$PLAN_FILE" 2>/dev/null || true; } | wc -l | tr -d ' ')
@@ -1148,6 +1272,7 @@ else
     E2E_CONTINUATION_PROMPT="Continue remaining E2E scenarios. Check the implementation plan for unchecked \`- [ ] E2E:\` entries and implement/run those tests. Run validation after completing each scenario."
     while [ $E2E_ATTEMPT -lt $MAX_E2E_ATTEMPTS ]; do
         E2E_ATTEMPT=$((E2E_ATTEMPT + 1))
+        echo "$E2E_ATTEMPT|$MAX_E2E_ATTEMPTS|$(date +%s)" > "$STATUS_FILE"
         echo "------------------------ E2E Attempt $E2E_ATTEMPT of $MAX_E2E_ATTEMPTS ------------------------"
 
         export FEATURE APP_DIR SPEC_DIR PROMPTS_DIR CODING_CLI REVIEW_CLI REVIEW_MODE
@@ -1165,7 +1290,7 @@ else
             fi
         fi
         extract_session_result "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
-        if [ $E2E_ATTEMPT -eq 1 ] && [ -n "$LAST_SESSION_ID" ]; then
+        if [ -n "$LAST_SESSION_ID" ]; then
             E2E_SESSION_ID="$LAST_SESSION_ID"
         fi
         accumulate_tokens_from_session "$LAST_SESSION_ID" "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
@@ -1196,6 +1321,9 @@ else
                 run_claude_prompt "$PROMPTS_DIR/PROMPT_e2e_fix.md" "$IMPL_CMD" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
             fi
             extract_session_result "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
+            if [ -n "$LAST_SESSION_ID" ]; then
+                E2E_SESSION_ID="$LAST_SESSION_ID"
+            fi
             accumulate_tokens_from_session "$LAST_SESSION_ID" "${CLAUDE_OUTPUT}.raw" "$LAST_RUN_CLI"
         fi
     done
@@ -1216,7 +1344,7 @@ write_phase_end "verification" "skipped"
 
 # Guard B: Skip PR phase if branch has no diff to default branch
 # Safety net for cases where implementation ran but produced no net diff.
-_PR_DIFF_STAT=$(git diff "$DEFAULT_BRANCH..HEAD" --stat 2>/dev/null || echo "")
+_PR_DIFF_STAT=$(git diff "${DEFAULT_BRANCH}..HEAD" --stat 2>/dev/null || echo "")
 if [ -z "$_PR_DIFF_STAT" ]; then
     echo "No diff between $BRANCH and $DEFAULT_BRANCH — skipping PR phase."
     write_phase_start "pr_review"
@@ -1511,6 +1639,7 @@ rm -f "$STATUS_FILE" 2>/dev/null || true
 rm -f "/tmp/ralph-loop-${FEATURE}.output" 2>/dev/null || true
 rm -f "/tmp/ralph-loop-${FEATURE}.output.raw" 2>/dev/null || true
 rm -f "/tmp/ralph-loop-${FEATURE}.last-message" 2>/dev/null || true
+rm -f "$PRE_RUN_DIRTY_FILE" 2>/dev/null || true
 
 # Print final token usage
 if [ -f "/tmp/ralph-loop-${FEATURE}.tokens" ]; then
