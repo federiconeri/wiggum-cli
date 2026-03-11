@@ -212,6 +212,19 @@ describe('review prompt templates — Step 0 verification', () => {
       expect(template).toContain('README.md');
     }
   });
+
+  it('auto and merge review templates require waiting for CI checks before approval', () => {
+    const autoTemplate = readReviewTemplate('PROMPT_review_auto.md.tmpl');
+    const mergeTemplate = readReviewTemplate('PROMPT_review_merge.md.tmpl');
+    expect(autoTemplate).toContain('gh pr checks feat/$FEATURE --watch --interval 10');
+    expect(mergeTemplate).toContain('gh pr checks feat/$FEATURE --watch --interval 10');
+  });
+
+  it('merge review template delegates final merge to harness', () => {
+    const template = readReviewTemplate('PROMPT_review_merge.md.tmpl');
+    expect(template).toContain('Do **NOT** run `gh pr merge` in this prompt.');
+    expect(template).toContain('The loop harness performs the final merge');
+  });
 });
 
 describe('feature-loop.sh.tmpl — resume invocation', () => {
@@ -640,6 +653,15 @@ describe('feature-loop.sh.tmpl — review loop resume', () => {
   it('review resume fallback logs warning and uses full prompt', () => {
     const template = readFeatureLoopTemplate();
     expect(template).toContain('Review attempt $REVIEW_ATTEMPT: resume unavailable, using full prompt');
+  });
+
+  it('merge mode blocks on CI checks and merges through script gate', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('wait_for_ci_checks()');
+    expect(template).toContain('gh pr checks "$pr_ref" --watch --interval 10');
+    expect(template).toContain('merge_pr_after_ci_gate()');
+    expect(template).toContain('wait_for_ci_checks "$BRANCH"');
+    expect(template).toContain('merge_pr_after_ci_gate "$BRANCH"');
   });
 
   it('manual review mode does NOT contain resume logic', () => {

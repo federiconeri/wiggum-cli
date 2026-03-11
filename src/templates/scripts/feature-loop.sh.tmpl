@@ -1259,14 +1259,7 @@ check_review_approved() {
         fi
     fi
 
-    # Secondary: check if PR was already merged (Claude may merge before verdict is captured)
-    local pr_state
-    pr_state=$(gh pr view "$BRANCH" --json state --jq '.state' 2>/dev/null || echo "")
-    if [ "$pr_state" = "MERGED" ]; then
-        return 0
-    fi
-
-    # Tertiary: check the latest PR comment for approval signal
+    # Secondary: check the latest PR comment for approval signal
     local latest_comment
     latest_comment=$(gh pr view "$BRANCH" --json comments --jq '.comments[-1].body' 2>/dev/null || echo "")
     if echo "$latest_comment" | grep -qi "VERDICT:.*APPROVED" 2>/dev/null; then
@@ -1275,6 +1268,54 @@ check_review_approved() {
         fi
     fi
 
+    return 1
+}
+
+# Wait for CI checks to finish and pass.
+# Returns 0 when checks pass (or no checks exist), 1 on failure.
+wait_for_ci_checks() {
+    local pr_ref="$1"
+    echo "Waiting for CI checks on $pr_ref..."
+
+    local checks_output=""
+    checks_output=$(gh pr checks "$pr_ref" --watch --interval 10 2>&1)
+    local checks_exit=$?
+
+    echo "$checks_output"
+
+    if [ $checks_exit -eq 0 ]; then
+        echo "CI checks passed."
+        return 0
+    fi
+
+    # Some repos have no checks configured for certain PRs.
+    if echo "$checks_output" | grep -qiE "no checks|no status checks"; then
+        echo "No CI checks found for $pr_ref. Continuing."
+        return 0
+    fi
+
+    echo "ERROR: CI checks failed or did not complete successfully." >&2
+    return 1
+}
+
+# Merge PR after all gates are green.
+# Returns 0 on success, 1 on failure.
+merge_pr_after_ci_gate() {
+    local pr_ref="$1"
+    local pr_state
+    pr_state=$(gh pr view "$pr_ref" --json state --jq '.state' 2>/dev/null || echo "")
+
+    if [ "$pr_state" = "MERGED" ]; then
+        echo "PR already merged."
+        return 0
+    fi
+
+    echo "Merging PR after CI gate..."
+    if gh pr merge "$pr_ref" --squash --delete-branch; then
+        return 0
+    fi
+
+    echo "ERROR: Failed to merge PR $pr_ref after CI gate." >&2
     return 1
 }
 
@@ -1316,13 +1357,29 @@ elif [ "$REVIEW_MODE" = "merge" ]; then
             echo "Review approved! Running post-approval test gate..."
             if check_tests_pass_or_baseline; then
                 echo "Post-approval test gate passed."
+                if ! wait_for_ci_checks "$BRANCH"; then
+                    PR_STATUS="failed"
+                    break
+                fi
+                if ! merge_pr_after_ci_gate "$BRANCH"; then
+                    PR_STATUS="failed"
+                    break
+                fi
                 REVIEW_APPROVED=true
                 break
             else
                 echo "WARNING: Tests failing after review approval. Running fix iteration..."
                 run_review_fix
                 if check_tests_pass_or_baseline; then
-                    echo "Tests pass after fix. Proceeding with merge."
+                    echo "Tests pass after fix. Running CI and merge gates."
+                    if ! wait_for_ci_checks "$BRANCH"; then
+                        PR_STATUS="failed"
+                        break
+                    fi
+                    if ! merge_pr_after_ci_gate "$BRANCH"; then
+                        PR_STATUS="failed"
+                        break
+                    fi
                     REVIEW_APPROVED=true
                     break
                 else

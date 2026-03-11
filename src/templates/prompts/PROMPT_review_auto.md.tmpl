@@ -109,6 +109,10 @@ Use the current review CLI session (`$REVIEW_CLI`) to perform a full review:
 3. Print your final verdict as the **LAST** line of stdout, exactly one of:
    - `VERDICT: APPROVED`
    - `VERDICT: NOT APPROVED`
+4. Before printing `VERDICT: APPROVED`, wait for CI to complete and pass:
+   - Run `cd {{appDir}} && gh pr checks feat/$FEATURE --watch --interval 10`
+   - If checks are pending, keep waiting
+   - If any check fails, output `VERDICT: NOT APPROVED` and list failing checks
 
 **Handle review feedback:**
 - If verdict is `VERDICT: APPROVED` -> Done. The PR is ready for manual merge by the user.
@@ -131,6 +135,7 @@ no implementation found" so the harness can trigger a new implementation iterati
 
 ## Rules
 - **NEVER approve if any tests are failing.** Output "VERDICT: NOT APPROVED — test failures" if any tests fail.
+- **NEVER approve while CI checks are pending/failing.** Wait until checks complete and pass.
 - Do NOT merge the PR — auto mode only reviews, the user merges
 - Do NOT implement missing features — only review and fix minor issues
 - Address ALL review comments before marking as approved
