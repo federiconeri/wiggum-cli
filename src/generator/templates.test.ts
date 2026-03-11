@@ -322,9 +322,10 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
   it('supports codex exec and codex exec resume JSON paths', () => {
     const template = readFeatureLoopTemplate();
     expect(template).toMatch(/codex exec --full-auto -C \\"\$APP_DIR\\" --model \\"\$\{model\}\\"/);
-    expect(template).toContain('eval "$claude_cmd --json --output-last-message');
+    expect(template).toContain('eval "$claude_cmd --json --output-last-message \\"$LAST_MESSAGE_FILE\\" -"');
     expect(template).toContain('local resume_cmd="${claude_cmd/ exec / exec resume }"');
-    expect(template).toContain('eval "$resume_cmd \\"$session_id\\" - --json --output-last-message \\"$LAST_MESSAGE_FILE\\""');
+    expect(template).toContain('resume_cmd="${resume_cmd/ -C \\"$APP_DIR\\"/}"');
+    expect(template).toContain('cd "$APP_DIR" && eval "$resume_cmd \\"$session_id\\" - --json --output-last-message \\"$LAST_MESSAGE_FILE\\""');
   });
 
   it('extracts Codex token usage using multiple key shapes without overcounting repeated events', () => {

@@ -272,7 +272,7 @@ run_claude_prompt() {
     local claude_cmd="$2"
     if [[ "$claude_cmd" == codex* ]]; then
         LAST_RUN_CLI="codex"
-        { cat "$prompt_file" | envsubst; echo "$AUTOMATION_FOOTER"; } | eval "$claude_cmd --json --output-last-message \"$LAST_MESSAGE_FILE\""
+        { cat "$prompt_file" | envsubst; echo "$AUTOMATION_FOOTER"; } | (cd "$APP_DIR" && eval "$claude_cmd --json --output-last-message \"$LAST_MESSAGE_FILE\" -")
     else
         LAST_RUN_CLI="claude"
         { cat "$prompt_file" | envsubst; echo "$AUTOMATION_FOOTER"; } | $claude_cmd
@@ -291,7 +291,10 @@ run_claude_resume() {
             echo "WARNING: codex resume injection failed, exec segment not found in command" >&2
             return 1
         fi
-        { echo "$continuation_prompt"; echo "$AUTOMATION_FOOTER"; } | eval "$resume_cmd \"$session_id\" - --json --output-last-message \"$LAST_MESSAGE_FILE\""
+        # codex exec resume does not accept -C/--cd; resume from APP_DIR instead.
+        resume_cmd="${resume_cmd/ -C \"$APP_DIR\"/}"
+        resume_cmd="${resume_cmd/ --cd \"$APP_DIR\"/}"
+        { echo "$continuation_prompt"; echo "$AUTOMATION_FOOTER"; } | (cd "$APP_DIR" && eval "$resume_cmd \"$session_id\" - --json --output-last-message \"$LAST_MESSAGE_FILE\"")
     else
         LAST_RUN_CLI="claude"
         # Insert --resume "$session_id" before the -p flag
