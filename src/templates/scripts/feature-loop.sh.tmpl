@@ -184,7 +184,12 @@ build_cli_cmd() {
             echo "claude -p --output-format json --dangerously-skip-permissions --model ${model}"
             ;;
         codex)
-            echo "codex exec --full-auto -C \"$APP_DIR\" --model \"${model}\""
+            local codex_extra=""
+            # Avoid MCP startup deadlocks in unattended loop runs.
+            if [ "${RALPH_AUTOMATED:-}" = "1" ]; then
+                codex_extra=" -c 'mcp_servers={}'"
+            fi
+            echo "codex exec --full-auto -C \"$APP_DIR\" --model \"${model}\"${codex_extra}"
             ;;
         *)
             echo "ERROR: Unsupported CLI '$cli'" >&2
