@@ -1,9 +1,10 @@
 import { tool, zodSchema } from 'ai';
 import { z } from 'zod';
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat, open } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FEATURE_NAME_SCHEMA } from './schemas.js';
+
+const MAX_LOG_BYTES = 1_048_576; // 1 MB
 
 export function createIntrospectionTools(projectRoot: string) {
   const readLoopLog = tool({
@@ -14,11 +15,32 @@ export function createIntrospectionTools(projectRoot: string) {
     })),
     execute: async ({ featureName, tailLines }) => {
       const logPath = join('/tmp', `ralph-loop-${featureName}.log`);
-      if (!existsSync(logPath)) {
+
+      let fileSize: number;
+      try {
+        const fileStat = await stat(logPath);
+        fileSize = fileStat.size;
+      } catch {
         return { error: `No log found at ${logPath} — verify featureName matches exactly what runLoop used` };
       }
 
-      const content = await readFile(logPath, 'utf-8');
+      let content: string;
+      if (fileSize <= MAX_LOG_BYTES) {
+        content = await readFile(logPath, 'utf-8');
+      } else {
+        // For large files, read only the last MAX_LOG_BYTES to bound memory usage.
+        // totalLines will reflect lines in the chunk, not the full file.
+        const offset = fileSize - MAX_LOG_BYTES;
+        const fd = await open(logPath, 'r');
+        try {
+          const buffer = Buffer.allocUnsafe(MAX_LOG_BYTES);
+          await fd.read(buffer, 0, MAX_LOG_BYTES, offset);
+          content = buffer.toString('utf-8');
+        } finally {
+          await fd.close();
+        }
+      }
+
       const allLines = content.split('\n');
       const lines = allLines.slice(-tailLines);
       return { lines, totalLines: allLines.length };
