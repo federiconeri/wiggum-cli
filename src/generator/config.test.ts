@@ -38,6 +38,10 @@ describe('generateConfig - CLI-aware loop model defaults', () => {
 
     expect(config.loop.defaultModel).toBe('sonnet');
     expect(config.loop.planningModel).toBe('opus');
+    expect(config.loop.claudePermissionMode).toBe('default');
+    expect(config.loop.codexSandbox).toBe('workspace-write');
+    expect(config.loop.codexApprovalPolicy).toBe('never');
+    expect(config.loop.disableMcpInAutomatedRuns).toBe(true);
   });
 
   it('uses gpt-5.3-codex for both loop model fields when coding+review CLI are codex', () => {

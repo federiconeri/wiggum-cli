@@ -34,9 +34,13 @@ module.exports = {
     maxE2eAttempts: 5,
     defaultModel: 'sonnet', // Claude implementation/e2e default
     planningModel: 'opus',  // Claude planning/review default
-    // Codex phases use gpt-5.3-codex by default (single model across phases)
+    codexModel: 'gpt-5.3-codex', // Codex model default for codex phases
     codingCli: 'claude',   // Implementation CLI: 'claude' | 'codex'
     reviewCli: 'claude',   // Review CLI: 'claude' | 'codex'
     reviewMode: 'manual', // 'manual' = stop at PR, 'auto' = review (no merge), 'merge' = review + auto-merge
+    claudePermissionMode: 'default', // Claude permission mode: default|auto|dontAsk|acceptEdits|plan|bypassPermissions
+    codexSandbox: 'workspace-write', // Codex sandbox: read-only|workspace-write|danger-full-access
+    codexApprovalPolicy: 'never', // Codex approvals: untrusted|on-failure|on-request|never
+    disableMcpInAutomatedRuns: true, // Disable MCP servers when RALPH_AUTOMATED=1
   },
 };

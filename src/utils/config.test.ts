@@ -40,9 +40,14 @@ describe('config', () => {
         maxE2eAttempts: 5,
         defaultModel: 'sonnet',
         planningModel: 'opus',
+        codexModel: 'gpt-5.3-codex',
         codingCli: 'claude',
         reviewCli: 'claude',
         reviewMode: 'manual',
+        claudePermissionMode: 'default',
+        codexSandbox: 'workspace-write',
+        codexApprovalPolicy: 'never',
+        disableMcpInAutomatedRuns: true,
       });
     });
   });

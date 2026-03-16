@@ -28,6 +28,10 @@ if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
     DEFAULT_CODEX_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.codexModel || 'gpt-5.3-codex')" 2>/dev/null || echo "gpt-5.3-codex")
     DEFAULT_CODING_CLI=$(node -e "console.log(require('$CONFIG_PATH').loop?.codingCli || 'claude')" 2>/dev/null || echo "claude")
     DEFAULT_REVIEW_CLI=$(node -e "console.log(require('$CONFIG_PATH').loop?.reviewCli || require('$CONFIG_PATH').loop?.codingCli || 'claude')" 2>/dev/null || echo "claude")
+    CLAUDE_PERMISSION_MODE=$(node -e "console.log(require('$CONFIG_PATH').loop?.claudePermissionMode || 'default')" 2>/dev/null || echo "default")
+    CODEX_SANDBOX=$(node -e "console.log(require('$CONFIG_PATH').loop?.codexSandbox || 'workspace-write')" 2>/dev/null || echo "workspace-write")
+    CODEX_APPROVAL_POLICY=$(node -e "console.log(require('$CONFIG_PATH').loop?.codexApprovalPolicy || 'never')" 2>/dev/null || echo "never")
+    DISABLE_MCP_IN_AUTOMATED=$(node -e "const v=require('$CONFIG_PATH').loop?.disableMcpInAutomatedRuns; console.log(v === undefined ? 'true' : String(v))" 2>/dev/null || echo "true")
     DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
     DEFAULT_MAX_E2E=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
     TEST_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.test || 'npm test')" 2>/dev/null || echo "npm test")
@@ -42,6 +46,10 @@ elif [ -f "$SCRIPT_DIR/../../ralph.config.cjs" ]; then
     DEFAULT_CODEX_MODEL=$(node -e "console.log(require('$CONFIG_PATH').loop?.codexModel || 'gpt-5.3-codex')" 2>/dev/null || echo "gpt-5.3-codex")
     DEFAULT_CODING_CLI=$(node -e "console.log(require('$CONFIG_PATH').loop?.codingCli || 'claude')" 2>/dev/null || echo "claude")
     DEFAULT_REVIEW_CLI=$(node -e "console.log(require('$CONFIG_PATH').loop?.reviewCli || require('$CONFIG_PATH').loop?.codingCli || 'claude')" 2>/dev/null || echo "claude")
+    CLAUDE_PERMISSION_MODE=$(node -e "console.log(require('$CONFIG_PATH').loop?.claudePermissionMode || 'default')" 2>/dev/null || echo "default")
+    CODEX_SANDBOX=$(node -e "console.log(require('$CONFIG_PATH').loop?.codexSandbox || 'workspace-write')" 2>/dev/null || echo "workspace-write")
+    CODEX_APPROVAL_POLICY=$(node -e "console.log(require('$CONFIG_PATH').loop?.codexApprovalPolicy || 'never')" 2>/dev/null || echo "never")
+    DISABLE_MCP_IN_AUTOMATED=$(node -e "const v=require('$CONFIG_PATH').loop?.disableMcpInAutomatedRuns; console.log(v === undefined ? 'true' : String(v))" 2>/dev/null || echo "true")
     DEFAULT_MAX_ITERATIONS=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxIterations || 10)" 2>/dev/null || echo "10")
     DEFAULT_MAX_E2E=$(node -e "console.log(require('$CONFIG_PATH').loop?.maxE2eAttempts || 5)" 2>/dev/null || echo "5")
     TEST_COMMAND=$(node -e "console.log(require('$CONFIG_PATH').commands?.test || 'npm test')" 2>/dev/null || echo "npm test")
@@ -56,6 +64,10 @@ else
     DEFAULT_CODEX_MODEL="gpt-5.3-codex"
     DEFAULT_CODING_CLI="claude"
     DEFAULT_REVIEW_CLI="claude"
+    CLAUDE_PERMISSION_MODE="default"
+    CODEX_SANDBOX="workspace-write"
+    CODEX_APPROVAL_POLICY="never"
+    DISABLE_MCP_IN_AUTOMATED="true"
     DEFAULT_MAX_ITERATIONS="10"
     DEFAULT_MAX_E2E="5"
     TEST_COMMAND="npm test"
@@ -141,6 +153,7 @@ fi
 # Resolve coding/review CLI from CLI > config > default
 CODING_CLI="${CLI_OVERRIDE:-$DEFAULT_CODING_CLI}"
 REVIEW_CLI="${REVIEW_CLI_OVERRIDE:-${DEFAULT_REVIEW_CLI:-$CODING_CLI}}"
+DISABLE_MCP_IN_AUTOMATED_NORM=$(echo "$DISABLE_MCP_IN_AUTOMATED" | tr '[:upper:]' '[:lower:]')
 
 # Validate CLI values
 if [ "$CODING_CLI" != "claude" ] && [ "$CODING_CLI" != "codex" ]; then
@@ -152,6 +165,50 @@ if [ "$REVIEW_CLI" != "claude" ] && [ "$REVIEW_CLI" != "codex" ]; then
     echo "ERROR: Invalid --review-cli value '$REVIEW_CLI'. Allowed values are 'claude' or 'codex'." >&2
     exit 1
 fi
+
+is_valid_claude_permission_mode() {
+    case "$1" in
+        acceptEdits|bypassPermissions|default|dontAsk|plan|auto) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+is_valid_codex_sandbox() {
+    case "$1" in
+        read-only|workspace-write|danger-full-access) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+is_valid_codex_approval_policy() {
+    case "$1" in
+        untrusted|on-failure|on-request|never) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+if ! is_valid_claude_permission_mode "$CLAUDE_PERMISSION_MODE"; then
+    echo "ERROR: Invalid loop.claudePermissionMode '$CLAUDE_PERMISSION_MODE' in ralph.config.cjs." >&2
+    exit 1
+fi
+
+if ! is_valid_codex_sandbox "$CODEX_SANDBOX"; then
+    echo "ERROR: Invalid loop.codexSandbox '$CODEX_SANDBOX' in ralph.config.cjs." >&2
+    exit 1
+fi
+
+if ! is_valid_codex_approval_policy "$CODEX_APPROVAL_POLICY"; then
+    echo "ERROR: Invalid loop.codexApprovalPolicy '$CODEX_APPROVAL_POLICY' in ralph.config.cjs." >&2
+    exit 1
+fi
+
+case "$DISABLE_MCP_IN_AUTOMATED_NORM" in
+    true|false) ;;
+    *)
+        echo "ERROR: Invalid loop.disableMcpInAutomatedRuns '$DISABLE_MCP_IN_AUTOMATED' in ralph.config.cjs. Use true or false." >&2
+        exit 1
+        ;;
+esac
 
 is_claude_only_model() {
     local candidate="$1"
@@ -181,15 +238,15 @@ build_cli_cmd() {
     local model="$2"
     case "$cli" in
         claude)
-            echo "claude -p --output-format json --dangerously-skip-permissions --model ${model}"
+            echo "claude -p --output-format json --permission-mode ${CLAUDE_PERMISSION_MODE} --model ${model}"
             ;;
         codex)
             local codex_extra=""
             # Avoid MCP startup deadlocks in unattended loop runs.
-            if [ "${RALPH_AUTOMATED:-}" = "1" ]; then
+            if [ "${RALPH_AUTOMATED:-}" = "1" ] && [ "$DISABLE_MCP_IN_AUTOMATED_NORM" = "true" ]; then
                 codex_extra=" -c 'mcp_servers={}'"
             fi
-            echo "codex exec --full-auto -C \"$APP_DIR\" --model \"${model}\"${codex_extra}"
+            echo "codex exec -a \"$CODEX_APPROVAL_POLICY\" --sandbox \"$CODEX_SANDBOX\" -C \"$APP_DIR\" --model \"${model}\"${codex_extra}"
             ;;
         *)
             echo "ERROR: Unsupported CLI '$cli'" >&2
@@ -1009,6 +1066,12 @@ echo "Resume mode: $RESUME"
 echo "Coding CLI (impl/e2e): $CODING_CLI"
 echo "Review CLI: $REVIEW_CLI"
 echo "Review mode: $REVIEW_MODE"
+echo "Claude permission mode: $CLAUDE_PERMISSION_MODE"
+echo "Codex sandbox: $CODEX_SANDBOX"
+echo "Codex approval policy: $CODEX_APPROVAL_POLICY"
+if [ "${RALPH_AUTOMATED:-}" = "1" ]; then
+    echo "Disable MCP in automated runs: $DISABLE_MCP_IN_AUTOMATED_NORM"
+fi
 if [ "$CODING_CLI" = "codex" ] && [ "$REVIEW_CLI" = "codex" ]; then
     echo "Model (all phases): $(resolve_codex_model)"
 else
