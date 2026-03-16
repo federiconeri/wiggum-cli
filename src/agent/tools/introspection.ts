@@ -34,8 +34,8 @@ export function createIntrospectionTools(projectRoot: string) {
         const fd = await open(logPath, 'r');
         try {
           const buffer = Buffer.allocUnsafe(MAX_LOG_BYTES);
-          await fd.read(buffer, 0, MAX_LOG_BYTES, offset);
-          content = buffer.toString('utf-8');
+          const { bytesRead } = await fd.read(buffer, 0, MAX_LOG_BYTES, offset);
+          content = buffer.subarray(0, bytesRead).toString('utf-8');
         } finally {
           await fd.close();
         }

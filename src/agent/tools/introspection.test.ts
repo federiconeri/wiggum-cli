@@ -112,6 +112,31 @@ describe('createIntrospectionTools', () => {
 
       expect(mockFd.close).toHaveBeenCalledOnce();
     });
+
+    it('decodes only bytesRead for large file chunks', async () => {
+      const MAX_BYTES = 1_048_576;
+      writeFileSync(testLogPath, 'x'.repeat(MAX_BYTES + 1));
+
+      const payload = Buffer.from('Line A\nLine B\nLine C');
+      const mockFd = {
+        read: vi.fn().mockImplementation(async (buffer: Buffer) => {
+          buffer.fill('Z');
+          payload.copy(buffer, 0);
+          return { bytesRead: payload.length, buffer };
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+      };
+      mockOpen.mockResolvedValueOnce(mockFd as any);
+
+      const result = await tools.readLoopLog.execute(
+        { featureName: 'intro-test', tailLines: 3 },
+        execCtx,
+      );
+
+      expect(result.lines).toEqual(['Line A', 'Line B', 'Line C']);
+      expect(result.totalLines).toBe(3);
+      expect(mockFd.close).toHaveBeenCalledOnce();
+    });
   });
 
   describe('syncContext', () => {

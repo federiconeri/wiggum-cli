@@ -246,7 +246,7 @@ build_cli_cmd() {
             if [ "${RALPH_AUTOMATED:-}" = "1" ] && [ "$DISABLE_MCP_IN_AUTOMATED_NORM" = "true" ]; then
                 codex_extra=" -c 'mcp_servers={}'"
             fi
-            echo "codex exec -a \"$CODEX_APPROVAL_POLICY\" --sandbox \"$CODEX_SANDBOX\" -C \"$APP_DIR\" --model \"${model}\"${codex_extra}"
+            echo "codex --ask-for-approval \"$CODEX_APPROVAL_POLICY\" --sandbox \"$CODEX_SANDBOX\" exec -C \"$APP_DIR\" --model \"${model}\"${codex_extra}"
             ;;
         *)
             echo "ERROR: Unsupported CLI '$cli'" >&2

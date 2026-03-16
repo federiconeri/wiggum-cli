@@ -324,7 +324,7 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
 
   it('supports codex exec and codex exec resume JSON paths', () => {
     const template = readFeatureLoopTemplate();
-    expect(template).toContain('echo "codex exec -a \\"$CODEX_APPROVAL_POLICY\\" --sandbox \\"$CODEX_SANDBOX\\" -C \\"$APP_DIR\\" --model \\"${model}\\"${codex_extra}"');
+    expect(template).toContain('echo "codex --ask-for-approval \\"$CODEX_APPROVAL_POLICY\\" --sandbox \\"$CODEX_SANDBOX\\" exec -C \\"$APP_DIR\\" --model \\"${model}\\"${codex_extra}"');
     expect(template).toContain('DISABLE_MCP_IN_AUTOMATED_NORM=$(echo "$DISABLE_MCP_IN_AUTOMATED" | tr \'[:upper:]\' \'[:lower:]\')');
     expect(template).toContain('if [ "${RALPH_AUTOMATED:-}" = "1" ] && [ "$DISABLE_MCP_IN_AUTOMATED_NORM" = "true" ]; then');
     expect(template).toContain(`codex_extra=" -c 'mcp_servers={}'"`);
