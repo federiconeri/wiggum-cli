@@ -12,12 +12,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [ -f "$SCRIPT_DIR/../ralph.config.cjs" ]; then
     PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
     DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+    CLAUDE_PERMISSION_MODE=$(node -e "console.log(require('$SCRIPT_DIR/../ralph.config.cjs').loop?.claudePermissionMode || 'default')" 2>/dev/null || echo "default")
 elif [ -f "$SCRIPT_DIR/../../ralph.config.cjs" ]; then
     PROMPTS_DIR=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').paths?.prompts || '.ralph/prompts')" 2>/dev/null || echo ".ralph/prompts")
     DEFAULT_MODEL=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.defaultModel || 'sonnet')" 2>/dev/null || echo "sonnet")
+    CLAUDE_PERMISSION_MODE=$(node -e "console.log(require('$SCRIPT_DIR/../../ralph.config.cjs').loop?.claudePermissionMode || 'default')" 2>/dev/null || echo "default")
 else
     PROMPTS_DIR=".ralph/prompts"
     DEFAULT_MODEL="sonnet"
+    CLAUDE_PERMISSION_MODE="default"
 fi
 
 # Navigate to project root
@@ -31,6 +34,7 @@ ITERATION=0
 echo "Starting Ralph loop"
 echo "  Prompt: $PROMPT_FILE"
 echo "  Model: $MODEL"
+echo "  Claude permission mode: $CLAUDE_PERMISSION_MODE"
 echo "  Max iterations: $MAX_ITERATIONS (0 = infinite)"
 echo "Press Ctrl+C to stop"
 echo ""
@@ -50,7 +54,7 @@ while true; do
     ITERATION=$((ITERATION + 1))
     echo "======================== ITERATION $ITERATION ========================"
 
-    cat "$PROMPT_FILE" | claude -p --dangerously-skip-permissions --model "$MODEL"
+    cat "$PROMPT_FILE" | claude -p --permission-mode "$CLAUDE_PERMISSION_MODE" --model "$MODEL"
 
     echo ""
     sleep 2

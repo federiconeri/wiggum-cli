@@ -298,6 +298,9 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
     expect(template).toContain("DEFAULT_CODING_CLI=$(node -e \"console.log(require('$CONFIG_PATH').loop?.codingCli || 'claude')\"");
     expect(template).toContain("DEFAULT_REVIEW_CLI=$(node -e \"console.log(require('$CONFIG_PATH').loop?.reviewCli || require('$CONFIG_PATH').loop?.codingCli || 'claude')\"");
     expect(template).toContain("DEFAULT_CODEX_MODEL=$(node -e \"console.log(require('$CONFIG_PATH').loop?.codexModel || 'gpt-5.3-codex')\"");
+    expect(template).toContain("CLAUDE_PERMISSION_MODE=$(node -e \"console.log(require('$CONFIG_PATH').loop?.claudePermissionMode || 'default')\"");
+    expect(template).toContain("CODEX_SANDBOX=$(node -e \"console.log(require('$CONFIG_PATH').loop?.codexSandbox || 'workspace-write')\"");
+    expect(template).toContain("CODEX_APPROVAL_POLICY=$(node -e \"console.log(require('$CONFIG_PATH').loop?.codexApprovalPolicy || 'never')\"");
   });
 
   it('parses --cli and --review-cli flags', () => {
@@ -321,9 +324,11 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
 
   it('supports codex exec and codex exec resume JSON paths', () => {
     const template = readFeatureLoopTemplate();
-    expect(template).toMatch(/codex exec --full-auto -C \\"\$APP_DIR\\" --model \\"\$\{model\}\\"/);
-    expect(template).toContain('if [ "${RALPH_AUTOMATED:-}" = "1" ]; then');
+    expect(template).toContain('echo "codex --ask-for-approval \\"$CODEX_APPROVAL_POLICY\\" --sandbox \\"$CODEX_SANDBOX\\" exec -C \\"$APP_DIR\\" --model \\"${model}\\"${codex_extra}"');
+    expect(template).toContain('DISABLE_MCP_IN_AUTOMATED_NORM=$(echo "$DISABLE_MCP_IN_AUTOMATED" | tr \'[:upper:]\' \'[:lower:]\')');
+    expect(template).toContain('if [ "${RALPH_AUTOMATED:-}" = "1" ] && [ "$DISABLE_MCP_IN_AUTOMATED_NORM" = "true" ]; then');
     expect(template).toContain(`codex_extra=" -c 'mcp_servers={}'"`);
+    expect(template).toContain('claude -p --output-format json --permission-mode ${CLAUDE_PERMISSION_MODE} --model ${model}');
     expect(template).toContain('eval "$claude_cmd --json --output-last-message \\"$LAST_MESSAGE_FILE\\" -"');
     expect(template).toContain('local resume_cmd="${claude_cmd/ exec / exec resume }"');
     expect(template).toContain('resume_cmd="${resume_cmd/ -C \\"$APP_DIR\\"/}"');
@@ -368,6 +373,17 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
     expect(template).toContain('check_cli_binary "$CODING_CLI"');
     expect(template).toContain('if [ "$REVIEW_CLI" != "$CODING_CLI" ]; then');
     expect(template).toContain('check_cli_binary "$REVIEW_CLI"');
+  });
+
+  it('validates configured sandbox and permission policy values before running', () => {
+    const template = readFeatureLoopTemplate();
+    expect(template).toContain('is_valid_claude_permission_mode()');
+    expect(template).toContain('is_valid_codex_sandbox()');
+    expect(template).toContain('is_valid_codex_approval_policy()');
+    expect(template).toContain("ERROR: Invalid loop.claudePermissionMode");
+    expect(template).toContain("ERROR: Invalid loop.codexSandbox");
+    expect(template).toContain("ERROR: Invalid loop.codexApprovalPolicy");
+    expect(template).toContain("ERROR: Invalid loop.disableMcpInAutomatedRuns");
   });
 
   it('parses review-fix output with implementation CLI adapter', () => {

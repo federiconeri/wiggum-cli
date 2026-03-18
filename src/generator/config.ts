@@ -7,6 +7,8 @@ import type { ScanResult } from '../scanner/types.js';
 import type { RalphConfig } from '../utils/config.js';
 import { extractVariables, type TemplateVariables } from './templates.js';
 
+const DEFAULT_CODEX_MODEL = 'gpt-5.3-codex';
+
 /**
  * Generate ralph config object from scan result
  */
@@ -56,9 +58,14 @@ export function generateConfig(scanResult: ScanResult, customVars: Record<string
       maxE2eAttempts: 5,
       defaultModel,
       planningModel,
+      codexModel: DEFAULT_CODEX_MODEL,
       codingCli,
       reviewCli,
       reviewMode: 'manual',
+      claudePermissionMode: 'default',
+      codexSandbox: 'workspace-write',
+      codexApprovalPolicy: 'never',
+      disableMcpInAutomatedRuns: true,
     },
     agent: {
       defaultProvider: agentProvider,

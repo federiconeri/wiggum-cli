@@ -57,9 +57,14 @@ export interface LoopConfig {
   maxE2eAttempts: number;
   defaultModel: string;
   planningModel: string;
+  codexModel?: string;
   codingCli: 'claude' | 'codex';
   reviewCli: 'claude' | 'codex';
   reviewMode: 'manual' | 'auto' | 'merge';
+  claudePermissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default' | 'dontAsk' | 'plan' | 'auto';
+  codexSandbox?: 'read-only' | 'workspace-write' | 'danger-full-access';
+  codexApprovalPolicy?: 'untrusted' | 'on-failure' | 'on-request' | 'never';
+  disableMcpInAutomatedRuns?: boolean;
 }
 
 /**
@@ -121,9 +126,14 @@ export const DEFAULT_CONFIG: RalphConfig = {
     maxE2eAttempts: 5,
     defaultModel: 'sonnet',
     planningModel: 'opus',
+    codexModel: 'gpt-5.3-codex',
     codingCli: 'claude',
     reviewCli: 'claude',
     reviewMode: 'manual',
+    claudePermissionMode: 'default',
+    codexSandbox: 'workspace-write',
+    codexApprovalPolicy: 'never',
+    disableMcpInAutomatedRuns: true,
   },
   agent: {
     defaultProvider: '',
@@ -240,8 +250,13 @@ export async function getLoopSettings(projectRoot: string): Promise<LoopConfig> 
     maxE2eAttempts: config?.loop?.maxE2eAttempts || DEFAULT_CONFIG.loop.maxE2eAttempts,
     defaultModel: config?.loop?.defaultModel || DEFAULT_CONFIG.loop.defaultModel,
     planningModel: config?.loop?.planningModel || DEFAULT_CONFIG.loop.planningModel,
+    codexModel: config?.loop?.codexModel || DEFAULT_CONFIG.loop.codexModel,
     codingCli: config?.loop?.codingCli || DEFAULT_CONFIG.loop.codingCli,
     reviewCli: config?.loop?.reviewCli || DEFAULT_CONFIG.loop.reviewCli,
     reviewMode: config?.loop?.reviewMode || DEFAULT_CONFIG.loop.reviewMode,
+    claudePermissionMode: config?.loop?.claudePermissionMode || DEFAULT_CONFIG.loop.claudePermissionMode,
+    codexSandbox: config?.loop?.codexSandbox || DEFAULT_CONFIG.loop.codexSandbox,
+    codexApprovalPolicy: config?.loop?.codexApprovalPolicy || DEFAULT_CONFIG.loop.codexApprovalPolicy,
+    disableMcpInAutomatedRuns: config?.loop?.disableMcpInAutomatedRuns ?? DEFAULT_CONFIG.loop.disableMcpInAutomatedRuns,
   };
 }
