@@ -23,8 +23,9 @@ const DEPENDENCY_PATTERN = /\b(?:depends on|blocked by|requires|after)\s+#(\d+)/
 const STOP_WORDS = new Set([
   'the', 'and', 'for', 'with', 'from', 'into', 'that', 'this', 'have', 'has', 'will', 'would',
   'should', 'about', 'issue', 'task', 'feature', 'support', 'implement', 'add', 'build', 'create',
-  'update', 'fix', 'make', 'allow', 'user', 'users', 'cli', 'agent',
+  'update', 'fix', 'make', 'allow', 'user', 'users', 'cli', 'agent', 'part', 'related', 'summary',
 ]);
+const DEPENDENCY_CUE_PATTERN = /\b(depends on|blocked by|requires|after)\b/i;
 
 const inferredDependencySchema = z.object({
   edges: z.array(z.object({
@@ -40,10 +41,28 @@ export interface RankedBacklog {
   blocked: BacklogCandidate[];
 }
 
-export function extractDependencyHints(body: string): number[] {
+export function extractDependencyHints(
+  body: string,
+  backlogIssues: Array<{ number: number; title: string }> = [],
+  currentIssueNumber?: number,
+): number[] {
   const matches = [...body.matchAll(DEPENDENCY_PATTERN)];
   const numbers = matches.map(m => parseInt(m[1], 10));
-  return [...new Set(numbers)].sort((a, b) => a - b);
+  const inferredFromTitles: number[] = [];
+
+  if (DEPENDENCY_CUE_PATTERN.test(body)) {
+    const bodyTokens = new Set(normalizeTokens(body));
+    for (const issue of backlogIssues) {
+      if (issue.number === currentIssueNumber) continue;
+      const titleTokens = normalizeTokens(issue.title);
+      const overlap = titleTokens.filter(token => bodyTokens.has(token));
+      if (overlap.length >= 2) {
+        inferredFromTitles.push(issue.number);
+      }
+    }
+  }
+
+  return [...new Set([...numbers, ...inferredFromTitles])].sort((a, b) => a - b);
 }
 
 export function deriveFeatureNameFromTitle(title: string): string {
@@ -143,6 +162,7 @@ function buildCodebaseContext(persisted: Awaited<ReturnType<typeof loadContext>>
 
 function normalizeTokens(text: string): string[] {
   return text
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
     .toLowerCase()
     .replace(/#[0-9]+/g, ' ')
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -174,11 +194,12 @@ function buildFallbackInferredEdges(issue: BacklogCandidate, peers: BacklogCandi
 
     const peerFoundation = /\b(core|base|foundation|scaffold|setup|config|schema|api|storage|data|backend|infrastructure)\b/i.test(peerText);
     const issueConsumer = /\b(ui|screen|render|surface|workflow|integration|use|consume|page|command)\b/i.test(issueText);
-    const issuePrereqLanguage = /\b(after|once|using|reuse|extend|build on)\b/i.test(issueText);
-    const blocking = peer.issueNumber < issue.issueNumber && (peerFoundation || issuePrereqLanguage) && overlap >= 1;
+    const issuePrereqLanguage = /\b(after|once|using|reuse|extend|build on|depends on|blocked by|requires)\b/i.test(issueText);
+    const runtimeFoundation = /\b(runtime|contract|interface|protocol)\b/i.test(peerText);
+    const blocking = peer.issueNumber < issue.issueNumber && (peerFoundation || runtimeFoundation || issuePrereqLanguage) && overlap >= 1;
     if (!blocking) continue;
 
-    const confidence: DependencyConfidence = (peerFoundation && issueConsumer && overlap >= 2) ? 'high' : 'medium';
+    const confidence: DependencyConfidence = ((peerFoundation || runtimeFoundation) && (issueConsumer || issuePrereqLanguage) && overlap >= 2) ? 'high' : 'medium';
     edges.push({
       sourceIssue: issue.issueNumber,
       targetIssue: peer.issueNumber,
@@ -438,16 +459,15 @@ export async function buildRankedBacklog(
   config: AgentConfig,
   store: MemoryStore,
 ): Promise<RankedBacklog> {
-  const parts: string[] = [];
-  const allLabels = [...(config.labels ?? [])];
-  const uniqueLabels = [...new Set(allLabels)];
-  if (uniqueLabels.length > 0) {
-    parts.push(...uniqueLabels.map(label => `label:${label}`));
-  }
-  const search = parts.length > 0 ? parts.join(' ') : undefined;
-  const listed = await listRepoIssues(config.owner, config.repo, search, 50);
+  const listed = await listRepoIssues(config.owner, config.repo, undefined, 50);
   const issueScope = config.issues?.length ? new Set(config.issues) : undefined;
-  const baseIssues = (listed.issues ?? []).filter(issue => issueScope ? issueScope.has(issue.number) : true);
+  const baseIssues = (listed.issues ?? []).filter(issue => {
+    if (issueScope && !issueScope.has(issue.number)) return false;
+    if (config.labels?.length) {
+      return config.labels.some(label => issue.labels.includes(label));
+    }
+    return true;
+  });
 
   const memories = await store.read({ type: 'work_log', limit: 200 });
   const persistedContext = await loadContext(config.projectRoot).catch(() => null);
@@ -460,7 +480,11 @@ export async function buildRankedBacklog(
     if (!detail) continue;
     const featureName = deriveFeatureNameFromTitle(detail.title || issue.title);
     const featureState = await assessFeatureStateImpl(config.projectRoot, featureName, issue.number);
-    const dependsOn = extractDependencyHints(detail.body ?? '');
+    const dependsOn = extractDependencyHints(
+      detail.body ?? '',
+      (listed.issues ?? []).map(issue => ({ number: issue.number, title: issue.title })),
+      issue.number,
+    );
     const attemptState = getAttemptState(memories, issue.number);
 
     const candidate: BacklogCandidate = {

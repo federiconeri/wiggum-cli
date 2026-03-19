@@ -210,20 +210,41 @@ describe('buildRankedBacklog', () => {
   it('marks out-of-scope dependencies as blocked_out_of_scope', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [
+        { number: 1, title: 'Build LoopOrchestrator runtime', labels: ['loop'], createdAt: '2026-01-01T00:00:00Z' },
         { number: 2, title: 'Add auth UI', labels: ['P1'], createdAt: '2026-01-02T00:00:00Z' },
       ],
     });
-    mockFetchGitHubIssue.mockResolvedValue({
-      title: 'Add auth UI',
-      body: 'Build auth UI. Depends on #1',
-      labels: ['P1'],
-    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      title: number === 1 ? 'Build LoopOrchestrator runtime' : 'Add auth UI',
+      body: number === 1 ? 'Build the runtime.' : 'Build auth UI. Depends on #1',
+      labels: number === 1 ? ['loop'] : ['P1'],
+    }));
     mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
 
     const ranked = await buildRankedBacklog(makeConfig({ issues: [2] }), makeStore());
 
     expect(ranked.queue[0].actionability).toBe('blocked_out_of_scope');
     expect(ranked.queue[0].blockedBy?.[0]?.reason).toContain('out-of-scope');
+  });
+
+  it('infers out-of-scope dependencies from natural language body cues and backlog titles', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 69, title: 'Build LoopOrchestrator runtime (process supervision + PTY)', labels: ['loop'], createdAt: '2026-01-01T00:00:00Z' },
+        { number: 70, title: 'Define structured loop action IPC', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      title: number === 69 ? 'Build LoopOrchestrator runtime (process supervision + PTY)' : 'Define structured loop action IPC',
+      body: number === 69 ? 'Runtime implementation.' : 'Depends on orchestrator runtime.',
+      labels: ['loop'],
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [70] }), makeStore());
+
+    expect(ranked.queue[0].dependsOn).toEqual([69]);
+    expect(ranked.queue[0].actionability).toBe('blocked_out_of_scope');
   });
 
   it('detects dependency cycles and blocks both issues', async () => {

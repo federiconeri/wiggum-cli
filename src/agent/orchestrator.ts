@@ -251,6 +251,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
     await store.prune();
 
     const processed: AgentIssueState[] = [];
+    const attemptedThisRun = new Set<number>();
     let blockedSnapshot: AgentIssueState[] = [];
 
     while (true) {
@@ -291,7 +292,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         this.emit({ type: 'task_blocked', issue: blocked });
       }
 
-      const next = ranked.actionable[0];
+      const next = ranked.actionable.find(candidate => !attemptedThisRun.has(candidate.issueNumber));
       if (!next) {
         return buildFinalSummary(processed, blockedSnapshot);
       }
@@ -317,6 +318,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         featureState: next.featureState,
         loopFeatureName: next.loopFeatureName,
       };
+      attemptedThisRun.add(selected.issueNumber);
 
       this.emit({ type: 'task_selected', issue: selected });
       this.emit({ type: 'task_started', issue: selected });
