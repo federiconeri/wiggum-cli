@@ -132,11 +132,22 @@ function IssuesPanel({
         <Box marginLeft={1}><Text dimColor>Empty</Text></Box>
       ) : (
         queue.slice(0, 5).map((issue) => (
-          <Box key={issue.issueNumber} marginLeft={1}>
+          <Box key={issue.issueNumber} marginLeft={1} flexDirection="column">
             <Text>
               <Text dimColor>#{issue.issueNumber}</Text>
               <Text> {issue.title}</Text>
             </Text>
+            {(issue.actionability || issue.recommendation || issue.dependsOn?.length || issue.inferredDependsOn?.length) && (
+              <Text dimColor>
+                {issue.actionability ?? 'ready'}
+                {issue.recommendation ? ` · ${issue.recommendation}` : ''}
+                {issue.dependsOn?.length ? ` · explicit: ${issue.dependsOn.map(n => `#${n}`).join(', ')}` : ''}
+                {issue.inferredDependsOn?.length ? ` · inferred: ${issue.inferredDependsOn.map(dep => `#${dep.issueNumber} (${dep.confidence})`).join(', ')}` : ''}
+              </Text>
+            )}
+            {issue.blockedBy?.length ? (
+              <Text color={colors.orange}>  blocked: {issue.blockedBy[0].reason}</Text>
+            ) : null}
           </Box>
         ))
       )}

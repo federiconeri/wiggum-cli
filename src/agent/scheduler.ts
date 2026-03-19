@@ -1,0 +1,549 @@
+import { z } from 'zod';
+import type { MemoryEntry } from './memory/types.js';
+import type { MemoryStore } from './memory/store.js';
+import type {
+  AgentConfig,
+  AgentIssueState,
+  AttemptState,
+  BacklogCandidate,
+  DependencyConfidence,
+  DependencyEdge,
+  PriorityTier,
+  SelectionReason,
+  TaskActionability,
+  TaskScoreBreakdown,
+} from './types.js';
+import { listRepoIssues, fetchGitHubIssue } from '../utils/github.js';
+import { assessFeatureStateImpl } from './tools/feature-state.js';
+import { getTracedAI } from '../utils/tracing.js';
+import { loadContext } from '../context/index.js';
+import { isReasoningModel } from '../ai/providers.js';
+
+const DEPENDENCY_PATTERN = /\b(?:depends on|blocked by|requires|after)\s+#(\d+)/gi;
+const STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'into', 'that', 'this', 'have', 'has', 'will', 'would',
+  'should', 'about', 'issue', 'task', 'feature', 'support', 'implement', 'add', 'build', 'create',
+  'update', 'fix', 'make', 'allow', 'user', 'users', 'cli', 'agent',
+]);
+
+const inferredDependencySchema = z.object({
+  edges: z.array(z.object({
+    targetIssue: z.number().int().positive(),
+    confidence: z.enum(['high', 'medium', 'low']),
+    evidence: z.string().min(1),
+  })).default([]),
+});
+
+export interface RankedBacklog {
+  queue: BacklogCandidate[];
+  actionable: BacklogCandidate[];
+  blocked: BacklogCandidate[];
+}
+
+export function extractDependencyHints(body: string): number[] {
+  const matches = [...body.matchAll(DEPENDENCY_PATTERN)];
+  const numbers = matches.map(m => parseInt(m[1], 10));
+  return [...new Set(numbers)].sort((a, b) => a - b);
+}
+
+export function deriveFeatureNameFromTitle(title: string): string {
+  const words = title
+    .toLowerCase()
+    .replace(/#[0-9]+/g, ' ')
+    .replace(/[^a-z0-9\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter(word => !STOP_WORDS.has(word))
+    .slice(0, 4);
+
+  return (words.length > 0 ? words : ['feature']).join('-');
+}
+
+function derivePriorityTier(labels: string[]): PriorityTier {
+  if (labels.includes('P0')) return 'P0';
+  if (labels.includes('P1')) return 'P1';
+  if (labels.includes('P2')) return 'P2';
+  return 'unlabeled';
+}
+
+function priorityWeight(tier: PriorityTier): number {
+  switch (tier) {
+    case 'P0': return 300;
+    case 'P1': return 200;
+    case 'P2': return 100;
+    default: return 0;
+  }
+}
+
+function attemptWeight(attemptState: AttemptState, recommendation?: string): number {
+  const retryBase = attemptState === 'failure' || attemptState === 'partial' ? 200 : 0;
+  const resumeBase = recommendation === 'resume_implementation' || recommendation === 'resume_pr_phase'
+    ? 160
+    : recommendation === 'generate_plan'
+      ? 80
+      : 0;
+  return retryBase + resumeBase;
+}
+
+function actionabilityWeight(actionability: TaskActionability): number {
+  switch (actionability) {
+    case 'housekeeping': return 1000;
+    case 'ready': return 800;
+    case 'waiting_pr': return 0;
+    case 'blocked_dependency': return 0;
+    case 'blocked_cycle': return 0;
+    case 'blocked_out_of_scope': return 0;
+    default: return 0;
+  }
+}
+
+function existingWorkWeight(candidate: Pick<BacklogCandidate, 'featureState'>): number {
+  const state = candidate.featureState;
+  if (!state) return 0;
+  let weight = 0;
+  if (state.hasExistingBranch) weight += 75;
+  if (state.hasPlan) weight += 75;
+  if ((state.commitsAhead ?? 0) > 0) weight += 75;
+  return weight;
+}
+
+function issueNumberWeight(issueNumber: number): number {
+  return Math.max(0, 1000 - issueNumber);
+}
+
+function getAttemptState(memories: MemoryEntry[], issueNumber: number): AttemptState {
+  const entry = memories.find((item) => item.relatedIssue === issueNumber);
+  if (!entry) return 'never_tried';
+  const tags = new Set(entry.tags ?? []);
+  if (tags.has('failure')) return 'failure';
+  if (tags.has('partial')) return 'partial';
+  if (tags.has('success')) return 'success';
+  if (tags.has('skipped')) return 'skipped';
+  return 'never_tried';
+}
+
+function buildCodebaseContext(persisted: Awaited<ReturnType<typeof loadContext>>): string {
+  if (!persisted?.aiAnalysis) return 'No persisted codebase context available.';
+  const projectContext = persisted.aiAnalysis.projectContext;
+  const lines: string[] = [];
+  if (projectContext?.entryPoints?.length) {
+    lines.push(`Entry points: ${projectContext.entryPoints.join(', ')}`);
+  }
+  if (projectContext?.keyDirectories && Object.keys(projectContext.keyDirectories).length > 0) {
+    lines.push(`Key directories: ${Object.entries(projectContext.keyDirectories).map(([key, value]) => `${key} (${value})`).join(', ')}`);
+  }
+  if (persisted.aiAnalysis.implementationGuidelines?.length) {
+    lines.push(`Implementation guidelines: ${persisted.aiAnalysis.implementationGuidelines.slice(0, 8).join('; ')}`);
+  }
+  if (persisted.aiAnalysis.technologyPractices?.practices?.length) {
+    lines.push(`Technology practices: ${persisted.aiAnalysis.technologyPractices.practices.slice(0, 8).join('; ')}`);
+  }
+  return lines.length > 0 ? lines.join('\n') : 'No persisted codebase context available.';
+}
+
+function normalizeTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/#[0-9]+/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter(word => word.length > 2 && !STOP_WORDS.has(word));
+}
+
+function tokenOverlap(a: string, b: string): number {
+  const left = new Set(normalizeTokens(a));
+  const right = new Set(normalizeTokens(b));
+  if (left.size === 0 || right.size === 0) return 0;
+  let overlap = 0;
+  for (const token of left) {
+    if (right.has(token)) overlap += 1;
+  }
+  return overlap;
+}
+
+function buildFallbackInferredEdges(issue: BacklogCandidate, peers: BacklogCandidate[]): DependencyEdge[] {
+  const edges: DependencyEdge[] = [];
+  const issueText = `${issue.title}\n${issue.body}`;
+  const issueTokens = normalizeTokens(issueText);
+  for (const peer of peers) {
+    if (peer.issueNumber === issue.issueNumber) continue;
+    const peerText = `${peer.title}\n${peer.body}`;
+    const overlap = tokenOverlap(issueText, peerText);
+    if (overlap === 0) continue;
+
+    const peerFoundation = /\b(core|base|foundation|scaffold|setup|config|schema|api|storage|data|backend|infrastructure)\b/i.test(peerText);
+    const issueConsumer = /\b(ui|screen|render|surface|workflow|integration|use|consume|page|command)\b/i.test(issueText);
+    const issuePrereqLanguage = /\b(after|once|using|reuse|extend|build on)\b/i.test(issueText);
+    const blocking = peer.issueNumber < issue.issueNumber && (peerFoundation || issuePrereqLanguage) && overlap >= 1;
+    if (!blocking) continue;
+
+    const confidence: DependencyConfidence = (peerFoundation && issueConsumer && overlap >= 2) ? 'high' : 'medium';
+    edges.push({
+      sourceIssue: issue.issueNumber,
+      targetIssue: peer.issueNumber,
+      kind: 'inferred',
+      confidence,
+      blocking: confidence === 'high',
+      evidence: {
+        summary: `Shared subsystem signals (${[...new Set(issueTokens)].filter(t => peerText.toLowerCase().includes(t)).slice(0, 3).join(', ')}) suggest #${peer.issueNumber} lays groundwork for this issue.`,
+        backlogSignals: [`Issue #${peer.issueNumber} appears more foundational and lower-numbered.`],
+      },
+    });
+  }
+  return edges;
+}
+
+async function inferDependenciesWithModel(
+  config: AgentConfig,
+  issue: BacklogCandidate,
+  peers: BacklogCandidate[],
+  codebaseContext: string,
+): Promise<DependencyEdge[]> {
+  if (!config.modelId || peers.length === 0) return [];
+
+  const { generateObject } = getTracedAI();
+  const peerSummary = peers.map((peer) => (
+    `#${peer.issueNumber}: ${peer.title}\nLabels: ${peer.labels.join(', ') || 'none'}\nBody: ${peer.body.slice(0, 400)}`
+  )).join('\n\n');
+
+  try {
+    const { object } = await generateObject({
+      model: config.model,
+      schema: inferredDependencySchema,
+      system: `You infer issue dependencies conservatively for a backlog orchestrator.
+
+Rules:
+- Only return a dependency if the current issue truly needs another issue to be completed first.
+- Favor infra-before-feature, schema/API-before-consumer, and groundwork-before-integration patterns.
+- Use backlog and codebase context as evidence.
+- Do not return duplicates or speculative edges.`,
+      prompt: `Codebase context:\n${codebaseContext}
+
+Current issue:
+#${issue.issueNumber}: ${issue.title}
+Labels: ${issue.labels.join(', ') || 'none'}
+Body:
+${issue.body.slice(0, 1200)}
+
+Candidate prerequisite issues:
+${peerSummary}
+
+Return only the issues that must or likely should come first.`,
+      ...(isReasoningModel(config.modelId) ? {} : { temperature: 0.1 }),
+      experimental_telemetry: {
+        isEnabled: true,
+        metadata: {
+          agent: 'agent-dependency-inference',
+          issueNumber: String(issue.issueNumber),
+        },
+      },
+    });
+
+    return object.edges
+      .filter(edge => peers.some(peer => peer.issueNumber === edge.targetIssue))
+      .map((edge) => ({
+        sourceIssue: issue.issueNumber,
+        targetIssue: edge.targetIssue,
+        kind: 'inferred' as const,
+        confidence: edge.confidence,
+        blocking: edge.confidence === 'high',
+        evidence: {
+          summary: edge.evidence,
+          codebaseSignals: codebaseContext !== 'No persisted codebase context available.'
+            ? ['Persisted project context was used during dependency inference.']
+            : undefined,
+        },
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function inferDependencyEdges(
+  config: AgentConfig,
+  issue: BacklogCandidate,
+  backlog: BacklogCandidate[],
+  codebaseContext: string,
+): Promise<DependencyEdge[]> {
+  const peers = backlog
+    .filter(peer => peer.issueNumber !== issue.issueNumber)
+    .map(peer => ({ peer, overlap: tokenOverlap(`${issue.title}\n${issue.body}`, `${peer.title}\n${peer.body}`) }))
+    .filter(item => item.overlap > 0 || peerLooksFoundational(item.peer))
+    .sort((a, b) => {
+      if (b.overlap !== a.overlap) return b.overlap - a.overlap;
+      return a.peer.issueNumber - b.peer.issueNumber;
+    })
+    .slice(0, 6)
+    .map(item => item.peer);
+
+  const modelEdges = await inferDependenciesWithModel(config, issue, peers, codebaseContext);
+  if (modelEdges.length > 0) return dedupeEdges([...buildFallbackInferredEdges(issue, peers), ...modelEdges]);
+  return dedupeEdges(buildFallbackInferredEdges(issue, peers));
+}
+
+function peerLooksFoundational(peer: BacklogCandidate): boolean {
+  return /\b(core|base|foundation|setup|scaffold|schema|api|config|storage|backend|infrastructure)\b/i.test(`${peer.title}\n${peer.body}`);
+}
+
+function dedupeEdges(edges: DependencyEdge[]): DependencyEdge[] {
+  const seen = new Set<string>();
+  return edges.filter((edge) => {
+    const key = `${edge.sourceIssue}:${edge.targetIssue}:${edge.kind}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function detectCycleForIssue(
+  issueNumber: number,
+  adjacency: Map<number, number[]>,
+  visiting: Set<number>,
+  visited: Set<number>,
+): boolean {
+  if (visiting.has(issueNumber)) return true;
+  if (visited.has(issueNumber)) return false;
+  visiting.add(issueNumber);
+  const next = adjacency.get(issueNumber) ?? [];
+  for (const dependency of next) {
+    if (detectCycleForIssue(dependency, adjacency, visiting, visited)) return true;
+  }
+  visiting.delete(issueNumber);
+  visited.add(issueNumber);
+  return false;
+}
+
+function buildSelectionReasons(candidate: BacklogCandidate): SelectionReason[] {
+  const reasons: SelectionReason[] = [];
+  if (candidate.actionability === 'housekeeping') {
+    reasons.push({ kind: 'housekeeping', message: 'Issue appears already shipped and only needs housekeeping.' });
+  }
+  if (candidate.attemptState === 'failure' || candidate.attemptState === 'partial') {
+    reasons.push({ kind: 'retry', message: `Previous outcome was ${candidate.attemptState}; resume is preferred over starting new work.` });
+  }
+  if (candidate.priorityTier && candidate.priorityTier !== 'unlabeled') {
+    reasons.push({ kind: 'priority', message: `PM priority ${candidate.priorityTier}.` });
+  }
+  if ((candidate.featureState?.hasExistingBranch ?? false) || (candidate.featureState?.hasPlan ?? false)) {
+    reasons.push({ kind: 'existing_work', message: 'Existing branch or plan work makes this item cheaper to continue.' });
+  }
+  for (const edge of candidate.explicitDependencyEdges) {
+    reasons.push({
+      kind: 'explicit_dependency',
+      message: `Explicitly depends on #${edge.targetIssue}.`,
+      issueNumber: edge.targetIssue,
+      confidence: edge.confidence,
+    });
+  }
+  for (const edge of candidate.inferredDependencyEdges) {
+    reasons.push({
+      kind: 'inferred_dependency',
+      message: edge.evidence.summary,
+      issueNumber: edge.targetIssue,
+      confidence: edge.confidence,
+    });
+  }
+  for (const blocked of candidate.blockedBy ?? []) {
+    reasons.push({
+      kind: 'blocked',
+      message: blocked.reason,
+      issueNumber: blocked.issueNumber,
+      confidence: blocked.confidence,
+    });
+  }
+  return reasons;
+}
+
+function buildScore(candidate: BacklogCandidate): TaskScoreBreakdown {
+  const actionability = actionabilityWeight(candidate.actionability ?? 'blocked_dependency');
+  const retryResume = attemptWeight(candidate.attemptState ?? 'never_tried', candidate.recommendation);
+  const priority = priorityWeight(candidate.priorityTier ?? 'unlabeled');
+  const dependencyHint = -50 * candidate.inferredDependencyEdges.filter(edge => edge.confidence === 'medium').length;
+  const existingWork = existingWorkWeight(candidate);
+  const issueNumber = issueNumberWeight(candidate.issueNumber);
+  return {
+    actionability,
+    retryResume,
+    priority,
+    dependencyHint,
+    existingWork,
+    issueNumber,
+    total: actionability + retryResume + priority + dependencyHint + existingWork + issueNumber,
+  };
+}
+
+function evaluateActionability(
+  candidate: BacklogCandidate,
+  enforcedDependencyMap: Map<number, DependencyEdge[]>,
+  issueScope?: Set<number>,
+): TaskActionability {
+  const recommendation = candidate.recommendation;
+  if (recommendation === 'pr_exists_open' || recommendation === 'linked_pr_open') {
+    return 'waiting_pr';
+  }
+  if (recommendation === 'pr_merged' || recommendation === 'linked_pr_merged') {
+    return 'housekeeping';
+  }
+
+  const blockers: Array<{ issueNumber: number; reason: string; confidence?: DependencyConfidence }> = [];
+  const dependencies = enforcedDependencyMap.get(candidate.issueNumber) ?? [];
+  for (const edge of dependencies) {
+    if (issueScope && !issueScope.has(edge.targetIssue)) {
+      blockers.push({
+        issueNumber: edge.targetIssue,
+        reason: `Depends on out-of-scope issue #${edge.targetIssue}.`,
+        confidence: edge.confidence,
+      });
+      continue;
+    }
+    blockers.push({
+      issueNumber: edge.targetIssue,
+      reason: `${edge.kind === 'explicit' ? 'Explicit' : 'Inferred'} dependency on #${edge.targetIssue}.`,
+      confidence: edge.confidence,
+    });
+  }
+
+  candidate.blockedBy = blockers;
+  if (blockers.some(blocker => blocker.reason.includes('out-of-scope'))) {
+    return 'blocked_out_of_scope';
+  }
+  if (blockers.length > 0) {
+    return 'blocked_dependency';
+  }
+  return 'ready';
+}
+
+function toIssueState(candidate: BacklogCandidate): AgentIssueState {
+  return {
+    issueNumber: candidate.issueNumber,
+    title: candidate.title,
+    labels: candidate.labels,
+    phase: candidate.phase,
+    actionability: candidate.actionability,
+    priorityTier: candidate.priorityTier,
+    dependsOn: candidate.dependsOn,
+    inferredDependsOn: candidate.inferredDependsOn,
+    blockedBy: candidate.blockedBy,
+    recommendation: candidate.recommendation,
+    selectionReasons: candidate.selectionReasons,
+    score: candidate.score,
+    attemptState: candidate.attemptState,
+    featureState: candidate.featureState,
+    loopFeatureName: candidate.loopFeatureName,
+  };
+}
+
+export async function buildRankedBacklog(
+  config: AgentConfig,
+  store: MemoryStore,
+): Promise<RankedBacklog> {
+  const parts: string[] = [];
+  const allLabels = [...(config.labels ?? [])];
+  const uniqueLabels = [...new Set(allLabels)];
+  if (uniqueLabels.length > 0) {
+    parts.push(...uniqueLabels.map(label => `label:${label}`));
+  }
+  const search = parts.length > 0 ? parts.join(' ') : undefined;
+  const listed = await listRepoIssues(config.owner, config.repo, search, 50);
+  const issueScope = config.issues?.length ? new Set(config.issues) : undefined;
+  const baseIssues = (listed.issues ?? []).filter(issue => issueScope ? issueScope.has(issue.number) : true);
+
+  const memories = await store.read({ type: 'work_log', limit: 200 });
+  const persistedContext = await loadContext(config.projectRoot).catch(() => null);
+  const codebaseContext = buildCodebaseContext(persistedContext);
+
+  const candidates: BacklogCandidate[] = [];
+
+  for (const issue of baseIssues) {
+    const detail = await fetchGitHubIssue(config.owner, config.repo, issue.number);
+    if (!detail) continue;
+    const featureName = deriveFeatureNameFromTitle(detail.title || issue.title);
+    const featureState = await assessFeatureStateImpl(config.projectRoot, featureName, issue.number);
+    const dependsOn = extractDependencyHints(detail.body ?? '');
+    const attemptState = getAttemptState(memories, issue.number);
+
+    const candidate: BacklogCandidate = {
+      issueNumber: issue.number,
+      title: detail.title || issue.title,
+      labels: detail.labels ?? issue.labels ?? [],
+      body: detail.body ?? '',
+      createdAt: issue.createdAt,
+      phase: 'idle',
+      priorityTier: derivePriorityTier(detail.labels ?? issue.labels ?? []),
+      dependsOn,
+      explicitDependencyEdges: dependsOn.map((targetIssue) => ({
+        sourceIssue: issue.number,
+        targetIssue,
+        kind: 'explicit' as const,
+        confidence: 'high' as const,
+        blocking: true,
+        evidence: { summary: `Issue body explicitly references #${targetIssue} as a prerequisite.` },
+      })),
+      inferredDependencyEdges: [],
+      attemptState,
+      featureState: {
+        recommendation: featureState.recommendation,
+        hasExistingBranch: featureState.branch.exists,
+        commitsAhead: featureState.branch.commitsAhead,
+        hasPlan: featureState.plan.exists,
+        hasOpenPr: featureState.pr.state === 'OPEN' || featureState.linkedPr.state === 'OPEN',
+      },
+      loopFeatureName: featureName,
+      recommendation: featureState.recommendation,
+    };
+    candidates.push(candidate);
+  }
+
+  for (const candidate of candidates) {
+    candidate.inferredDependencyEdges = await inferDependencyEdges(config, candidate, candidates, codebaseContext);
+    candidate.inferredDependsOn = candidate.inferredDependencyEdges.map((edge) => ({
+      issueNumber: edge.targetIssue,
+      confidence: edge.confidence,
+    }));
+  }
+
+  const enforcedDependencyMap = new Map<number, DependencyEdge[]>();
+  for (const candidate of candidates) {
+    const enforced = [
+      ...candidate.explicitDependencyEdges,
+      ...candidate.inferredDependencyEdges.filter(edge => edge.confidence === 'high'),
+    ];
+    enforcedDependencyMap.set(candidate.issueNumber, enforced);
+  }
+
+  const adjacency = new Map<number, number[]>();
+  for (const [issueNumber, edges] of enforcedDependencyMap.entries()) {
+    adjacency.set(issueNumber, edges.map(edge => edge.targetIssue));
+  }
+
+  const visited = new Set<number>();
+  for (const candidate of candidates) {
+    const hasCycle = detectCycleForIssue(candidate.issueNumber, adjacency, new Set<number>(), visited);
+    if (hasCycle) {
+      candidate.actionability = 'blocked_cycle';
+      candidate.blockedBy = [{ issueNumber: candidate.issueNumber, reason: 'Dependency cycle detected.' }];
+    } else {
+      candidate.actionability = evaluateActionability(candidate, enforcedDependencyMap, issueScope);
+    }
+    candidate.selectionReasons = buildSelectionReasons(candidate);
+    candidate.score = buildScore(candidate);
+  }
+
+  const queue = [...candidates].sort((left, right) => {
+    const leftScore = left.score?.total ?? 0;
+    const rightScore = right.score?.total ?? 0;
+    if (rightScore !== leftScore) return rightScore - leftScore;
+    return left.issueNumber - right.issueNumber;
+  });
+
+  return {
+    queue,
+    actionable: queue.filter(candidate => candidate.actionability === 'ready' || candidate.actionability === 'housekeeping'),
+    blocked: queue.filter(candidate => candidate.actionability !== 'ready' && candidate.actionability !== 'housekeeping'),
+  };
+}
+
+export function toIssueStates(queue: BacklogCandidate[]): AgentIssueState[] {
+  return queue.map(toIssueState);
+}

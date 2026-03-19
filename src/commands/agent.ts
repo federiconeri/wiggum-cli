@@ -71,6 +71,30 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
         log(`[tool:done] ${tr.toolName} → ${summary}`);
       }
     },
+    onOrchestratorEvent: (event) => {
+      const log = options.stream
+        ? (msg: string) => process.stdout.write(`${msg}\n`)
+        : (msg: string) => logger.info(msg);
+
+      switch (event.type) {
+        case 'queue_ranked':
+          log(`[orchestrator] ranked ${event.queue.length} issue(s)`);
+          break;
+        case 'task_selected': {
+          const reason = event.issue.selectionReasons?.[0]?.message;
+          log(`[orchestrator] selected #${event.issue.issueNumber}${reason ? ` — ${reason}` : ''}`);
+          break;
+        }
+        case 'task_blocked':
+          log(`[orchestrator] blocked #${event.issue.issueNumber} — ${event.issue.blockedBy?.[0]?.reason ?? event.issue.actionability ?? 'blocked'}`);
+          break;
+        case 'task_completed':
+          log(`[orchestrator] completed #${event.issue.issueNumber} (${event.outcome})`);
+          break;
+        default:
+          break;
+      }
+    },
     onProgress: (toolName, line) => {
       const log = options.stream
         ? (msg: string) => process.stdout.write(`${msg}\n`)

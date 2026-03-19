@@ -12,7 +12,15 @@ import { resolveAgentEnv } from '../../agent/resolve-config.js';
 import {
   createAgentOrchestrator,
 } from '../../agent/orchestrator.js';
-import type { AgentConfig, AgentStepEvent, AgentIssueState, AgentLogEntry, AgentPhase, ReviewMode } from '../../agent/types.js';
+import type {
+  AgentConfig,
+  AgentOrchestratorEvent,
+  AgentStepEvent,
+  AgentIssueState,
+  AgentLogEntry,
+  AgentPhase,
+  ReviewMode,
+} from '../../agent/types.js';
 import { initTracing, flushTracing } from '../../utils/tracing.js';
 import {
   readCurrentPhase,
@@ -108,7 +116,6 @@ function interpretToolCalls(
   stopLoopPolling: () => void,
   ranLoopRef: React.MutableRefObject<Set<number>>,
   activeIssueRef: React.MutableRefObject<AgentIssueState | null>,
-  issueNumberFilter?: Set<number>,
 ): void {
   // If a new tool call arrives while polling, the runLoop tool has finished — stop polling
   for (const tc of event.toolCalls) {
@@ -286,15 +293,6 @@ function interpretToolCalls(
     }
   }
 
-  // Detect whether listIssues was called with a label filter (e.g. P0 check)
-  // so we don't overwrite the queue with a filtered subset.
-  const listIssuesHasLabelFilter = event.toolCalls.some((tc) => {
-    if (tc.toolName !== 'listIssues') return false;
-    const args = tc.args as Record<string, unknown> | undefined;
-    const labels = args?.labels as string[] | undefined;
-    return Array.isArray(labels) && labels.length > 0;
-  });
-
   // Process tool results for additional state updates
   for (const tr of event.toolResults) {
     const result = tr.result as Record<string, unknown> | undefined;
@@ -303,36 +301,8 @@ function interpretToolCalls(
       case 'listIssues': {
         const issues = (result?.issues ?? result) as Array<Record<string, unknown>> | undefined;
         if (Array.isArray(issues)) {
-          // Only update queue from unfiltered listIssues calls (full backlog scan).
-          // Filtered calls (e.g. labels: ["bug"]) are P0/blocker checks — not the backlog.
-          if (!listIssuesHasLabelFilter) {
-            // When --issues is configured, defensively filter queue to only those issues
-            // (the tool should already filter, but this guards against edge cases)
-            const relevantIssues = issueNumberFilter
-              ? issues.filter(i => issueNumberFilter.has((i.number ?? i.issueNumber) as number))
-              : issues;
-            const queueItems: AgentIssueState[] = relevantIssues.map((issue) => ({
-              issueNumber: (issue.number ?? issue.issueNumber) as number,
-              title: (issue.title as string) ?? `Issue #${issue.number ?? issue.issueNumber}`,
-              labels: Array.isArray(issue.labels) ? issue.labels as string[] : [],
-              phase: 'idle' as AgentPhase,
-            }));
-            setQueue(queueItems);
-          }
           setLogEntries((prev) =>
             appendLog(prev, `Found ${issues.length} issue(s) in backlog`),
-          );
-        }
-        break;
-      }
-
-      case 'readIssue': {
-        // Update queue entry titles from full issue data (agent reads many issues during triage)
-        const issueNumber = (result?.number ?? result?.issueNumber) as number | undefined;
-        const title = result?.title as string | undefined;
-        if (issueNumber && title) {
-          setQueue((prev) =>
-            prev.map((i) => i.issueNumber === issueNumber ? { ...i, title } : i),
           );
         }
         break;
@@ -351,6 +321,58 @@ function interpretToolCalls(
       default:
         break;
     }
+  }
+}
+
+function applyOrchestratorEvent(
+  event: AgentOrchestratorEvent,
+  setActiveIssue: React.Dispatch<React.SetStateAction<AgentIssueState | null>>,
+  setQueue: React.Dispatch<React.SetStateAction<AgentIssueState[]>>,
+  setCompleted: React.Dispatch<React.SetStateAction<AgentIssueState[]>>,
+  setLogEntries: React.Dispatch<React.SetStateAction<AgentLogEntry[]>>,
+): void {
+  switch (event.type) {
+    case 'backlog_scanned':
+      setLogEntries((prev) => appendLog(prev, `Scanned ${event.total} backlog issue(s)`));
+      break;
+
+    case 'candidate_enriched':
+      setLogEntries((prev) => appendLog(prev, `Enriched #${event.issue.issueNumber}: ${event.issue.title}`));
+      break;
+
+    case 'dependencies_inferred':
+      if (event.edges.length > 0) {
+        setLogEntries((prev) => appendLog(prev, `Inferred ${event.edges.length} dependency edge(s) for #${event.issueNumber}`));
+      }
+      break;
+
+    case 'queue_ranked':
+      setQueue(event.queue);
+      break;
+
+    case 'task_selected':
+      setActiveIssue({ ...event.issue, phase: 'planning' as AgentPhase });
+      setQueue((prev) => prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber));
+      setLogEntries((prev) => appendLog(prev, `Selected #${event.issue.issueNumber}: ${event.issue.title}`));
+      break;
+
+    case 'task_blocked':
+      setLogEntries((prev) => appendLog(prev, `Blocked #${event.issue.issueNumber}: ${event.issue.blockedBy?.[0]?.reason ?? event.issue.actionability ?? 'blocked'}`, 'warn'));
+      break;
+
+    case 'task_started':
+      setActiveIssue((prev) => ({ ...(prev ?? event.issue), ...event.issue }));
+      setLogEntries((prev) => appendLog(prev, `Started #${event.issue.issueNumber}`));
+      break;
+
+    case 'task_completed':
+      setCompleted((prev) => prev.some((issue) => issue.issueNumber === event.issue.issueNumber) ? prev : [...prev, event.issue]);
+      setActiveIssue((prev) => prev?.issueNumber === event.issue.issueNumber ? null : prev);
+      setLogEntries((prev) => appendLog(prev, `Completed #${event.issue.issueNumber} (${event.outcome})`, event.outcome === 'failure' ? 'error' : 'success'));
+      break;
+
+    default:
+      break;
   }
 }
 
@@ -517,10 +539,6 @@ export function useAgentOrchestrator(
           appendLog(prev, `Using ${env.provider}/${env.modelId ?? 'default'} on ${env.owner}/${env.repo}`),
         );
 
-        const issueFilter = options.issues?.length
-          ? new Set(options.issues)
-          : undefined;
-
         const agentConfig: AgentConfig = {
           model: env.model,
           modelId: env.modelId,
@@ -545,7 +563,15 @@ export function useAgentOrchestrator(
               stopLoopPolling,
               ranLoopRef,
               activeIssueRef,
-              issueFilter,
+            );
+          },
+          onOrchestratorEvent: (event: AgentOrchestratorEvent) => {
+            applyOrchestratorEvent(
+              event,
+              setActiveIssue,
+              setQueue,
+              setCompleted,
+              setLogEntries,
             );
           },
           onProgress: (toolName: string, line: string) => {
