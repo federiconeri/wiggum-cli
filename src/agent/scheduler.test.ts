@@ -207,6 +207,36 @@ describe('buildRankedBacklog', () => {
     expect(uiIssue?.inferredDependsOn).toEqual([{ issueNumber: 5, confidence: 'medium' }]);
   });
 
+  it('produces clearer fallback rationale for runtime-first inferred dependencies', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 74, title: 'Create native agent runtime interface + tool execution contract', labels: ['ai/llm'], createdAt: '2026-01-01T00:00:00Z' },
+        { number: 76, title: 'Build native-agent evaluation harness and baseline benchmarks', labels: ['ai/llm'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 74
+        ? 'Create native agent runtime interface + tool execution contract'
+        : 'Build native-agent evaluation harness and baseline benchmarks',
+      body: number === 74
+        ? 'Define a native runtime interface and tool execution contract.'
+        : 'Create an evaluation harness to compare native-agent behavior against baseline runs.',
+      labels: ['ai/llm'],
+      state: 'open',
+      createdAt: number === 74 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+    mockGenerateObject.mockResolvedValue({ object: { edges: [] } });
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [74, 76] }), makeStore());
+    const evalIssue = ranked.queue.find((issue) => issue.issueNumber === 76);
+
+    expect(evalIssue?.selectionReasons?.some(reason =>
+      reason.message.includes('defines the native runtime contract') && reason.message.includes('evaluation work'),
+    )).toBe(true);
+  });
+
   it('expands issue scope to include explicit prerequisites', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

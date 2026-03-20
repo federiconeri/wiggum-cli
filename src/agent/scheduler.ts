@@ -212,10 +212,55 @@ function tokenOverlap(a: string, b: string): number {
   return overlap;
 }
 
+function sharedSignals(issueText: string, peerText: string): string[] {
+  const issueTokens = new Set(normalizeTokens(issueText));
+  const peerTokens = new Set(normalizeTokens(peerText));
+  const signals = [...issueTokens]
+    .filter(token => peerTokens.has(token))
+    .filter(token => token.length >= 5)
+    .slice(0, 3);
+  return signals;
+}
+
+function describeFallbackDependency(
+  issue: BacklogCandidate,
+  peer: BacklogCandidate,
+  shared: string[],
+): string {
+  const issueText = `${issue.title}\n${issue.body}`;
+  const peerText = `${peer.title}\n${peer.body}`;
+
+  const runtimeFoundation = /\b(runtime|contract|interface|protocol)\b/i.test(peerText);
+  const evalWork = /\b(eval|evaluation|benchmark|baseline|metric|report|harness)\b/i.test(issueText);
+  const rolloutWork = /\b(rollout|rollback|flag|fallback|kill switch|control)\b/i.test(issueText);
+  const hybridWork = /\b(hybrid|handoff|routing|phase)\b/i.test(issueText);
+  const consumerWork = /\b(ui|screen|render|surface|workflow|integration|consume|page|command)\b/i.test(issueText);
+  const apiFoundation = /\b(schema|api|backend|storage|infrastructure|foundation|setup|config)\b/i.test(peerText);
+
+  if (runtimeFoundation && evalWork) {
+    return `#${peer.issueNumber} defines the native runtime contract that this evaluation work should measure against first.`;
+  }
+  if (runtimeFoundation && rolloutWork) {
+    return `#${peer.issueNumber} establishes the native runtime foundation that this rollout work depends on.`;
+  }
+  if (runtimeFoundation && hybridWork) {
+    return `#${peer.issueNumber} defines the runtime contract that this hybrid execution work builds on.`;
+  }
+  if (runtimeFoundation) {
+    return `#${peer.issueNumber} defines the runtime contract that this issue likely needs first.`;
+  }
+  if (apiFoundation && consumerWork) {
+    return `#${peer.issueNumber} provides the foundational API or infrastructure that this issue consumes.`;
+  }
+  if (shared.length > 0) {
+    return `#${peer.issueNumber} appears to be the more foundational issue in the same subsystem (${shared.join(', ')}).`;
+  }
+  return `#${peer.issueNumber} appears to be the more foundational issue that this work builds on.`;
+}
+
 function buildFallbackInferredEdges(issue: BacklogCandidate, peers: BacklogCandidate[]): DependencyEdge[] {
   const edges: DependencyEdge[] = [];
   const issueText = `${issue.title}\n${issue.body}`;
-  const issueTokens = normalizeTokens(issueText);
   for (const peer of peers) {
     if (peer.issueNumber === issue.issueNumber) continue;
     const peerText = `${peer.title}\n${peer.body}`;
@@ -230,6 +275,7 @@ function buildFallbackInferredEdges(issue: BacklogCandidate, peers: BacklogCandi
     if (!blocking) continue;
 
     const confidence: DependencyConfidence = ((peerFoundation || runtimeFoundation) && (issueConsumer || issuePrereqLanguage) && overlap >= 2) ? 'high' : 'medium';
+    const shared = sharedSignals(issueText, peerText);
     edges.push({
       sourceIssue: issue.issueNumber,
       targetIssue: peer.issueNumber,
@@ -237,7 +283,7 @@ function buildFallbackInferredEdges(issue: BacklogCandidate, peers: BacklogCandi
       confidence,
       blocking: confidence === 'high',
       evidence: {
-        summary: `Shared subsystem signals (${[...new Set(issueTokens)].filter(t => peerText.toLowerCase().includes(t)).slice(0, 3).join(', ')}) suggest #${peer.issueNumber} lays groundwork for this issue.`,
+        summary: describeFallbackDependency(issue, peer, shared),
         backlogSignals: [`Issue #${peer.issueNumber} appears more foundational and lower-numbered.`],
       },
     });
