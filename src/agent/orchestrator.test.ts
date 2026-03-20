@@ -1,8 +1,21 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockMemoryStoreRead, mockMemoryStorePrune } = vi.hoisted(() => ({
+const {
+  mockMemoryStoreRead,
+  mockMemoryStorePrune,
+  mockBuildRankedBacklog,
+  mockToIssueStates,
+  mockIngestStrategicDocs,
+  mockToolLoopStream,
+} = vi.hoisted(() => ({
   mockMemoryStoreRead: vi.fn().mockResolvedValue([]),
   mockMemoryStorePrune: vi.fn().mockResolvedValue(0),
+  mockBuildRankedBacklog: vi.fn(),
+  mockToIssueStates: vi.fn((queue) => queue),
+  mockIngestStrategicDocs: vi.fn().mockResolvedValue(0),
+  mockToolLoopStream: vi.fn().mockResolvedValue({
+    textStream: (async function* () {})(),
+  }),
 }));
 
 vi.mock('./memory/store.js', () => {
@@ -14,12 +27,76 @@ vi.mock('./memory/store.js', () => {
 });
 
 vi.mock('./memory/ingest.js', () => ({
-  ingestStrategicDocs: vi.fn().mockResolvedValue(0),
+  ingestStrategicDocs: mockIngestStrategicDocs,
+}));
+
+vi.mock('./scheduler.js', () => ({
+  buildRankedBacklog: mockBuildRankedBacklog,
+  toIssueStates: mockToIssueStates,
+}));
+
+vi.mock('./tools/backlog.js', () => ({
+  createBacklogTools: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock('./tools/memory.js', () => ({
+  createMemoryTools: vi.fn().mockReturnValue({}),
+  REFLECT_TOOL_NAME: 'reflectOnWork',
+}));
+
+vi.mock('./tools/execution.js', () => ({
+  createExecutionTools: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock('./tools/reporting.js', () => ({
+  createReportingTools: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock('./tools/introspection.js', () => ({
+  createIntrospectionTools: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock('./tools/dry-run.js', () => ({
+  createDryRunExecutionTools: vi.fn().mockReturnValue({}),
+  createDryRunFeatureStateTools: vi.fn().mockReturnValue({}),
+  createDryRunReportingTools: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock('./tools/feature-state.js', () => ({
+  createFeatureStateTools: vi.fn().mockReturnValue({}),
+}));
+
+vi.mock('../utils/logger.js', () => ({
+  logger: {
+    info: vi.fn(),
+    debug: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  },
+}));
+
+vi.mock('../utils/tracing.js', () => ({
+  getTracedAI: () => ({
+    ToolLoopAgent: class MockToolLoopAgent {
+      stream = mockToolLoopStream;
+    },
+  }),
 }));
 
 import { AGENT_SYSTEM_PROMPT, buildConstraints, buildRuntimeConfig, createAgentOrchestrator } from './orchestrator.js';
 
 describe('createAgentOrchestrator', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockMemoryStoreRead.mockResolvedValue([]);
+    mockMemoryStorePrune.mockResolvedValue(0);
+    mockIngestStrategicDocs.mockResolvedValue(0);
+    mockToIssueStates.mockImplementation((queue) => queue);
+    mockToolLoopStream.mockResolvedValue({
+      textStream: (async function* () {})(),
+    });
+  });
+
   it('returns an agent-v1 compatible wrapper', () => {
     const agent = createAgentOrchestrator({
       model: {} as any,
@@ -41,6 +118,81 @@ describe('createAgentOrchestrator', () => {
     expect(AGENT_SYSTEM_PROMPT).toContain('assessFeatureState');
     expect(AGENT_SYSTEM_PROMPT).toContain('reflectOnWork');
     expect(AGENT_SYSTEM_PROMPT).toContain('Do not select another issue');
+  });
+
+  it('emits scope expansion and does not reselect the same issue in one run', async () => {
+    const queue = [
+      {
+        issueNumber: 69,
+        title: 'Build LoopOrchestrator runtime',
+        body: 'Runtime implementation.',
+        labels: ['loop'],
+        phase: 'idle',
+        actionability: 'ready',
+        priorityTier: 'unlabeled',
+        selectionReasons: [{ kind: 'scope_expansion', message: 'Pulled into scope as a prerequisite for #70.' }],
+        recommendation: 'start_fresh',
+        loopFeatureName: 'loop-runtime',
+        scopeOrigin: 'dependency',
+        requestedBy: [70],
+        explicitDependencyEdges: [],
+        inferredDependencyEdges: [],
+      },
+      {
+        issueNumber: 70,
+        title: 'Define structured loop action IPC',
+        body: 'Depends on orchestrator runtime.',
+        labels: ['loop'],
+        phase: 'idle',
+        actionability: 'blocked_dependency',
+        priorityTier: 'unlabeled',
+        blockedBy: [{ issueNumber: 69, reason: 'Explicit dependency on #69.', confidence: 'high' }],
+        selectionReasons: [{ kind: 'blocked', message: 'Explicit dependency on #69.', issueNumber: 69, confidence: 'high' }],
+        recommendation: 'start_fresh',
+        loopFeatureName: 'loop-ipc',
+        scopeOrigin: 'requested',
+        explicitDependencyEdges: [],
+        inferredDependencyEdges: [],
+      },
+    ];
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue,
+        actionable: [queue[0]],
+        blocked: [queue[1]],
+        expansions: [{ issueNumber: 69, requestedBy: [70] }],
+      })
+      .mockResolvedValueOnce({
+        queue,
+        actionable: [queue[0]],
+        blocked: [queue[1]],
+        expansions: [{ issueNumber: 69, requestedBy: [70] }],
+      });
+
+    const events: Array<{ type: string; issue?: number }> = [];
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      onOrchestratorEvent: (event) => {
+        events.push({
+          type: event.type,
+          issue: 'issue' in event && event.issue ? event.issue.issueNumber : undefined,
+        });
+      },
+    });
+
+    const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
+
+    expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(2);
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
+    expect(result.text).toContain('Processed 1 issue(s).');
+    expect(result.text).toContain('Completed: #69');
+    expect(result.text).toContain('Blocked: #70 (blocked_dependency)');
+    expect(events.some((event) => event.type === 'scope_expanded')).toBe(true);
+    expect(events.filter((event) => event.type === 'task_selected').map((event) => event.issue)).toEqual([69]);
   });
 });
 

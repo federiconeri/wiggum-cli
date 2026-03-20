@@ -81,6 +81,10 @@ describe('agentCommand', () => {
     mockGetAvailableProvider.mockReturnValue('anthropic');
     mockDetectGitHubRemote.mockResolvedValue({ owner: 'acme', repo: 'app' });
     mockGenerate.mockResolvedValue({ text: 'Agent completed 3 issues.' });
+    mockCreateAgentOrchestrator.mockImplementation(() => ({
+      generate: mockGenerate,
+      stream: mockStream,
+    }));
     mockLoadConfigWithDefaults.mockResolvedValue({
       agent: {
         defaultProvider: 'anthropic',
@@ -157,6 +161,42 @@ describe('agentCommand', () => {
     expect(stdoutWriteSpy).toHaveBeenCalledWith('Streaming ');
     expect(stdoutWriteSpy).toHaveBeenCalledWith('output');
     expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  it('streams orchestrator scheduler events to stdout in stream mode', async () => {
+    let orchestratorConfig: any;
+    mockCreateAgentOrchestrator.mockImplementation((config) => {
+      orchestratorConfig = config;
+      return {
+        generate: mockGenerate,
+        stream: vi.fn().mockImplementation(async () => {
+          config.onOrchestratorEvent?.({ type: 'scope_expanded', expansions: [{ issueNumber: 69, requestedBy: [70] }] });
+          config.onOrchestratorEvent?.({
+            type: 'task_blocked',
+            issue: {
+              issueNumber: 70,
+              title: 'Define structured loop action IPC',
+              labels: ['loop'],
+              phase: 'idle',
+              actionability: 'blocked_dependency',
+              blockedBy: [{ issueNumber: 69, reason: 'Explicit dependency on #69.' }],
+            },
+          });
+          return {
+            textStream: (async function* () {
+              yield 'Summary';
+            })(),
+          };
+        }),
+      };
+    });
+
+    await agentCommand({ stream: true });
+
+    expect(orchestratorConfig).toBeDefined();
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] expanded scope with #69\n');
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] blocked #70 — Explicit dependency on #69.\n');
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('Summary');
   });
 
   it('passes maxSteps and maxItems to orchestrator config', async () => {
