@@ -485,8 +485,8 @@ Press Esc to cancel any operation.
         diagnoseGh: parsed.flags.diagnoseGh === true,
       };
 
-      if (agentOpts.stream === true) {
-        // Explicit --stream: always headless
+      if (agentOpts.stream === true || agentOpts.diagnoseGh === true) {
+        // Explicit headless modes
         const { agentCommand } = await import('./commands/agent.js');
         await agentCommand(agentOpts);
       } else if (process.stdout.isTTY && !isCI()) {
