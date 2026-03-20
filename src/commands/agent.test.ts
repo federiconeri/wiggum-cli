@@ -5,6 +5,7 @@ const {
   mockGetAvailableProvider,
   mockGetModel,
   mockDetectGitHubRemote,
+  mockRunGitHubDiagnostics,
   mockCreateAgentOrchestrator,
   mockLoadConfigWithDefaults,
   mockGenerate,
@@ -26,6 +27,10 @@ const {
       modelId: 'claude-sonnet-4-6',
     }),
     mockDetectGitHubRemote: vi.fn().mockResolvedValue({ owner: 'acme', repo: 'app' }),
+    mockRunGitHubDiagnostics: vi.fn().mockResolvedValue({
+      success: true,
+      checks: [{ name: 'gh version', ok: true, message: 'ok' }],
+    }),
     mockCreateAgentOrchestrator: vi.fn().mockImplementation(() => ({
       generate: mockGenerate,
       stream: mockStream,
@@ -49,6 +54,7 @@ vi.mock('../ai/providers.js', () => ({
 
 vi.mock('../utils/github.js', () => ({
   detectGitHubRemote: mockDetectGitHubRemote,
+  runGitHubDiagnostics: mockRunGitHubDiagnostics,
 }));
 
 vi.mock('../utils/config.js', () => ({
@@ -80,6 +86,10 @@ describe('agentCommand', () => {
     vi.clearAllMocks();
     mockGetAvailableProvider.mockReturnValue('anthropic');
     mockDetectGitHubRemote.mockResolvedValue({ owner: 'acme', repo: 'app' });
+    mockRunGitHubDiagnostics.mockResolvedValue({
+      success: true,
+      checks: [{ name: 'gh version', ok: true, message: 'ok' }],
+    });
     mockGenerate.mockResolvedValue({ text: 'Agent completed 3 issues.' });
     mockCreateAgentOrchestrator.mockImplementation(() => ({
       generate: mockGenerate,
@@ -146,6 +156,23 @@ describe('agentCommand', () => {
     );
     expect(mockGenerate).toHaveBeenCalledWith({ prompt: 'Begin working through the backlog.' });
     expect(consoleLogSpy).toHaveBeenCalledWith('Agent completed 3 issues.');
+  });
+
+  it('runs GitHub diagnostics without creating the orchestrator', async () => {
+    mockRunGitHubDiagnostics.mockResolvedValue({
+      success: true,
+      checks: [
+        { name: 'gh version', ok: true, message: 'ok' },
+        { name: 'gh issue list', ok: true, message: 'ok' },
+      ],
+    });
+
+    await agentCommand({ diagnoseGh: true, issues: [70] });
+
+    expect(mockRunGitHubDiagnostics).toHaveBeenCalledWith('acme', 'app', 70);
+    expect(mockCreateAgentOrchestrator).not.toHaveBeenCalled();
+    expect(consoleLogSpy).toHaveBeenCalledWith('[diagnose-gh] OK gh version: ok');
+    expect(consoleLogSpy).toHaveBeenCalledWith('[diagnose-gh] OK gh issue list: ok');
   });
 
   it('uses stream mode when --stream flag is set', async () => {
@@ -287,6 +314,16 @@ describe('agentCommand', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Network timeout'),
+    );
+  });
+
+  it('prints a GitHub diagnostic hint when backlog fetch fails', async () => {
+    mockStream.mockRejectedValue(new Error('Failed to fetch issue #70 from GitHub while expanding dependencies. Check gh connectivity.'));
+
+    await expect(agentCommand({ stream: true, issues: [70] })).rejects.toThrow('process.exit(1)');
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Hint: run 'wiggum agent --diagnose-gh --issues 70'"),
     );
   });
 

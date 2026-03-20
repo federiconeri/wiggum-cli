@@ -101,6 +101,17 @@ export interface ListIssuesResult {
   error?: string;
 }
 
+export interface GitHubDiagnosticCheck {
+  name: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface GitHubDiagnostics {
+  success: boolean;
+  checks: GitHubDiagnosticCheck[];
+}
+
 export async function listRepoIssues(
   owner: string,
   repo: string,
@@ -135,6 +146,47 @@ export async function listRepoIssues(
     }
     return { issues: [] };
   }
+}
+
+async function runDiagnosticCheck(name: string, cmd: string, args: string[]): Promise<GitHubDiagnosticCheck> {
+  try {
+    await safeExecWithRetry(cmd, args);
+    return { name, ok: true, message: 'ok' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { name, ok: false, message };
+  }
+}
+
+export async function runGitHubDiagnostics(
+  owner: string,
+  repo: string,
+  issueNumber?: number,
+): Promise<GitHubDiagnostics> {
+  const checks: GitHubDiagnosticCheck[] = [];
+
+  checks.push(await runDiagnosticCheck('gh version', 'gh', ['--version']));
+  checks.push(await runDiagnosticCheck('gh auth status', 'gh', ['auth', 'status']));
+  checks.push(await runDiagnosticCheck('gh issue list', 'gh', [
+    'issue', 'list',
+    '--repo', `${owner}/${repo}`,
+    '--limit', '1',
+    '--state', 'open',
+    '--json', 'number',
+  ]));
+
+  if (issueNumber != null) {
+    checks.push(await runDiagnosticCheck(`gh issue view #${issueNumber}`, 'gh', [
+      'issue', 'view', String(issueNumber),
+      '--repo', `${owner}/${repo}`,
+      '--json', 'number,title',
+    ]));
+  }
+
+  return {
+    success: checks.every(check => check.ok),
+    checks,
+  };
 }
 
 export async function detectGitHubRemote(

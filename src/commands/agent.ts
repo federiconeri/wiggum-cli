@@ -14,6 +14,7 @@ import {
 import { resolveAgentEnv } from '../agent/resolve-config.js';
 import type { AgentConfig } from '../agent/types.js';
 import { initTracing, flushTracing, traced, currentSpan } from '../utils/tracing.js';
+import { detectGitHubRemote, runGitHubDiagnostics } from '../utils/github.js';
 
 export interface AgentOptions {
   model?: string;
@@ -24,10 +25,30 @@ export interface AgentOptions {
   reviewMode?: 'manual' | 'auto' | 'merge';
   dryRun?: boolean;
   stream?: boolean;
+  diagnoseGh?: boolean;
 }
 
 export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   const projectRoot = process.cwd();
+
+  if (options.diagnoseGh) {
+    const repo = await detectGitHubRemote(projectRoot);
+    if (!repo) {
+      console.error('Error: No GitHub remote detected. Run this inside a git repo with an origin remote.');
+      process.exit(1);
+    }
+
+    const diagnostics = await runGitHubDiagnostics(repo.owner, repo.repo, options.issues?.[0]);
+    for (const check of diagnostics.checks) {
+      const status = check.ok ? 'OK' : 'FAIL';
+      console.log(`[diagnose-gh] ${status} ${check.name}: ${check.message}`);
+    }
+
+    if (!diagnostics.success) {
+      process.exit(1);
+    }
+    return;
+  }
 
   // Initialize Braintrust tracing (no-op if BRAINTRUST_API_KEY not set)
   initTracing();
@@ -156,6 +177,9 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Error: Agent failed — ${message}`);
+    if (message.includes('GitHub') || message.includes('gh ')) {
+      console.error(`Hint: run 'wiggum agent --diagnose-gh${options.issues?.length ? ` --issues ${options.issues.join(',')}` : ''}' to inspect GitHub connectivity.`);
+    }
     process.exit(1);
   } finally {
     await flushTracing();

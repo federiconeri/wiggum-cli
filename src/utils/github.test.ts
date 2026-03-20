@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { isGitHubIssueUrl, parseGitHubRemote, isGhInstalled, fetchGitHubIssue, listRepoIssues, detectGitHubRemote, _resetGhCache } from './github.js';
+import { isGitHubIssueUrl, parseGitHubRemote, isGhInstalled, fetchGitHubIssue, listRepoIssues, detectGitHubRemote, runGitHubDiagnostics, _resetGhCache } from './github.js';
 
 // Mock node:child_process execFile (safe, no shell)
 vi.mock('node:child_process', () => ({
@@ -22,6 +22,20 @@ function mockExecFileError(message: string) {
   mockExecFile.mockImplementation((...args: any[]) => {
     const cb = args[args.length - 1];
     cb(new Error(message), '', '');
+    return {} as any;
+  });
+}
+
+function mockExecFileSequence(steps: Array<{ stdout?: string; error?: string }>) {
+  let index = 0;
+  mockExecFile.mockImplementation((...args: any[]) => {
+    const cb = args[args.length - 1];
+    const step = steps[index++] ?? steps[steps.length - 1];
+    if (step.error) {
+      cb(new Error(step.error), '', '');
+    } else {
+      cb(null, step.stdout ?? '', '');
+    }
     return {} as any;
   });
 }
@@ -179,5 +193,43 @@ describe('detectGitHubRemote', () => {
   it('returns null when not a git repo', async () => {
     mockExecFileError('not a git repository');
     expect(await detectGitHubRemote('/my/project')).toBeNull();
+  });
+});
+
+describe('runGitHubDiagnostics', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('reports success when all GitHub checks pass', async () => {
+    mockExecFileSequence([
+      { stdout: 'gh version 2.67.0' },
+      { stdout: 'github.com\n  ✓ Logged in' },
+      { stdout: '[]' },
+      { stdout: '{"number":70,"title":"Example"}' },
+    ]);
+
+    const result = await runGitHubDiagnostics('acme', 'api', 70);
+
+    expect(result.success).toBe(true);
+    expect(result.checks.map(check => check.name)).toEqual([
+      'gh version',
+      'gh auth status',
+      'gh issue list',
+      'gh issue view #70',
+    ]);
+    expect(result.checks.every(check => check.ok)).toBe(true);
+  });
+
+  it('reports failures when a GitHub check fails', async () => {
+    mockExecFileSequence([
+      { stdout: 'gh version 2.67.0' },
+      { error: 'not logged into any github.com account' },
+      { error: 'error connecting to api.github.com' },
+    ]);
+
+    const result = await runGitHubDiagnostics('acme', 'api');
+
+    expect(result.success).toBe(false);
+    expect(result.checks[1]).toMatchObject({ name: 'gh auth status', ok: false });
+    expect(result.checks[2]).toMatchObject({ name: 'gh issue list', ok: false });
   });
 });
