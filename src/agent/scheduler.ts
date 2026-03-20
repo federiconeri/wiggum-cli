@@ -43,6 +43,7 @@ export interface RankedBacklog {
   actionable: BacklogCandidate[];
   blocked: BacklogCandidate[];
   expansions: ScopeExpansion[];
+  errors: string[];
 }
 
 export function extractDependencyHints(
@@ -495,13 +496,14 @@ function toIssueState(candidate: BacklogCandidate): AgentIssueState {
 async function expandIssueScope(
   config: AgentConfig,
   listedIssues: Array<{ number: number; title: string; labels: string[]; createdAt: string }>,
-): Promise<{ effectiveScope: Set<number> | undefined; expansions: ScopeExpansion[] }> {
+): Promise<{ effectiveScope: Set<number> | undefined; expansions: ScopeExpansion[]; errors: string[] }> {
   if (!config.issues?.length) {
-    return { effectiveScope: undefined, expansions: [] };
+    return { effectiveScope: undefined, expansions: [], errors: [] };
   }
 
   const effectiveScope = new Set(config.issues);
   const expansions: ScopeExpansion[] = [];
+  const errors: string[] = [];
   const backlogSummaries = listedIssues.map(issue => ({ number: issue.number, title: issue.title }));
   const queue: Array<{ issueNumber: number; depth: number; requestedBy: number }> = config.issues.map(issueNumber => ({
     issueNumber,
@@ -514,7 +516,10 @@ async function expandIssueScope(
     if (!current || current.depth >= MAX_SCOPE_EXPANSION_DEPTH) continue;
 
     const detail = await fetchGitHubIssue(config.owner, config.repo, current.issueNumber);
-    if (!detail) continue;
+    if (!detail) {
+      errors.push(`Failed to fetch issue #${current.issueNumber} from GitHub while expanding dependencies. Check gh connectivity.`);
+      continue;
+    }
 
     const dependencyNumbers = extractDependencyHints(detail.body ?? '', backlogSummaries, current.issueNumber);
     for (const dependencyNumber of dependencyNumbers) {
@@ -522,7 +527,11 @@ async function expandIssueScope(
 
       if (!backlogSummaries.some(issue => issue.number === dependencyNumber)) {
         const dependencyDetail = await fetchGitHubIssue(config.owner, config.repo, dependencyNumber);
-        if (!dependencyDetail || dependencyDetail.state !== 'open') continue;
+        if (!dependencyDetail) {
+          errors.push(`Failed to fetch dependency issue #${dependencyNumber} from GitHub. Check gh connectivity.`);
+          continue;
+        }
+        if (dependencyDetail.state !== 'open') continue;
         backlogSummaries.push({ number: dependencyNumber, title: dependencyDetail.title });
       }
 
@@ -550,17 +559,18 @@ async function expandIssueScope(
     }
   }
 
-  return { effectiveScope, expansions };
+  return { effectiveScope, expansions, errors };
 }
 
 async function hydrateScopedIssues(
   config: AgentConfig,
   listedIssues: GitHubIssueListItem[],
   issueScope?: Set<number>,
-): Promise<GitHubIssueListItem[]> {
-  if (!issueScope) return listedIssues;
+): Promise<{ issues: GitHubIssueListItem[]; errors: string[] }> {
+  if (!issueScope) return { issues: listedIssues, errors: [] };
 
   const hydrated: GitHubIssueListItem[] = [];
+  const errors: string[] = [];
   const listedByNumber = new Map(listedIssues.map(issue => [issue.number, issue]));
 
   for (const issueNumber of issueScope) {
@@ -571,7 +581,11 @@ async function hydrateScopedIssues(
     }
 
     const detail = await fetchGitHubIssue(config.owner, config.repo, issueNumber);
-    if (!detail || detail.state !== 'open') continue;
+    if (!detail) {
+      errors.push(`Failed to fetch requested issue #${issueNumber} from GitHub. Check gh connectivity.`);
+      continue;
+    }
+    if (detail.state !== 'open') continue;
 
     hydrated.push({
       number: detail.number,
@@ -582,7 +596,7 @@ async function hydrateScopedIssues(
     });
   }
 
-  return hydrated;
+  return { issues: hydrated, errors };
 }
 
 export async function buildRankedBacklog(
@@ -590,8 +604,17 @@ export async function buildRankedBacklog(
   store: MemoryStore,
 ): Promise<RankedBacklog> {
   const listed = await listRepoIssues(config.owner, config.repo, undefined, 50);
-  const { effectiveScope: issueScope, expansions } = await expandIssueScope(config, listed.issues ?? []);
-  const scopedIssues = await hydrateScopedIssues(config, listed.issues ?? [], issueScope);
+  const { effectiveScope: issueScope, expansions, errors: scopeErrors } = await expandIssueScope(config, listed.issues ?? []);
+  const { issues: scopedIssues, errors: hydrateErrors } = await hydrateScopedIssues(config, listed.issues ?? [], issueScope);
+  const errors = [
+    ...(listed.error ? [listed.error] : []),
+    ...scopeErrors,
+    ...hydrateErrors,
+  ];
+  if (!config.issues?.length && (listed.issues ?? []).length === 0 && !listed.error) {
+    errors.push('Failed to list open GitHub issues. Check gh connectivity.');
+  }
+
   const baseIssues = scopedIssues.filter(issue => {
     if (issueScope && !issueScope.has(issue.number)) return false;
     if (config.labels?.length) {
@@ -699,6 +722,7 @@ export async function buildRankedBacklog(
     actionable: queue.filter(candidate => candidate.actionability === 'ready' || candidate.actionability === 'housekeeping'),
     blocked: queue.filter(candidate => candidate.actionability !== 'ready' && candidate.actionability !== 'housekeeping'),
     expansions,
+    errors,
   };
 }
 

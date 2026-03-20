@@ -296,6 +296,18 @@ describe('buildRankedBacklog', () => {
 
     expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([74, 76, 77]);
     expect(ranked.queue.every((issue) => issue.scopeOrigin === 'requested')).toBe(true);
+    expect(ranked.errors).toEqual([]);
+  });
+
+  it('surfaces GitHub fetch errors instead of silently returning an empty scoped backlog', async () => {
+    mockListRepoIssues.mockResolvedValue({ issues: [] });
+    mockFetchGitHubIssue.mockResolvedValue(null);
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [70] }), makeStore());
+
+    expect(ranked.queue).toEqual([]);
+    expect(ranked.errors[0]).toContain('Failed to fetch issue #70');
   });
 
   it('detects dependency cycles and blocks both issues', async () => {

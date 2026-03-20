@@ -260,6 +260,9 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
       }
 
       const ranked = await buildRankedBacklog(this.config, store);
+      if (ranked.queue.length === 0 && ranked.errors.length > 0) {
+        throw new Error(ranked.errors[0]);
+      }
       const queueStates = toIssueStates(ranked.queue);
       blockedSnapshot = queueStates.filter(issue => issue.actionability !== 'ready' && issue.actionability !== 'housekeeping');
 

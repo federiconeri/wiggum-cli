@@ -194,6 +194,26 @@ describe('createAgentOrchestrator', () => {
     expect(events.some((event) => event.type === 'scope_expanded')).toBe(true);
     expect(events.filter((event) => event.type === 'task_selected').map((event) => event.issue)).toEqual([69]);
   });
+
+  it('fails explicitly when backlog fetch errors leave the queue empty', async () => {
+    mockBuildRankedBacklog.mockResolvedValue({
+      queue: [],
+      actionable: [],
+      blocked: [],
+      expansions: [],
+      errors: ['Failed to fetch requested issue #70 from GitHub. Check gh connectivity.'],
+    });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+    });
+
+    await expect(agent.generate({ prompt: 'Begin working through the backlog.' }))
+      .rejects.toThrow('Failed to fetch requested issue #70 from GitHub');
+  });
 });
 
 describe('buildConstraints', () => {
