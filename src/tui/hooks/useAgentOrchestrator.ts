@@ -332,6 +332,10 @@ function applyOrchestratorEvent(
   setLogEntries: React.Dispatch<React.SetStateAction<AgentLogEntry[]>>,
 ): void {
   switch (event.type) {
+    case 'scope_expanded':
+      setLogEntries((prev) => appendLog(prev, `Expanded scope with ${event.expansions.map(expansion => `#${expansion.issueNumber}`).join(', ')}`));
+      break;
+
     case 'backlog_scanned':
       setLogEntries((prev) => appendLog(prev, `Scanned ${event.total} backlog issue(s)`));
       break;

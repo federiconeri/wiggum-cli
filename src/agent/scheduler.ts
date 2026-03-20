@@ -10,10 +10,11 @@ import type {
   DependencyEdge,
   PriorityTier,
   SelectionReason,
+  ScopeExpansion,
   TaskActionability,
   TaskScoreBreakdown,
 } from './types.js';
-import { listRepoIssues, fetchGitHubIssue } from '../utils/github.js';
+import { listRepoIssues, fetchGitHubIssue, type GitHubIssueListItem } from '../utils/github.js';
 import { assessFeatureStateImpl } from './tools/feature-state.js';
 import { getTracedAI } from '../utils/tracing.js';
 import { loadContext } from '../context/index.js';
@@ -26,6 +27,8 @@ const STOP_WORDS = new Set([
   'update', 'fix', 'make', 'allow', 'user', 'users', 'cli', 'agent', 'part', 'related', 'summary',
 ]);
 const DEPENDENCY_CUE_PATTERN = /\b(depends on|blocked by|requires|after)\b/i;
+const MAX_SCOPE_EXPANSION_ISSUES = 3;
+const MAX_SCOPE_EXPANSION_DEPTH = 3;
 
 const inferredDependencySchema = z.object({
   edges: z.array(z.object({
@@ -39,6 +42,7 @@ export interface RankedBacklog {
   queue: BacklogCandidate[];
   actionable: BacklogCandidate[];
   blocked: BacklogCandidate[];
+  expansions: ScopeExpansion[];
 }
 
 export function extractDependencyHints(
@@ -51,13 +55,38 @@ export function extractDependencyHints(
   const inferredFromTitles: number[] = [];
 
   if (DEPENDENCY_CUE_PATTERN.test(body)) {
-    const bodyTokens = new Set(normalizeTokens(body));
-    for (const issue of backlogIssues) {
-      if (issue.number === currentIssueNumber) continue;
-      const titleTokens = normalizeTokens(issue.title);
-      const overlap = titleTokens.filter(token => bodyTokens.has(token));
-      if (overlap.length >= 2) {
-        inferredFromTitles.push(issue.number);
+    const cueMatch = body.match(/\b(?:depends on|blocked by|requires|after)\b([^\n.;]*)/i);
+    const phrase = cueMatch?.[1]?.trim() ?? '';
+    const segments = phrase
+      .split(/\s+\+\s+|\s+and\s+|,/i)
+      .map(segment => segment.trim())
+      .filter(Boolean);
+
+    for (const segment of segments) {
+      const segmentTokens = normalizeTokens(segment);
+      if (segmentTokens.length === 0) continue;
+
+      const scored = backlogIssues
+        .filter(issue => issue.number !== currentIssueNumber)
+        .map(issue => {
+          const titleTokens = normalizeTokens(issue.title);
+          const overlap = titleTokens.filter(token => segmentTokens.includes(token)).length;
+          const uniqueTokenMatch = segmentTokens.length === 1 && segmentTokens[0].length >= 6 && titleTokens.includes(segmentTokens[0]);
+          return { issue, overlap, uniqueTokenMatch };
+        })
+        .filter(item => item.overlap > 0 || item.uniqueTokenMatch);
+
+      if (scored.length === 0) continue;
+
+      const bestOverlap = Math.max(...scored.map(item => item.overlap));
+      for (const item of scored) {
+        if (bestOverlap >= 2) {
+          if (item.overlap === bestOverlap) {
+            inferredFromTitles.push(item.issue.number);
+          }
+        } else if (item.uniqueTokenMatch) {
+          inferredFromTitles.push(item.issue.number);
+        }
       }
     }
   }
@@ -337,6 +366,12 @@ function detectCycleForIssue(
 
 function buildSelectionReasons(candidate: BacklogCandidate): SelectionReason[] {
   const reasons: SelectionReason[] = [];
+  if (candidate.scopeOrigin === 'dependency' && candidate.requestedBy?.length) {
+    reasons.push({
+      kind: 'scope_expansion',
+      message: `Pulled into scope as a prerequisite for ${candidate.requestedBy.map(issueNumber => `#${issueNumber}`).join(', ')}.`,
+    });
+  }
   if (candidate.actionability === 'housekeeping') {
     reasons.push({ kind: 'housekeeping', message: 'Issue appears already shipped and only needs housekeeping.' });
   }
@@ -441,6 +476,8 @@ function toIssueState(candidate: BacklogCandidate): AgentIssueState {
     title: candidate.title,
     labels: candidate.labels,
     phase: candidate.phase,
+    scopeOrigin: candidate.scopeOrigin,
+    requestedBy: candidate.requestedBy,
     actionability: candidate.actionability,
     priorityTier: candidate.priorityTier,
     dependsOn: candidate.dependsOn,
@@ -455,13 +492,107 @@ function toIssueState(candidate: BacklogCandidate): AgentIssueState {
   };
 }
 
+async function expandIssueScope(
+  config: AgentConfig,
+  listedIssues: Array<{ number: number; title: string; labels: string[]; createdAt: string }>,
+): Promise<{ effectiveScope: Set<number> | undefined; expansions: ScopeExpansion[] }> {
+  if (!config.issues?.length) {
+    return { effectiveScope: undefined, expansions: [] };
+  }
+
+  const effectiveScope = new Set(config.issues);
+  const expansions: ScopeExpansion[] = [];
+  const backlogSummaries = listedIssues.map(issue => ({ number: issue.number, title: issue.title }));
+  const queue: Array<{ issueNumber: number; depth: number; requestedBy: number }> = config.issues.map(issueNumber => ({
+    issueNumber,
+    depth: 0,
+    requestedBy: issueNumber,
+  }));
+
+  while (queue.length > 0 && expansions.length < MAX_SCOPE_EXPANSION_ISSUES) {
+    const current = queue.shift();
+    if (!current || current.depth >= MAX_SCOPE_EXPANSION_DEPTH) continue;
+
+    const detail = await fetchGitHubIssue(config.owner, config.repo, current.issueNumber);
+    if (!detail) continue;
+
+    const dependencyNumbers = extractDependencyHints(detail.body ?? '', backlogSummaries, current.issueNumber);
+    for (const dependencyNumber of dependencyNumbers) {
+      if (effectiveScope.has(dependencyNumber)) continue;
+
+      if (!backlogSummaries.some(issue => issue.number === dependencyNumber)) {
+        const dependencyDetail = await fetchGitHubIssue(config.owner, config.repo, dependencyNumber);
+        if (!dependencyDetail || dependencyDetail.state !== 'open') continue;
+        backlogSummaries.push({ number: dependencyNumber, title: dependencyDetail.title });
+      }
+
+      effectiveScope.add(dependencyNumber);
+      const existingExpansion = expansions.find(expansion => expansion.issueNumber === dependencyNumber);
+      if (existingExpansion) {
+        if (!existingExpansion.requestedBy.includes(current.requestedBy)) {
+          existingExpansion.requestedBy.push(current.requestedBy);
+          existingExpansion.requestedBy.sort((a, b) => a - b);
+        }
+      } else {
+        expansions.push({
+          issueNumber: dependencyNumber,
+          requestedBy: [current.requestedBy],
+        });
+      }
+
+      queue.push({
+        issueNumber: dependencyNumber,
+        depth: current.depth + 1,
+        requestedBy: current.requestedBy,
+      });
+
+      if (expansions.length >= MAX_SCOPE_EXPANSION_ISSUES) break;
+    }
+  }
+
+  return { effectiveScope, expansions };
+}
+
+async function hydrateScopedIssues(
+  config: AgentConfig,
+  listedIssues: GitHubIssueListItem[],
+  issueScope?: Set<number>,
+): Promise<GitHubIssueListItem[]> {
+  if (!issueScope) return listedIssues;
+
+  const hydrated: GitHubIssueListItem[] = [];
+  const listedByNumber = new Map(listedIssues.map(issue => [issue.number, issue]));
+
+  for (const issueNumber of issueScope) {
+    const listedIssue = listedByNumber.get(issueNumber);
+    if (listedIssue) {
+      hydrated.push(listedIssue);
+      continue;
+    }
+
+    const detail = await fetchGitHubIssue(config.owner, config.repo, issueNumber);
+    if (!detail || detail.state !== 'open') continue;
+
+    hydrated.push({
+      number: detail.number,
+      title: detail.title,
+      state: detail.state,
+      labels: detail.labels,
+      createdAt: detail.createdAt,
+    });
+  }
+
+  return hydrated;
+}
+
 export async function buildRankedBacklog(
   config: AgentConfig,
   store: MemoryStore,
 ): Promise<RankedBacklog> {
   const listed = await listRepoIssues(config.owner, config.repo, undefined, 50);
-  const issueScope = config.issues?.length ? new Set(config.issues) : undefined;
-  const baseIssues = (listed.issues ?? []).filter(issue => {
+  const { effectiveScope: issueScope, expansions } = await expandIssueScope(config, listed.issues ?? []);
+  const scopedIssues = await hydrateScopedIssues(config, listed.issues ?? [], issueScope);
+  const baseIssues = scopedIssues.filter(issue => {
     if (issueScope && !issueScope.has(issue.number)) return false;
     if (config.labels?.length) {
       return config.labels.some(label => issue.labels.includes(label));
@@ -494,6 +625,8 @@ export async function buildRankedBacklog(
       body: detail.body ?? '',
       createdAt: issue.createdAt,
       phase: 'idle',
+      scopeOrigin: config.issues?.includes(issue.number) ? 'requested' : 'dependency',
+      requestedBy: expansions.find(expansion => expansion.issueNumber === issue.number)?.requestedBy,
       priorityTier: derivePriorityTier(detail.labels ?? issue.labels ?? []),
       dependsOn,
       explicitDependencyEdges: dependsOn.map((targetIssue) => ({
@@ -565,6 +698,7 @@ export async function buildRankedBacklog(
     queue,
     actionable: queue.filter(candidate => candidate.actionability === 'ready' || candidate.actionability === 'housekeeping'),
     blocked: queue.filter(candidate => candidate.actionability !== 'ready' && candidate.actionability !== 'housekeeping'),
+    expansions,
   };
 }
 

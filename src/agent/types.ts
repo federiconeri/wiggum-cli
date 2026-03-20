@@ -12,6 +12,7 @@ export type TaskActionability =
   | 'blocked_out_of_scope';
 export type AttemptState = 'never_tried' | 'partial' | 'failure' | 'success' | 'skipped';
 export type PriorityTier = 'P0' | 'P1' | 'P2' | 'unlabeled';
+export type ScopeOrigin = 'requested' | 'dependency';
 
 export interface DependencyEvidence {
   summary: string;
@@ -33,6 +34,7 @@ export interface SelectionReason {
     | 'priority'
     | 'explicit_dependency'
     | 'inferred_dependency'
+    | 'scope_expansion'
     | 'retry'
     | 'existing_work'
     | 'housekeeping'
@@ -98,6 +100,8 @@ export interface AgentIssueState {
   title: string;
   labels: string[];
   phase: AgentPhase;
+  scopeOrigin?: ScopeOrigin;
+  requestedBy?: number[];
   actionability?: TaskActionability;
   priorityTier?: PriorityTier;
   dependsOn?: number[];
@@ -122,7 +126,16 @@ export interface BacklogCandidate extends AgentIssueState {
   inferredDependencyEdges: DependencyEdge[];
 }
 
+export interface ScopeExpansion {
+  issueNumber: number;
+  requestedBy: number[];
+}
+
 export type AgentOrchestratorEvent =
+  | {
+      type: 'scope_expanded';
+      expansions: ScopeExpansion[];
+    }
   | {
       type: 'backlog_scanned';
       total: number;

@@ -99,15 +99,21 @@ describe('fetchGitHubIssue', () => {
 
   it('returns title and body from gh issue view', async () => {
     mockExecFileResult(JSON.stringify({
+      number: 42,
       title: 'Fix login bug',
       body: 'The login form breaks on mobile.',
       labels: [{ name: 'bug' }],
+      state: 'OPEN',
+      createdAt: '2026-01-01T00:00:00Z',
     }));
     const result = await fetchGitHubIssue('acme', 'api', 42);
     expect(result).toEqual({
+      number: 42,
       title: 'Fix login bug',
       body: 'The login form breaks on mobile.',
       labels: ['bug'],
+      state: 'open',
+      createdAt: '2026-01-01T00:00:00Z',
     });
   });
 

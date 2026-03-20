@@ -263,6 +263,9 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
       const queueStates = toIssueStates(ranked.queue);
       blockedSnapshot = queueStates.filter(issue => issue.actionability !== 'ready' && issue.actionability !== 'housekeeping');
 
+      if (ranked.expansions.length > 0) {
+        this.emit({ type: 'scope_expanded', expansions: ranked.expansions });
+      }
       this.emit({ type: 'backlog_scanned', total: queueStates.length, issues: queueStates });
       for (const candidate of ranked.queue) {
         this.emit({ type: 'candidate_enriched', issue: {

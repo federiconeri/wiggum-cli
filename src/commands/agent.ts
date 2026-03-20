@@ -77,6 +77,9 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
         : (msg: string) => logger.info(msg);
 
       switch (event.type) {
+        case 'scope_expanded':
+          log(`[orchestrator] expanded scope with ${event.expansions.map(expansion => `#${expansion.issueNumber}`).join(', ')}`);
+          break;
         case 'queue_ranked':
           log(`[orchestrator] ranked ${event.queue.length} issue(s)`);
           break;

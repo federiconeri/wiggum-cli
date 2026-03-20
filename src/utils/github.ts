@@ -12,6 +12,31 @@ function safeExec(cmd: string, args: string[], cwd?: string): Promise<string> {
   });
 }
 
+function shouldRetryGhError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes('error connecting to api.github.com')
+    || message.includes('Client.Timeout exceeded')
+    || message.includes('i/o timeout')
+    || message.includes('TLS handshake timeout');
+}
+
+async function safeExecWithRetry(cmd: string, args: string[], cwd?: string, attempts = 3): Promise<string> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await safeExec(cmd, args, cwd);
+    } catch (error) {
+      lastError = error;
+      const canRetry = cmd === 'gh' && attempt < attempts && shouldRetryGhError(error);
+      if (!canRetry) break;
+      await new Promise(resolve => setTimeout(resolve, 200 * attempt));
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 let ghInstalledCache: boolean | null = null;
 
 export async function isGhInstalled(): Promise<boolean> {
@@ -30,9 +55,12 @@ export function _resetGhCache(): void {
 }
 
 export interface GitHubIssueDetail {
+  number: number;
   title: string;
   body: string;
   labels: string[];
+  state: 'open' | 'closed';
+  createdAt: string;
 }
 
 export async function fetchGitHubIssue(
@@ -41,16 +69,19 @@ export async function fetchGitHubIssue(
   number: number,
 ): Promise<GitHubIssueDetail | null> {
   try {
-    const stdout = await safeExec('gh', [
+    const stdout = await safeExecWithRetry('gh', [
       'issue', 'view', String(number),
       '--repo', `${owner}/${repo}`,
-      '--json', 'title,body,labels',
+      '--json', 'number,title,body,labels,state,createdAt',
     ]);
     const data = JSON.parse(stdout);
     return {
+      number: data.number ?? number,
       title: data.title ?? '',
       body: data.body ?? '',
       labels: (data.labels ?? []).map((l: { name: string }) => l.name),
+      state: (data.state as string)?.toLowerCase?.() === 'closed' ? 'closed' : 'open',
+      createdAt: data.createdAt ?? '',
     };
   } catch {
     return null;
@@ -87,7 +118,7 @@ export async function listRepoIssues(
     if (search) {
       args.push('--search', search);
     }
-    const stdout = await safeExec('gh', args);
+    const stdout = await safeExecWithRetry('gh', args);
     const data = JSON.parse(stdout);
     const issues = (data as any[]).map((item) => ({
       number: item.number,

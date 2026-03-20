@@ -207,7 +207,7 @@ describe('buildRankedBacklog', () => {
     expect(uiIssue?.inferredDependsOn).toEqual([{ issueNumber: 5, confidence: 'medium' }]);
   });
 
-  it('marks out-of-scope dependencies as blocked_out_of_scope', async () => {
+  it('expands issue scope to include explicit prerequisites', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [
         { number: 1, title: 'Build LoopOrchestrator runtime', labels: ['loop'], createdAt: '2026-01-01T00:00:00Z' },
@@ -223,11 +223,13 @@ describe('buildRankedBacklog', () => {
 
     const ranked = await buildRankedBacklog(makeConfig({ issues: [2] }), makeStore());
 
-    expect(ranked.queue[0].actionability).toBe('blocked_out_of_scope');
-    expect(ranked.queue[0].blockedBy?.[0]?.reason).toContain('out-of-scope');
+    expect(ranked.expansions).toEqual([{ issueNumber: 1, requestedBy: [2] }]);
+    expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([1, 2]);
+    expect(ranked.queue[0].scopeOrigin).toBe('dependency');
+    expect(ranked.queue[1].actionability).toBe('blocked_dependency');
   });
 
-  it('infers out-of-scope dependencies from natural language body cues and backlog titles', async () => {
+  it('expands issue scope from natural language body cues and backlog titles', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [
         { number: 69, title: 'Build LoopOrchestrator runtime (process supervision + PTY)', labels: ['loop'], createdAt: '2026-01-01T00:00:00Z' },
@@ -242,9 +244,58 @@ describe('buildRankedBacklog', () => {
     mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
 
     const ranked = await buildRankedBacklog(makeConfig({ issues: [70] }), makeStore());
+    const requestedIssue = ranked.queue.find((issue) => issue.issueNumber === 70);
 
-    expect(ranked.queue[0].dependsOn).toEqual([69]);
+    expect(requestedIssue?.dependsOn).toEqual([69]);
+    expect(ranked.expansions).toEqual([{ issueNumber: 69, requestedBy: [70] }]);
+    expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([69, 70]);
+    expect(ranked.queue[0].scopeOrigin).toBe('dependency');
+    expect(ranked.queue[1].actionability).toBe('blocked_dependency');
+  });
+
+  it('keeps issues blocked_out_of_scope when the prerequisite is not in the open backlog', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 70, title: 'Define structured loop action IPC', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockResolvedValue({
+      title: 'Define structured loop action IPC',
+      body: 'Depends on #60',
+      labels: ['loop'],
+    });
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [70] }), makeStore());
+
+    expect(ranked.expansions).toEqual([]);
     expect(ranked.queue[0].actionability).toBe('blocked_out_of_scope');
+  });
+
+  it('hydrates scoped issues directly when issue listing is unavailable', async () => {
+    mockListRepoIssues.mockResolvedValue({ issues: [] });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 74
+        ? 'Create native agent runtime interface + tool execution contract'
+        : number === 76
+          ? 'Build native-agent evaluation harness and baseline benchmarks'
+          : 'Add feature flags + safe rollback path for native-agent rollout',
+      body: number === 74
+        ? 'Define runtime interface and tool execution contract.'
+        : number === 76
+          ? 'Build evaluation harness for native/hybrid variants.'
+          : 'Add rollout controls for native-agent alpha.',
+      labels: ['ai/llm'],
+      state: 'open',
+      createdAt: `2026-01-0${number === 74 ? 1 : number === 76 ? 2 : 3}T00:00:00Z`,
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [74, 76, 77] }), makeStore());
+
+    expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([74, 76, 77]);
+    expect(ranked.queue.every((issue) => issue.scopeOrigin === 'requested')).toBe(true);
   });
 
   it('detects dependency cycles and blocks both issues', async () => {
