@@ -4,6 +4,7 @@ import type { MemoryStore } from './memory/store.js';
 import type {
   AgentConfig,
   AgentIssueState,
+  AgentOrchestratorEvent,
   AttemptState,
   BacklogCandidate,
   DependencyConfidence,
@@ -41,6 +42,9 @@ const GENERIC_DEPENDENCY_TOKENS = new Set([
 const DEPENDENCY_CUE_PATTERN = /\b(depends on|blocked by|requires|after)\b/i;
 const MAX_SCOPE_EXPANSION_ISSUES = 3;
 const MAX_SCOPE_EXPANSION_DEPTH = 3;
+const MAX_MODEL_INFERENCE_CANDIDATES = 12;
+const ENRICHMENT_CONCURRENCY = 6;
+const INFERENCE_CONCURRENCY = 3;
 
 const inferredDependencySchema = z.object({
   edges: z.array(z.object({
@@ -56,6 +60,37 @@ export interface RankedBacklog {
   blocked: BacklogCandidate[];
   expansions: ScopeExpansion[];
   errors: string[];
+}
+
+function emitBacklogEvent(config: AgentConfig, event: AgentOrchestratorEvent): void {
+  config.onOrchestratorEvent?.(event);
+}
+
+function nowMs(): number {
+  return Date.now();
+}
+
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  const worker = async () => {
+    while (true) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      if (currentIndex >= items.length) return;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  };
+
+  const workerCount = Math.min(concurrency, items.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
 }
 
 export function extractDependencyHints(
@@ -669,9 +704,52 @@ export async function buildRankedBacklog(
   config: AgentConfig,
   store: MemoryStore,
 ): Promise<RankedBacklog> {
+  const listStart = nowMs();
+  emitBacklogEvent(config, {
+    type: 'backlog_progress',
+    phase: 'listing',
+    message: 'Listing open GitHub issues.',
+  });
   const listed = await listRepoIssues(config.owner, config.repo, undefined, 50);
+  emitBacklogEvent(config, {
+    type: 'backlog_timing',
+    phase: 'listing',
+    durationMs: nowMs() - listStart,
+    count: (listed.issues ?? []).length,
+  });
+
+  const scopeStart = nowMs();
+  emitBacklogEvent(config, {
+    type: 'backlog_progress',
+    phase: 'scope_expansion',
+    message: config.issues?.length
+      ? `Resolving scoped dependencies for ${config.issues.length} requested issue(s).`
+      : 'No scoped dependency expansion required.',
+  });
   const { effectiveScope: issueScope, expansions, errors: scopeErrors } = await expandIssueScope(config, listed.issues ?? []);
+  emitBacklogEvent(config, {
+    type: 'backlog_timing',
+    phase: 'scope_expansion',
+    durationMs: nowMs() - scopeStart,
+    count: expansions.length,
+  });
+
+  const hydrationStart = nowMs();
+  emitBacklogEvent(config, {
+    type: 'backlog_progress',
+    phase: 'hydration',
+    message: issueScope
+      ? `Hydrating ${issueScope.size} scoped issue(s).`
+      : `Hydrating up to ${(listed.issues ?? []).length} listed issue(s).`,
+    total: issueScope?.size ?? (listed.issues ?? []).length,
+  });
   const { issues: scopedIssues, errors: hydrateErrors } = await hydrateScopedIssues(config, listed.issues ?? [], issueScope);
+  emitBacklogEvent(config, {
+    type: 'backlog_timing',
+    phase: 'hydration',
+    durationMs: nowMs() - hydrationStart,
+    count: scopedIssues.length,
+  });
   const errors = [
     ...(listed.error ? [listed.error] : []),
     ...scopeErrors,
@@ -693,11 +771,17 @@ export async function buildRankedBacklog(
   const persistedContext = await loadContext(config.projectRoot).catch(() => null);
   const codebaseContext = buildCodebaseContext(persistedContext);
 
-  const candidates: BacklogCandidate[] = [];
-
-  for (const issue of baseIssues) {
+  const enrichmentStart = nowMs();
+  emitBacklogEvent(config, {
+    type: 'backlog_progress',
+    phase: 'enrichment',
+    message: `Enriching ${baseIssues.length} issue(s) with details and feature state.`,
+    total: baseIssues.length,
+  });
+  let enrichedCount = 0;
+  const candidateResults = await mapWithConcurrency(baseIssues, ENRICHMENT_CONCURRENCY, async (issue) => {
     const detail = await fetchGitHubIssue(config.owner, config.repo, issue.number);
-    if (!detail) continue;
+    if (!detail) return null;
     const featureName = deriveFeatureNameFromTitle(detail.title || issue.title);
     const featureState = await assessFeatureStateImpl(config.projectRoot, featureName, issue.number);
     const dependsOn = extractDependencyHints(
@@ -738,16 +822,98 @@ export async function buildRankedBacklog(
       loopFeatureName: featureName,
       recommendation: featureState.recommendation,
     };
-    candidates.push(candidate);
+    enrichedCount += 1;
+    if (enrichedCount === 1 || enrichedCount === baseIssues.length || enrichedCount % 5 === 0) {
+      emitBacklogEvent(config, {
+        type: 'backlog_progress',
+        phase: 'enrichment',
+        message: `Enriched ${enrichedCount}/${baseIssues.length} issue(s).`,
+        completed: enrichedCount,
+        total: baseIssues.length,
+      });
+    }
+    return candidate;
+  });
+  const candidates = candidateResults.filter((candidate): candidate is BacklogCandidate => candidate != null);
+  emitBacklogEvent(config, {
+    type: 'backlog_timing',
+    phase: 'enrichment',
+    durationMs: nowMs() - enrichmentStart,
+    count: candidates.length,
+  });
+
+  const preliminaryEnforcedDependencyMap = new Map<number, DependencyEdge[]>();
+  for (const candidate of candidates) {
+    preliminaryEnforcedDependencyMap.set(candidate.issueNumber, [...candidate.explicitDependencyEdges]);
   }
 
   for (const candidate of candidates) {
+    const adjacency = new Map<number, number[]>();
+    for (const [issueNumber, edges] of preliminaryEnforcedDependencyMap.entries()) {
+      adjacency.set(issueNumber, edges.map(edge => edge.targetIssue));
+    }
+    const hasCycle = detectCycleForIssue(candidate.issueNumber, adjacency, new Set<number>(), new Set<number>());
+    if (hasCycle) {
+      candidate.actionability = 'blocked_cycle';
+      candidate.blockedBy = [{ issueNumber: candidate.issueNumber, reason: 'Dependency cycle detected.' }];
+    } else {
+      candidate.actionability = evaluateActionability(candidate, preliminaryEnforcedDependencyMap, issueScope);
+    }
+    candidate.selectionReasons = buildSelectionReasons(candidate);
+    candidate.score = buildScore(candidate);
+  }
+
+  const modelInferenceCandidates = new Set(
+    [...candidates]
+      .sort((left, right) => {
+        const leftScore = left.score?.total ?? 0;
+        const rightScore = right.score?.total ?? 0;
+        if (rightScore !== leftScore) return rightScore - leftScore;
+        return left.issueNumber - right.issueNumber;
+      })
+      .slice(0, issueScope ? candidates.length : Math.min(candidates.length, MAX_MODEL_INFERENCE_CANDIDATES))
+      .map(candidate => candidate.issueNumber),
+  );
+
+  const inferenceStart = nowMs();
+  emitBacklogEvent(config, {
+    type: 'backlog_progress',
+    phase: 'dependency_inference',
+    message: issueScope
+      ? `Inferring dependencies for ${candidates.length} scoped issue(s).`
+      : `Inferring dependencies for top ${modelInferenceCandidates.size} of ${candidates.length} issue(s) before first rank.`,
+    total: modelInferenceCandidates.size,
+  });
+  let inferredCount = 0;
+  await mapWithConcurrency(candidates, INFERENCE_CONCURRENCY, async (candidate) => {
+    if (!modelInferenceCandidates.has(candidate.issueNumber)) {
+      candidate.inferredDependencyEdges = [];
+      candidate.inferredDependsOn = [];
+      return;
+    }
+
     candidate.inferredDependencyEdges = await inferDependencyEdges(config, candidate, candidates, codebaseContext);
     candidate.inferredDependsOn = candidate.inferredDependencyEdges.map((edge) => ({
       issueNumber: edge.targetIssue,
       confidence: edge.confidence,
     }));
-  }
+    inferredCount += 1;
+    if (inferredCount === 1 || inferredCount === modelInferenceCandidates.size || inferredCount % 5 === 0) {
+      emitBacklogEvent(config, {
+        type: 'backlog_progress',
+        phase: 'dependency_inference',
+        message: `Analyzed dependencies for ${inferredCount}/${modelInferenceCandidates.size} issue(s).`,
+        completed: inferredCount,
+        total: modelInferenceCandidates.size,
+      });
+    }
+  });
+  emitBacklogEvent(config, {
+    type: 'backlog_timing',
+    phase: 'dependency_inference',
+    durationMs: nowMs() - inferenceStart,
+    count: modelInferenceCandidates.size,
+  });
 
   const enforcedDependencyMap = new Map<number, DependencyEdge[]>();
   for (const candidate of candidates) {
@@ -776,11 +942,24 @@ export async function buildRankedBacklog(
     candidate.score = buildScore(candidate);
   }
 
+  const rankingStart = nowMs();
+  emitBacklogEvent(config, {
+    type: 'backlog_progress',
+    phase: 'ranking',
+    message: `Ranking ${candidates.length} issue(s).`,
+    total: candidates.length,
+  });
   const queue = [...candidates].sort((left, right) => {
     const leftScore = left.score?.total ?? 0;
     const rightScore = right.score?.total ?? 0;
     if (rightScore !== leftScore) return rightScore - leftScore;
     return left.issueNumber - right.issueNumber;
+  });
+  emitBacklogEvent(config, {
+    type: 'backlog_timing',
+    phase: 'ranking',
+    durationMs: nowMs() - rankingStart,
+    count: queue.length,
   });
 
   return {

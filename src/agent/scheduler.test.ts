@@ -207,6 +207,30 @@ describe('buildRankedBacklog', () => {
     expect(uiIssue?.inferredDependsOn).toEqual([{ issueNumber: 5, confidence: 'medium' }]);
   });
 
+  it('limits model-based dependency inference to the top candidate slice on unscoped runs', async () => {
+    const issues = Array.from({ length: 20 }, (_, index) => ({
+      number: index + 1,
+      title: `Native agent task ${index + 1}`,
+      labels: ['ai/llm'],
+      createdAt: `2026-01-${String(index + 1).padStart(2, '0')}T00:00:00Z`,
+    }));
+    mockListRepoIssues.mockResolvedValue({ issues });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: `Native agent task ${number}`,
+      body: `Build native agent task ${number} with runtime contract and evaluation hooks.`,
+      labels: ['ai/llm'],
+      state: 'open',
+      createdAt: `2026-01-${String(number).padStart(2, '0')}T00:00:00Z`,
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+    mockGenerateObject.mockResolvedValue({ object: { edges: [] } });
+
+    await buildRankedBacklog(makeConfig(), makeStore());
+
+    expect(mockGenerateObject).toHaveBeenCalledTimes(12);
+  });
+
   it('produces clearer fallback rationale for runtime-first inferred dependencies', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

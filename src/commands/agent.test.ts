@@ -197,6 +197,18 @@ describe('agentCommand', () => {
       return {
         generate: mockGenerate,
         stream: vi.fn().mockImplementation(async () => {
+          config.onOrchestratorEvent?.({
+            type: 'backlog_progress',
+            phase: 'enrichment',
+            message: 'Enriching 3 issue(s) with details and feature state.',
+            total: 3,
+          });
+          config.onOrchestratorEvent?.({
+            type: 'backlog_timing',
+            phase: 'dependency_inference',
+            durationMs: 250,
+            count: 3,
+          });
           config.onOrchestratorEvent?.({ type: 'scope_expanded', expansions: [{ issueNumber: 69, requestedBy: [70] }] });
           config.onOrchestratorEvent?.({
             type: 'task_blocked',
@@ -221,6 +233,8 @@ describe('agentCommand', () => {
     await agentCommand({ stream: true });
 
     expect(orchestratorConfig).toBeDefined();
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] Enriching 3 issue(s) with details and feature state.\n');
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] dependency_inference took 250ms (3)\n');
     expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] expanded scope with #69\n');
     expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] blocked #70 — Explicit dependency on #69.\n');
     expect(stdoutWriteSpy).toHaveBeenCalledWith('Summary');

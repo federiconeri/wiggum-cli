@@ -336,6 +336,14 @@ function applyOrchestratorEvent(
       setLogEntries((prev) => appendLog(prev, `Expanded scope with ${event.expansions.map(expansion => `#${expansion.issueNumber}`).join(', ')}`));
       break;
 
+    case 'backlog_progress':
+      setLogEntries((prev) => appendLog(prev, event.message));
+      break;
+
+    case 'backlog_timing':
+      setLogEntries((prev) => appendLog(prev, `${event.phase} took ${event.durationMs}ms${event.count != null ? ` (${event.count})` : ''}`));
+      break;
+
     case 'backlog_scanned':
       setLogEntries((prev) => appendLog(prev, `Scanned ${event.total} backlog issue(s)`));
       break;

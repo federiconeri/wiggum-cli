@@ -101,6 +101,12 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
         case 'scope_expanded':
           log(`[orchestrator] expanded scope with ${event.expansions.map(expansion => `#${expansion.issueNumber}`).join(', ')}`);
           break;
+        case 'backlog_progress':
+          log(`[orchestrator] ${event.message}`);
+          break;
+        case 'backlog_timing':
+          log(`[orchestrator] ${event.phase} took ${event.durationMs}ms${event.count != null ? ` (${event.count})` : ''}`);
+          break;
         case 'queue_ranked':
           log(`[orchestrator] ranked ${event.queue.length} issue(s)`);
           break;

@@ -137,6 +137,19 @@ export type AgentOrchestratorEvent =
       expansions: ScopeExpansion[];
     }
   | {
+      type: 'backlog_progress';
+      phase: 'listing' | 'scope_expansion' | 'hydration' | 'enrichment' | 'dependency_inference' | 'ranking';
+      message: string;
+      completed?: number;
+      total?: number;
+    }
+  | {
+      type: 'backlog_timing';
+      phase: 'listing' | 'scope_expansion' | 'hydration' | 'enrichment' | 'dependency_inference' | 'ranking';
+      durationMs: number;
+      count?: number;
+    }
+  | {
       type: 'backlog_scanned';
       total: number;
       issues: AgentIssueState[];
