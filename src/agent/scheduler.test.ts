@@ -33,7 +33,7 @@ vi.mock('../utils/tracing.js', () => ({
   }),
 }));
 
-import { buildRankedBacklog } from './scheduler.js';
+import { buildRankedBacklog, extractDependencyHints } from './scheduler.js';
 import type { AgentConfig } from './types.js';
 
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
@@ -281,6 +281,62 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([69, 70]);
     expect(ranked.queue[0].scopeOrigin).toBe('dependency');
     expect(ranked.queue[1].actionability).toBe('blocked_dependency');
+  });
+
+  it('does not infer unrelated protocol issues from generic single-word dependency segments', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 60, title: '[S1] Define Action Inbox Protocol v1 for loop user decisions', labels: ['loop'], createdAt: '2026-01-01T00:00:00Z' },
+        { number: 61, title: '[S1] Implement TUI action modal + reply writer for loop inbox', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+        { number: 62, title: '[S1] Add timeout/retry/cleanup and integration tests for action inbox path', labels: ['loop'], createdAt: '2026-01-03T00:00:00Z' },
+        { number: 66, title: '[S3] Implement phase status protocol v2 writers in loop scripts', labels: ['loop'], createdAt: '2026-01-04T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 60
+        ? '[S1] Define Action Inbox Protocol v1 for loop user decisions'
+        : number === 61
+          ? '[S1] Implement TUI action modal + reply writer for loop inbox'
+          : number === 62
+            ? '[S1] Add timeout/retry/cleanup and integration tests for action inbox path'
+            : '[S3] Implement phase status protocol v2 writers in loop scripts',
+      body: number === 60
+        ? 'Define the protocol.'
+        : number === 61
+          ? 'Implement the modal. Depends on #60'
+          : number === 62
+            ? 'Depends on protocol + TUI action modal implementation.'
+            : 'Write the phase status protocol files.',
+      labels: ['loop'],
+      state: 'open',
+      createdAt: `2026-01-0${number === 60 ? 1 : number === 61 ? 2 : number === 62 ? 3 : 4}T00:00:00Z`,
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [60, 61, 62] }), makeStore());
+    const testIssue = ranked.queue.find((issue) => issue.issueNumber === 62);
+
+    expect(ranked.expansions).toEqual([]);
+    expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([60, 61, 62]);
+    expect(testIssue?.dependsOn).toContain(61);
+    expect(testIssue?.dependsOn).not.toContain(66);
+  });
+
+  it('ignores generic single-word title matches but keeps multi-word dependency inference', () => {
+    const hints = extractDependencyHints(
+      'Depends on protocol + TUI action modal implementation.',
+      [
+        { number: 60, title: '[S1] Define Action Inbox Protocol v1 for loop user decisions' },
+        { number: 61, title: '[S1] Implement TUI action modal + reply writer for loop inbox' },
+        { number: 66, title: '[S3] Implement phase status protocol v2 writers in loop scripts' },
+      ],
+      62,
+    );
+
+    expect(hints).toContain(61);
+    expect(hints).not.toContain(60);
+    expect(hints).not.toContain(66);
   });
 
   it('keeps issues blocked_out_of_scope when the prerequisite is not in the open backlog', async () => {

@@ -26,6 +26,18 @@ const STOP_WORDS = new Set([
   'should', 'about', 'issue', 'task', 'feature', 'support', 'implement', 'add', 'build', 'create',
   'update', 'fix', 'make', 'allow', 'user', 'users', 'cli', 'agent', 'part', 'related', 'summary',
 ]);
+const GENERIC_DEPENDENCY_TOKENS = new Set([
+  'protocol',
+  'runtime',
+  'modal',
+  'status',
+  'contract',
+  'interface',
+  'implementation',
+  'bridge',
+  'workflow',
+  'execution',
+]);
 const DEPENDENCY_CUE_PATTERN = /\b(depends on|blocked by|requires|after)\b/i;
 const MAX_SCOPE_EXPANSION_ISSUES = 3;
 const MAX_SCOPE_EXPANSION_DEPTH = 3;
@@ -66,13 +78,16 @@ export function extractDependencyHints(
     for (const segment of segments) {
       const segmentTokens = normalizeTokens(segment);
       if (segmentTokens.length === 0) continue;
+      const allowSingleTokenFallback = segmentTokens.length === 1
+        && segmentTokens[0].length >= 6
+        && !GENERIC_DEPENDENCY_TOKENS.has(segmentTokens[0]);
 
       const scored = backlogIssues
         .filter(issue => issue.number !== currentIssueNumber)
         .map(issue => {
           const titleTokens = normalizeTokens(issue.title);
           const overlap = titleTokens.filter(token => segmentTokens.includes(token)).length;
-          const uniqueTokenMatch = segmentTokens.length === 1 && segmentTokens[0].length >= 6 && titleTokens.includes(segmentTokens[0]);
+          const uniqueTokenMatch = allowSingleTokenFallback && titleTokens.includes(segmentTokens[0]);
           return { issue, overlap, uniqueTokenMatch };
         })
         .filter(item => item.overlap > 0 || item.uniqueTokenMatch);
@@ -85,8 +100,13 @@ export function extractDependencyHints(
           if (item.overlap === bestOverlap) {
             inferredFromTitles.push(item.issue.number);
           }
-        } else if (item.uniqueTokenMatch) {
-          inferredFromTitles.push(item.issue.number);
+        }
+      }
+
+      if (bestOverlap < 2 && allowSingleTokenFallback) {
+        const exactTokenMatches = scored.filter(item => item.uniqueTokenMatch);
+        if (exactTokenMatches.length === 1) {
+          inferredFromTitles.push(exactTokenMatches[0].issue.number);
         }
       }
     }
