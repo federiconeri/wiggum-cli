@@ -178,6 +178,37 @@ describe('buildRankedBacklog', () => {
     expect(downstream?.inferredDependsOn).toEqual([{ issueNumber: 1, confidence: 'high' }]);
   });
 
+  it('downgrades ancillary debug-style inferred blockers to ranking hints', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 17, title: 'Add debug logging and error tracking for TUI', labels: ['infrastructure'], createdAt: '2026-01-01T00:00:00Z' },
+        { number: 69, title: 'Build LoopOrchestrator runtime', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      title: number === 17 ? 'Add debug logging and error tracking for TUI' : 'Build LoopOrchestrator runtime',
+      body: number === 17
+        ? 'Add debugging capabilities for the Ink-based TUI, including tool execution visibility and Sentry integration.'
+        : 'Implement orchestrator runtime that spawns loop child processes directly from Wiggum and supports PTY-based execution.',
+      labels: number === 17 ? ['infrastructure'] : ['loop'],
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+    mockGenerateObject.mockImplementation(async ({ prompt }: { prompt: string }) => ({
+      object: {
+        edges: /Current issue:\n#69: Build LoopOrchestrator runtime/.test(prompt)
+          ? [{ targetIssue: 17, confidence: 'high', evidence: 'Tool execution visibility should land first.' }]
+          : [],
+      },
+    }));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [17, 69] }), makeStore());
+    const runtimeIssue = ranked.queue.find((issue) => issue.issueNumber === 69);
+
+    expect(runtimeIssue?.actionability).toBe('ready');
+    expect(runtimeIssue?.inferredDependsOn).toEqual([{ issueNumber: 17, confidence: 'medium' }]);
+    expect(runtimeIssue?.blockedBy).toEqual([]);
+  });
+
   it('uses medium-confidence inferred dependencies as ordering hints without blocking', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

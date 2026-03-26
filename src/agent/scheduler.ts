@@ -347,6 +347,77 @@ function sharedSignals(issueText: string, peerText: string): string[] {
   return signals;
 }
 
+function peerHasRuntimeFoundation(peerText: string): boolean {
+  return /\b(runtime|contract|interface|protocol)\b/i.test(peerText);
+}
+
+function peerHasApiFoundation(peerText: string): boolean {
+  return /\b(schema|api|backend|storage|infrastructure|foundation|setup|config)\b/i.test(peerText);
+}
+
+function issueLooksLikeConsumerWork(issueText: string): boolean {
+  return /\b(ui|screen|render|surface|workflow|integration|consume|page|command)\b/i.test(issueText);
+}
+
+function issueHasPrerequisiteLanguage(issueText: string): boolean {
+  return /\b(after|once|using|reuse|extend|build on|depends on|blocked by|requires)\b/i.test(issueText);
+}
+
+function peerIsAncillary(peerText: string): boolean {
+  return /\b(debug|logging|logger|observability|instrumentation|tracking|breadcrumb|sentry|telemetry|diagnos|monitoring)\b/i.test(peerText);
+}
+
+function peerDeclaresOrdering(peerText: string): boolean {
+  return /\b(protocol-first|foundation-first|should land before|must land before|before ui|before integration|prerequisite|groundwork)\b/i.test(peerText);
+}
+
+function qualifiesForHardInferredBlock(
+  issue: BacklogCandidate,
+  peer: BacklogCandidate,
+  overlap: number,
+): boolean {
+  if (peer.issueNumber >= issue.issueNumber) return false;
+
+  const issueText = `${issue.title}\n${issue.body}`;
+  const peerText = `${peer.title}\n${peer.body}`;
+  if (peerIsAncillary(peerText)) return false;
+
+  const runtimeFoundation = peerHasRuntimeFoundation(peerText);
+  const apiFoundation = peerHasApiFoundation(peerText);
+  const foundational = runtimeFoundation || apiFoundation || peerLooksFoundational(peer) || peerDeclaresOrdering(peerText);
+  if (!foundational || overlap < 2) return false;
+
+  const evalWork = /\b(eval|evaluation|benchmark|baseline|metric|report|harness)\b/i.test(issueText);
+  const rolloutWork = /\b(rollout|rollback|flag|fallback|kill switch|control)\b/i.test(issueText);
+  const hybridWork = /\b(hybrid|handoff|routing|phase)\b/i.test(issueText);
+  const issueNeedsFoundation = issueLooksLikeConsumerWork(issueText) || issueHasPrerequisiteLanguage(issueText) || evalWork || rolloutWork || hybridWork;
+
+  return issueNeedsFoundation;
+}
+
+function normalizeInferredEdge(
+  issue: BacklogCandidate,
+  peer: BacklogCandidate,
+  edge: DependencyEdge,
+): DependencyEdge {
+  const issueText = `${issue.title}\n${issue.body}`;
+  const peerText = `${peer.title}\n${peer.body}`;
+  const overlap = tokenOverlap(issueText, peerText);
+  const canHardBlock = qualifiesForHardInferredBlock(issue, peer, overlap);
+  if (edge.confidence === 'high' && !canHardBlock) {
+    return {
+      ...edge,
+      confidence: 'medium',
+      blocking: false,
+    };
+  }
+
+  return {
+    ...edge,
+    blocking: edge.confidence === 'high' && canHardBlock,
+  };
+}
+
 function describeFallbackDependency(
   issue: BacklogCandidate,
   peer: BacklogCandidate,
@@ -355,12 +426,12 @@ function describeFallbackDependency(
   const issueText = `${issue.title}\n${issue.body}`;
   const peerText = `${peer.title}\n${peer.body}`;
 
-  const runtimeFoundation = /\b(runtime|contract|interface|protocol)\b/i.test(peerText);
+  const runtimeFoundation = peerHasRuntimeFoundation(peerText);
   const evalWork = /\b(eval|evaluation|benchmark|baseline|metric|report|harness)\b/i.test(issueText);
   const rolloutWork = /\b(rollout|rollback|flag|fallback|kill switch|control)\b/i.test(issueText);
   const hybridWork = /\b(hybrid|handoff|routing|phase)\b/i.test(issueText);
-  const consumerWork = /\b(ui|screen|render|surface|workflow|integration|consume|page|command)\b/i.test(issueText);
-  const apiFoundation = /\b(schema|api|backend|storage|infrastructure|foundation|setup|config)\b/i.test(peerText);
+  const consumerWork = issueLooksLikeConsumerWork(issueText);
+  const apiFoundation = peerHasApiFoundation(peerText);
 
   if (runtimeFoundation && evalWork) {
     return `#${peer.issueNumber} defines the native runtime contract that this evaluation work should measure against first.`;
@@ -393,15 +464,15 @@ function buildFallbackInferredEdges(issue: BacklogCandidate, peers: BacklogCandi
     if (overlap === 0) continue;
 
     const peerFoundation = /\b(core|base|foundation|scaffold|setup|config|schema|api|storage|data|backend|infrastructure)\b/i.test(peerText);
-    const issueConsumer = /\b(ui|screen|render|surface|workflow|integration|use|consume|page|command)\b/i.test(issueText);
-    const issuePrereqLanguage = /\b(after|once|using|reuse|extend|build on|depends on|blocked by|requires)\b/i.test(issueText);
-    const runtimeFoundation = /\b(runtime|contract|interface|protocol)\b/i.test(peerText);
+    const issueConsumer = issueLooksLikeConsumerWork(issueText);
+    const issuePrereqLanguage = issueHasPrerequisiteLanguage(issueText);
+    const runtimeFoundation = peerHasRuntimeFoundation(peerText);
     const blocking = peer.issueNumber < issue.issueNumber && (peerFoundation || runtimeFoundation || issuePrereqLanguage) && overlap >= 1;
     if (!blocking) continue;
 
     const confidence: DependencyConfidence = ((peerFoundation || runtimeFoundation) && (issueConsumer || issuePrereqLanguage) && overlap >= 2) ? 'high' : 'medium';
     const shared = sharedSignals(issueText, peerText);
-    edges.push({
+    edges.push(normalizeInferredEdge(issue, peer, {
       sourceIssue: issue.issueNumber,
       targetIssue: peer.issueNumber,
       kind: 'inferred',
@@ -411,7 +482,7 @@ function buildFallbackInferredEdges(issue: BacklogCandidate, peers: BacklogCandi
         summary: describeFallbackDependency(issue, peer, shared),
         backlogSignals: [`Issue #${peer.issueNumber} appears more foundational and lower-numbered.`],
       },
-    });
+    }));
   }
   return edges;
 }
@@ -464,19 +535,24 @@ Return only the issues that must or likely should come first.`,
 
     return object.edges
       .filter(edge => peers.some(peer => peer.issueNumber === edge.targetIssue))
-      .map((edge) => ({
-        sourceIssue: issue.issueNumber,
-        targetIssue: edge.targetIssue,
-        kind: 'inferred' as const,
-        confidence: edge.confidence,
-        blocking: edge.confidence === 'high',
-        evidence: {
-          summary: edge.evidence,
-          codebaseSignals: codebaseContext !== 'No persisted codebase context available.'
-            ? ['Persisted project context was used during dependency inference.']
-            : undefined,
-        },
-      }));
+      .map((edge) => {
+        const peer = peers.find(candidate => candidate.issueNumber === edge.targetIssue);
+        if (!peer) return null;
+        return normalizeInferredEdge(issue, peer, {
+          sourceIssue: issue.issueNumber,
+          targetIssue: edge.targetIssue,
+          kind: 'inferred' as const,
+          confidence: edge.confidence,
+          blocking: edge.confidence === 'high',
+          evidence: {
+            summary: edge.evidence,
+            codebaseSignals: codebaseContext !== 'No persisted codebase context available.'
+              ? ['Persisted project context was used during dependency inference.']
+              : undefined,
+          },
+        });
+      })
+      .filter((edge): edge is DependencyEdge => edge != null);
   } catch {
     return [];
   }
