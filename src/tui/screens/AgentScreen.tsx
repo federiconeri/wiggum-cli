@@ -139,8 +139,9 @@ function IssuesPanel({
             </Text>
             {(issue.actionability || issue.recommendation || issue.dependsOn?.length || issue.inferredDependsOn?.length) && (
               <Text dimColor>
-                {issue.scopeOrigin === 'dependency' ? `dependency for ${issue.requestedBy?.map(n => `#${n}`).join(', ')}` : 'requested'}
-                {' · '}
+                {issue.scopeOrigin === 'dependency' && issue.requestedBy?.length
+                  ? `dependency for ${issue.requestedBy.map(n => `#${n}`).join(', ')} · `
+                  : ''}
                 {issue.actionability ?? 'ready'}
                 {issue.recommendation ? ` · ${issue.recommendation}` : ''}
                 {issue.dependsOn?.length ? ` · explicit: ${issue.dependsOn.map(n => `#${n}`).join(', ')}` : ''}

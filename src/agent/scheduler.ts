@@ -950,7 +950,9 @@ export async function buildRankedBacklog(
       body: detail.body ?? '',
       createdAt: issue.createdAt,
       phase: 'idle',
-      scopeOrigin: config.issues?.includes(issue.number) ? 'requested' : 'dependency',
+      scopeOrigin: issueScope
+        ? (config.issues?.includes(issue.number) ? 'requested' : 'dependency')
+        : undefined,
       requestedBy: expansions.find(expansion => expansion.issueNumber === issue.number)?.requestedBy,
       priorityTier: derivePriorityTier(detail.labels ?? issue.labels ?? []),
       dependsOn,

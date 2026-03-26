@@ -20,6 +20,9 @@ export interface HeaderContentProps {
   version: string;
   /** Current session state */
   sessionState: SessionState;
+  /** Optional provider/model display overrides for screen-specific modes */
+  providerOverride?: string;
+  modelOverride?: string;
   /** Background runs (only active ones are displayed) */
   backgroundRuns?: BackgroundRun[];
   /** Use compact banner for small terminals */
@@ -34,11 +37,15 @@ export interface HeaderContentProps {
 export function HeaderContent({
   version,
   sessionState,
+  providerOverride,
+  modelOverride,
   backgroundRuns,
   compact = false,
 }: HeaderContentProps): React.ReactElement {
   const activeRuns = backgroundRuns?.filter((r) => !r.completed && !r.pollError) ?? [];
   const errorRuns = backgroundRuns?.filter((r) => r.pollError) ?? [];
+  const provider = providerOverride || sessionState.provider;
+  const model = modelOverride || sessionState.model;
 
   return (
     <Box flexDirection="column" paddingX={1}>
@@ -46,8 +53,8 @@ export function HeaderContent({
       <Box flexDirection="row">
         <Text color={colors.pink}>v{version}</Text>
         <Text dimColor>{theme.statusLine.separator}</Text>
-        {sessionState.provider ? (
-          <Text color={colors.blue}>{sessionState.provider}/{sessionState.model}</Text>
+        {provider ? (
+          <Text color={colors.blue}>{provider}/{model}</Text>
         ) : (
           <Text color={colors.orange}>not configured</Text>
         )}

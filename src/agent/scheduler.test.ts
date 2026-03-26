@@ -288,6 +288,28 @@ describe('buildRankedBacklog', () => {
     expect(mockListRepoIssues).toHaveBeenCalledTimes(1);
   });
 
+  it('does not mark unscoped backlog items as dependency-expanded', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 60, title: 'Define Action Inbox Protocol', labels: ['loop'], createdAt: '2026-01-01T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockResolvedValue({
+      number: 60,
+      title: 'Define Action Inbox Protocol',
+      body: 'Protocol-first issue.',
+      labels: ['loop'],
+      state: 'open',
+      createdAt: '2026-01-01T00:00:00Z',
+    });
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig(), makeStore());
+
+    expect(ranked.queue[0]?.scopeOrigin).toBeUndefined();
+    expect(ranked.queue[0]?.requestedBy).toBeUndefined();
+  });
+
   it('produces clearer fallback rationale for runtime-first inferred dependencies', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [
