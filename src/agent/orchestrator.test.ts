@@ -4,6 +4,8 @@ const {
   mockMemoryStoreRead,
   mockMemoryStorePrune,
   mockBuildRankedBacklog,
+  mockCreateSchedulerRunCache,
+  mockInvalidateSchedulerRunCache,
   mockToIssueStates,
   mockIngestStrategicDocs,
   mockToolLoopStream,
@@ -11,6 +13,8 @@ const {
   mockMemoryStoreRead: vi.fn().mockResolvedValue([]),
   mockMemoryStorePrune: vi.fn().mockResolvedValue(0),
   mockBuildRankedBacklog: vi.fn(),
+  mockCreateSchedulerRunCache: vi.fn(() => ({ issueDetails: new Map(), featureStates: new Map() })),
+  mockInvalidateSchedulerRunCache: vi.fn(),
   mockToIssueStates: vi.fn((queue) => queue),
   mockIngestStrategicDocs: vi.fn().mockResolvedValue(0),
   mockToolLoopStream: vi.fn().mockResolvedValue({
@@ -32,6 +36,8 @@ vi.mock('./memory/ingest.js', () => ({
 
 vi.mock('./scheduler.js', () => ({
   buildRankedBacklog: mockBuildRankedBacklog,
+  createSchedulerRunCache: mockCreateSchedulerRunCache,
+  invalidateSchedulerRunCache: mockInvalidateSchedulerRunCache,
   toIssueStates: mockToIssueStates,
 }));
 
@@ -91,6 +97,7 @@ describe('createAgentOrchestrator', () => {
     mockMemoryStoreRead.mockResolvedValue([]);
     mockMemoryStorePrune.mockResolvedValue(0);
     mockIngestStrategicDocs.mockResolvedValue(0);
+    mockCreateSchedulerRunCache.mockReturnValue({ issueDetails: new Map(), featureStates: new Map() });
     mockToIssueStates.mockImplementation((queue) => queue);
     mockToolLoopStream.mockResolvedValue({
       textStream: (async function* () {})(),
@@ -187,7 +194,9 @@ describe('createAgentOrchestrator', () => {
     const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
 
     expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(2);
+    expect(mockBuildRankedBacklog.mock.calls[0][2]).toBe(mockBuildRankedBacklog.mock.calls[1][2]);
     expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
+    expect(mockInvalidateSchedulerRunCache).toHaveBeenCalledWith(mockBuildRankedBacklog.mock.calls[0][2], [69]);
     expect(result.text).toContain('Processed 1 issue(s).');
     expect(result.text).toContain('Completed: #69');
     expect(result.text).toContain('Blocked: #70 (blocked_dependency)');

@@ -10,7 +10,7 @@ import { createIntrospectionTools } from './tools/introspection.js';
 import { createDryRunExecutionTools, createDryRunFeatureStateTools, createDryRunReportingTools } from './tools/dry-run.js';
 import { createFeatureStateTools } from './tools/feature-state.js';
 import type { AgentConfig, AgentIssueState, AgentStepEvent, BacklogCandidate } from './types.js';
-import { buildRankedBacklog, toIssueStates } from './scheduler.js';
+import { buildRankedBacklog, createSchedulerRunCache, invalidateSchedulerRunCache, toIssueStates } from './scheduler.js';
 import { logger } from '../utils/logger.js';
 import { getTracedAI } from '../utils/tracing.js';
 
@@ -253,13 +253,14 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
     const processed: AgentIssueState[] = [];
     const attemptedThisRun = new Set<number>();
     let blockedSnapshot: AgentIssueState[] = [];
+    const schedulerCache = createSchedulerRunCache();
 
     while (true) {
       if (options.abortSignal?.aborted) {
         throw new Error('Aborted');
       }
 
-      const ranked = await buildRankedBacklog(this.config, store);
+      const ranked = await buildRankedBacklog(this.config, store, schedulerCache);
       if (ranked.queue.length === 0 && ranked.errors.length > 0) {
         throw new Error(ranked.errors[0]);
       }
@@ -357,6 +358,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
       };
       processed.push(completedIssue);
       this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
+      invalidateSchedulerRunCache(schedulerCache, [selected.issueNumber]);
     }
   }
 

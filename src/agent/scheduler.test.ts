@@ -33,7 +33,7 @@ vi.mock('../utils/tracing.js', () => ({
   }),
 }));
 
-import { buildRankedBacklog, extractDependencyHints } from './scheduler.js';
+import { buildRankedBacklog, createSchedulerRunCache, extractDependencyHints } from './scheduler.js';
 import type { AgentConfig } from './types.js';
 
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
@@ -229,6 +229,32 @@ describe('buildRankedBacklog', () => {
     await buildRankedBacklog(makeConfig(), makeStore());
 
     expect(mockGenerateObject).toHaveBeenCalledTimes(12);
+  });
+
+  it('reuses cached issue details and feature state across ranked backlog rebuilds', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 1, title: 'Runtime foundation', labels: ['loop'], createdAt: '2026-01-01T00:00:00Z' },
+        { number: 2, title: 'Dependent workflow', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 1 ? 'Runtime foundation' : 'Dependent workflow',
+      body: number === 2 ? 'Depends on #1' : 'Build the runtime foundation.',
+      labels: ['loop'],
+      state: 'open',
+      createdAt: `2026-01-0${number}T00:00:00Z`,
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const cache = createSchedulerRunCache();
+    await buildRankedBacklog(makeConfig(), makeStore(), cache);
+    await buildRankedBacklog(makeConfig(), makeStore(), cache);
+
+    expect(mockFetchGitHubIssue).toHaveBeenCalledTimes(2);
+    expect(mockAssessFeatureStateImpl).toHaveBeenCalledTimes(2);
+    expect(mockListRepoIssues).toHaveBeenCalledTimes(1);
   });
 
   it('produces clearer fallback rationale for runtime-first inferred dependencies', async () => {

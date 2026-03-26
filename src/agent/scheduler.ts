@@ -15,8 +15,8 @@ import type {
   TaskActionability,
   TaskScoreBreakdown,
 } from './types.js';
-import { listRepoIssues, fetchGitHubIssue, type GitHubIssueListItem } from '../utils/github.js';
-import { assessFeatureStateImpl } from './tools/feature-state.js';
+import { listRepoIssues, fetchGitHubIssue, type GitHubIssueDetail, type GitHubIssueListItem, type ListIssuesResult } from '../utils/github.js';
+import { assessFeatureStateImpl, type FeatureState } from './tools/feature-state.js';
 import { getTracedAI } from '../utils/tracing.js';
 import { loadContext } from '../context/index.js';
 import { isReasoningModel } from '../ai/providers.js';
@@ -62,6 +62,33 @@ export interface RankedBacklog {
   errors: string[];
 }
 
+export interface SchedulerRunCache {
+  listed?: ListIssuesResult;
+  issueDetails: Map<number, GitHubIssueDetail | null>;
+  featureStates: Map<number, FeatureState>;
+  persistedContext?: Awaited<ReturnType<typeof loadContext>> | null;
+}
+
+export function createSchedulerRunCache(): SchedulerRunCache {
+  return {
+    listed: undefined,
+    issueDetails: new Map<number, GitHubIssueDetail | null>(),
+    featureStates: new Map<number, FeatureState>(),
+    persistedContext: undefined,
+  };
+}
+
+export function invalidateSchedulerRunCache(
+  cache: SchedulerRunCache,
+  issueNumbers: number[] = [],
+): void {
+  cache.listed = undefined;
+  for (const issueNumber of issueNumbers) {
+    cache.issueDetails.delete(issueNumber);
+    cache.featureStates.delete(issueNumber);
+  }
+}
+
 function emitBacklogEvent(config: AgentConfig, event: AgentOrchestratorEvent): void {
   config.onOrchestratorEvent?.(event);
 }
@@ -91,6 +118,49 @@ async function mapWithConcurrency<T, R>(
   const workerCount = Math.min(concurrency, items.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
   return results;
+}
+
+async function getIssueDetail(
+  config: AgentConfig,
+  issueNumber: number,
+  cache?: SchedulerRunCache,
+): Promise<GitHubIssueDetail | null> {
+  if (cache?.issueDetails.has(issueNumber)) {
+    return cache.issueDetails.get(issueNumber) ?? null;
+  }
+
+  const detail = await fetchGitHubIssue(config.owner, config.repo, issueNumber);
+  cache?.issueDetails.set(issueNumber, detail);
+  return detail;
+}
+
+async function getFeatureState(
+  config: AgentConfig,
+  issueNumber: number,
+  featureName: string,
+  cache?: SchedulerRunCache,
+): Promise<FeatureState> {
+  const cached = cache?.featureStates.get(issueNumber);
+  if (cached) return cached;
+
+  const featureState = await assessFeatureStateImpl(config.projectRoot, featureName, issueNumber);
+  cache?.featureStates.set(issueNumber, featureState);
+  return featureState;
+}
+
+async function getPersistedContext(
+  config: AgentConfig,
+  cache?: SchedulerRunCache,
+): Promise<Awaited<ReturnType<typeof loadContext>> | null> {
+  if (cache && cache.persistedContext !== undefined) {
+    return cache.persistedContext;
+  }
+
+  const persistedContext = await loadContext(config.projectRoot).catch(() => null);
+  if (cache) {
+    cache.persistedContext = persistedContext;
+  }
+  return persistedContext;
 }
 
 export function extractDependencyHints(
@@ -597,6 +667,7 @@ function toIssueState(candidate: BacklogCandidate): AgentIssueState {
 async function expandIssueScope(
   config: AgentConfig,
   listedIssues: Array<{ number: number; title: string; labels: string[]; createdAt: string }>,
+  cache?: SchedulerRunCache,
 ): Promise<{ effectiveScope: Set<number> | undefined; expansions: ScopeExpansion[]; errors: string[] }> {
   if (!config.issues?.length) {
     return { effectiveScope: undefined, expansions: [], errors: [] };
@@ -616,7 +687,7 @@ async function expandIssueScope(
     const current = queue.shift();
     if (!current || current.depth >= MAX_SCOPE_EXPANSION_DEPTH) continue;
 
-    const detail = await fetchGitHubIssue(config.owner, config.repo, current.issueNumber);
+    const detail = await getIssueDetail(config, current.issueNumber, cache);
     if (!detail) {
       errors.push(`Failed to fetch issue #${current.issueNumber} from GitHub while expanding dependencies. Check gh connectivity.`);
       continue;
@@ -627,7 +698,7 @@ async function expandIssueScope(
       if (effectiveScope.has(dependencyNumber)) continue;
 
       if (!backlogSummaries.some(issue => issue.number === dependencyNumber)) {
-        const dependencyDetail = await fetchGitHubIssue(config.owner, config.repo, dependencyNumber);
+        const dependencyDetail = await getIssueDetail(config, dependencyNumber, cache);
         if (!dependencyDetail) {
           errors.push(`Failed to fetch dependency issue #${dependencyNumber} from GitHub. Check gh connectivity.`);
           continue;
@@ -667,6 +738,7 @@ async function hydrateScopedIssues(
   config: AgentConfig,
   listedIssues: GitHubIssueListItem[],
   issueScope?: Set<number>,
+  cache?: SchedulerRunCache,
 ): Promise<{ issues: GitHubIssueListItem[]; errors: string[] }> {
   if (!issueScope) return { issues: listedIssues, errors: [] };
 
@@ -681,7 +753,7 @@ async function hydrateScopedIssues(
       continue;
     }
 
-    const detail = await fetchGitHubIssue(config.owner, config.repo, issueNumber);
+    const detail = await getIssueDetail(config, issueNumber, cache);
     if (!detail) {
       errors.push(`Failed to fetch requested issue #${issueNumber} from GitHub. Check gh connectivity.`);
       continue;
@@ -703,6 +775,7 @@ async function hydrateScopedIssues(
 export async function buildRankedBacklog(
   config: AgentConfig,
   store: MemoryStore,
+  cache?: SchedulerRunCache,
 ): Promise<RankedBacklog> {
   const listStart = nowMs();
   emitBacklogEvent(config, {
@@ -710,7 +783,10 @@ export async function buildRankedBacklog(
     phase: 'listing',
     message: 'Listing open GitHub issues.',
   });
-  const listed = await listRepoIssues(config.owner, config.repo, undefined, 50);
+  const listed = cache?.listed ?? await listRepoIssues(config.owner, config.repo, undefined, 50);
+  if (cache && !cache.listed) {
+    cache.listed = listed;
+  }
   emitBacklogEvent(config, {
     type: 'backlog_timing',
     phase: 'listing',
@@ -726,7 +802,7 @@ export async function buildRankedBacklog(
       ? `Resolving scoped dependencies for ${config.issues.length} requested issue(s).`
       : 'No scoped dependency expansion required.',
   });
-  const { effectiveScope: issueScope, expansions, errors: scopeErrors } = await expandIssueScope(config, listed.issues ?? []);
+  const { effectiveScope: issueScope, expansions, errors: scopeErrors } = await expandIssueScope(config, listed.issues ?? [], cache);
   emitBacklogEvent(config, {
     type: 'backlog_timing',
     phase: 'scope_expansion',
@@ -743,7 +819,7 @@ export async function buildRankedBacklog(
       : `Hydrating up to ${(listed.issues ?? []).length} listed issue(s).`,
     total: issueScope?.size ?? (listed.issues ?? []).length,
   });
-  const { issues: scopedIssues, errors: hydrateErrors } = await hydrateScopedIssues(config, listed.issues ?? [], issueScope);
+  const { issues: scopedIssues, errors: hydrateErrors } = await hydrateScopedIssues(config, listed.issues ?? [], issueScope, cache);
   emitBacklogEvent(config, {
     type: 'backlog_timing',
     phase: 'hydration',
@@ -768,7 +844,7 @@ export async function buildRankedBacklog(
   });
 
   const memories = await store.read({ type: 'work_log', limit: 200 });
-  const persistedContext = await loadContext(config.projectRoot).catch(() => null);
+  const persistedContext = await getPersistedContext(config, cache);
   const codebaseContext = buildCodebaseContext(persistedContext);
 
   const enrichmentStart = nowMs();
@@ -780,10 +856,10 @@ export async function buildRankedBacklog(
   });
   let enrichedCount = 0;
   const candidateResults = await mapWithConcurrency(baseIssues, ENRICHMENT_CONCURRENCY, async (issue) => {
-    const detail = await fetchGitHubIssue(config.owner, config.repo, issue.number);
+    const detail = await getIssueDetail(config, issue.number, cache);
     if (!detail) return null;
     const featureName = deriveFeatureNameFromTitle(detail.title || issue.title);
-    const featureState = await assessFeatureStateImpl(config.projectRoot, featureName, issue.number);
+    const featureState = await getFeatureState(config, issue.number, featureName, cache);
     const dependsOn = extractDependencyHints(
       detail.body ?? '',
       (listed.issues ?? []).map(issue => ({ number: issue.number, title: issue.title })),

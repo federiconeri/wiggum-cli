@@ -6,6 +6,8 @@ const {
   mockMemoryStorePrune,
   mockIngestStrategicDocs,
   mockBuildRankedBacklog,
+  mockCreateSchedulerRunCache,
+  mockInvalidateSchedulerRunCache,
   mockToIssueStates,
   mockToolLoopStream,
 } = vi.hoisted(() => ({
@@ -14,6 +16,8 @@ const {
   mockMemoryStorePrune: vi.fn().mockResolvedValue(0),
   mockIngestStrategicDocs: vi.fn().mockResolvedValue(0),
   mockBuildRankedBacklog: vi.fn(),
+  mockCreateSchedulerRunCache: vi.fn(() => ({ issueDetails: new Map(), featureStates: new Map() })),
+  mockInvalidateSchedulerRunCache: vi.fn(),
   mockToIssueStates: vi.fn((queue) => queue),
   mockToolLoopStream: vi.fn().mockResolvedValue({
     textStream: (async function* () {})(),
@@ -38,6 +42,8 @@ vi.mock('../agent/memory/ingest.js', () => ({
 
 vi.mock('../agent/scheduler.js', () => ({
   buildRankedBacklog: mockBuildRankedBacklog,
+  createSchedulerRunCache: mockCreateSchedulerRunCache,
+  invalidateSchedulerRunCache: mockInvalidateSchedulerRunCache,
   toIssueStates: mockToIssueStates,
 }));
 
@@ -113,6 +119,7 @@ describe('agentCommand integration', () => {
     mockMemoryStoreRead.mockResolvedValue([]);
     mockMemoryStorePrune.mockResolvedValue(0);
     mockIngestStrategicDocs.mockResolvedValue(0);
+    mockCreateSchedulerRunCache.mockReturnValue({ issueDetails: new Map(), featureStates: new Map() });
     mockToIssueStates.mockImplementation((queue) => queue);
     mockToolLoopStream.mockResolvedValue({
       textStream: (async function* () {})(),
