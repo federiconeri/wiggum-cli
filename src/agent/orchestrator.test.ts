@@ -146,6 +146,8 @@ describe('createAgentOrchestrator', () => {
     expect(AGENT_SYSTEM_PROMPT).toContain('assessFeatureState');
     expect(AGENT_SYSTEM_PROMPT).toContain('reflectOnWork');
     expect(AGENT_SYSTEM_PROMPT).toContain('Do not select another issue');
+    expect(AGENT_SYSTEM_PROMPT).toContain('forward Runtime Config values into generateSpec and runLoop');
+    expect(AGENT_SYSTEM_PROMPT).toContain('pass reviewMode when reviewMode is set');
   });
 
   it('emits scope expansion and does not reselect the same issue in one run', async () => {

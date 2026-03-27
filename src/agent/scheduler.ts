@@ -163,6 +163,30 @@ async function getPersistedContext(
   return persistedContext;
 }
 
+async function resolveOpenDependencies(
+  config: AgentConfig,
+  dependencies: number[],
+  listedIssues: GitHubIssueListItem[],
+  cache?: SchedulerRunCache,
+): Promise<number[]> {
+  const listedOpen = new Set(listedIssues.map(issue => issue.number));
+  const openDependencies: number[] = [];
+
+  for (const dependencyNumber of dependencies) {
+    if (listedOpen.has(dependencyNumber)) {
+      openDependencies.push(dependencyNumber);
+      continue;
+    }
+
+    const dependencyDetail = await getIssueDetail(config, dependencyNumber, cache);
+    if (dependencyDetail?.state === 'open') {
+      openDependencies.push(dependencyNumber);
+    }
+  }
+
+  return openDependencies;
+}
+
 export function extractDependencyHints(
   body: string,
   backlogIssues: Array<{ number: number; title: string }> = [],
@@ -936,11 +960,12 @@ export async function buildRankedBacklog(
     if (!detail) return null;
     const featureName = deriveFeatureNameFromTitle(detail.title || issue.title);
     const featureState = await getFeatureState(config, issue.number, featureName, cache);
-    const dependsOn = extractDependencyHints(
+    const hintedDependencies = extractDependencyHints(
       detail.body ?? '',
       (listed.issues ?? []).map(issue => ({ number: issue.number, title: issue.title })),
       issue.number,
     );
+    const dependsOn = await resolveOpenDependencies(config, hintedDependencies, listed.issues ?? [], cache);
     const attemptState = getAttemptState(memories, issue.number);
 
     const candidate: BacklogCandidate = {

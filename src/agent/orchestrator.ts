@@ -43,6 +43,10 @@ You are given exactly one backlog issue that has already been selected by a high
 - You must stay within the selected issue.
 - You must pass issueNumber to assessFeatureState.
 - You must pass resume: true for resume_implementation and resume_pr_phase.
+- You must forward Runtime Config values into generateSpec and runLoop when present:
+  - pass model when model is set
+  - pass provider when provider is set
+  - pass reviewMode when reviewMode is set
 - You must not close an issue unless assessFeatureState confirms merged work.
 - If a loop fails, quote or summarize readLoopLog evidence in your issue comment. Do not guess.
 - You may use listIssues(labels: ["bug"]) only for blocker detection and duplicate checking.
