@@ -324,12 +324,13 @@ function interpretToolCalls(
   }
 }
 
-function applyOrchestratorEvent(
+export function applyOrchestratorEvent(
   event: AgentOrchestratorEvent,
   setActiveIssue: React.Dispatch<React.SetStateAction<AgentIssueState | null>>,
   setQueue: React.Dispatch<React.SetStateAction<AgentIssueState[]>>,
   setCompleted: React.Dispatch<React.SetStateAction<AgentIssueState[]>>,
   setLogEntries: React.Dispatch<React.SetStateAction<AgentLogEntry[]>>,
+  completedIssuesRef: React.MutableRefObject<Set<number>>,
 ): void {
   switch (event.type) {
     case 'scope_expanded':
@@ -359,7 +360,7 @@ function applyOrchestratorEvent(
       break;
 
     case 'queue_ranked':
-      setQueue(event.queue);
+      setQueue(event.queue.filter((issue) => !completedIssuesRef.current.has(issue.issueNumber)));
       break;
 
     case 'task_selected':
@@ -379,6 +380,8 @@ function applyOrchestratorEvent(
 
     case 'task_completed':
       setCompleted((prev) => prev.some((issue) => issue.issueNumber === event.issue.issueNumber) ? prev : [...prev, event.issue]);
+      completedIssuesRef.current.add(event.issue.issueNumber);
+      setQueue((prev) => prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber));
       setActiveIssue((prev) => prev?.issueNumber === event.issue.issueNumber ? null : prev);
       setLogEntries((prev) => appendLog(prev, `Completed #${event.issue.issueNumber} (${event.outcome})`, event.outcome === 'failure' ? 'error' : 'success'));
       break;
@@ -404,6 +407,7 @@ export function useAgentOrchestrator(
   const pollingRef = useRef<PollingState | null>(null);
   const ranLoopRef = useRef<Set<number>>(new Set());
   const activeIssueRef = useRef<AgentIssueState | null>(null);
+  const completedIssuesRef = useRef<Set<number>>(new Set());
 
   // Keep ref in sync for use inside polling callback
   useEffect(() => { activeIssueRef.current = activeIssue; }, [activeIssue]);
@@ -584,6 +588,7 @@ export function useAgentOrchestrator(
               setQueue,
               setCompleted,
               setLogEntries,
+              completedIssuesRef,
             );
           },
           onProgress: (toolName: string, line: string) => {

@@ -64,6 +64,7 @@ export interface RankedBacklog {
 
 export interface SchedulerRunCache {
   listed?: ListIssuesResult;
+  listedUnfiltered?: ListIssuesResult;
   issueDetails: Map<number, GitHubIssueDetail | null>;
   featureStates: Map<number, FeatureState>;
   persistedContext?: Awaited<ReturnType<typeof loadContext>> | null;
@@ -72,6 +73,7 @@ export interface SchedulerRunCache {
 export function createSchedulerRunCache(): SchedulerRunCache {
   return {
     listed: undefined,
+    listedUnfiltered: undefined,
     issueDetails: new Map<number, GitHubIssueDetail | null>(),
     featureStates: new Map<number, FeatureState>(),
     persistedContext: undefined,
@@ -83,6 +85,7 @@ export function invalidateSchedulerRunCache(
   issueNumbers: number[] = [],
 ): void {
   cache.listed = undefined;
+  cache.listedUnfiltered = undefined;
   for (const issueNumber of issueNumbers) {
     cache.issueDetails.delete(issueNumber);
     cache.featureStates.delete(issueNumber);
@@ -167,8 +170,10 @@ async function discoverListedIssues(
   config: AgentConfig,
   search?: string,
   cache?: SchedulerRunCache,
+  cacheKey: 'listed' | 'listedUnfiltered' = 'listed',
 ): Promise<ListIssuesResult> {
-  if (cache?.listed) return cache.listed;
+  const cached = cache?.[cacheKey];
+  if (cached) return cached;
 
   let requestedLimit = BACKLOG_DISCOVERY_STEP;
   let latest: ListIssuesResult = { issues: [] };
@@ -181,7 +186,7 @@ async function discoverListedIssues(
   }
 
   if (cache) {
-    cache.listed = latest;
+    cache[cacheKey] = latest;
   }
   return latest;
 }
@@ -906,6 +911,9 @@ export async function buildRankedBacklog(
     message: 'Listing open GitHub issues.',
   });
   const listed = await discoverListedIssues(config, search, cache);
+  const expansionSeed = config.issues?.length && config.labels?.length
+    ? await discoverListedIssues(config, undefined, cache, 'listedUnfiltered')
+    : listed;
   emitBacklogEvent(config, {
     type: 'backlog_timing',
     phase: 'listing',
@@ -921,7 +929,7 @@ export async function buildRankedBacklog(
       ? `Resolving scoped dependencies for ${config.issues.length} requested issue(s).`
       : 'No scoped dependency expansion required.',
   });
-  const { effectiveScope: issueScope, expansions, errors: scopeErrors } = await expandIssueScope(config, listed.issues ?? [], cache);
+  const { effectiveScope: issueScope, expansions, errors: scopeErrors } = await expandIssueScope(config, expansionSeed.issues ?? [], cache);
   emitBacklogEvent(config, {
     type: 'backlog_timing',
     phase: 'scope_expansion',

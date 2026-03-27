@@ -463,6 +463,41 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue[1].actionability).toBe('blocked_dependency');
   });
 
+  it('expands scoped dependencies against the unfiltered backlog when labels are also set', async () => {
+    mockListRepoIssues
+      .mockResolvedValueOnce({
+        issues: [
+          { number: 70, title: 'Define structured loop action IPC', labels: ['loop-ui'], createdAt: '2026-01-02T00:00:00Z' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        issues: [
+          { number: 69, title: 'Build LoopOrchestrator runtime (process supervision + PTY)', labels: ['loop-core'], createdAt: '2026-01-01T00:00:00Z' },
+          { number: 70, title: 'Define structured loop action IPC', labels: ['loop-ui'], createdAt: '2026-01-02T00:00:00Z' },
+        ],
+      });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 69
+        ? 'Build LoopOrchestrator runtime (process supervision + PTY)'
+        : 'Define structured loop action IPC',
+      body: number === 69 ? 'Runtime implementation.' : 'Depends on orchestrator runtime.',
+      labels: number === 69 ? ['loop-core'] : ['loop-ui'],
+      state: 'open',
+      createdAt: number === 69 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [70], labels: ['loop-ui'] }), makeStore());
+    const requestedIssue = ranked.queue.find((issue) => issue.issueNumber === 70);
+
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:loop-ui', 100);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 100);
+    expect(ranked.expansions).toEqual([{ issueNumber: 69, requestedBy: [70] }]);
+    expect(requestedIssue?.dependsOn).toEqual([69]);
+    expect(requestedIssue?.actionability).toBe('blocked_dependency');
+  });
+
   it('expands all open prerequisites for scoped runs instead of stopping after three', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [
