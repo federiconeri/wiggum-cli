@@ -116,7 +116,7 @@ describe('buildRankedBacklog', () => {
 
     await buildRankedBacklog(makeConfig({ labels: ['loop', 'P1'] }), makeStore());
 
-    expect(mockListRepoIssues).toHaveBeenCalledWith('acme', 'app', 'label:loop label:P1', 50);
+    expect(mockListRepoIssues).toHaveBeenCalledWith('acme', 'app', 'label:loop label:P1', 500);
   });
 
   it('prioritizes retry and resume work ahead of fresh work', async () => {

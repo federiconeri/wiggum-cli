@@ -43,6 +43,7 @@ const DEPENDENCY_CUE_PATTERN = /\b(depends on|blocked by|requires|after)\b/i;
 const MAX_MODEL_INFERENCE_CANDIDATES = 12;
 const ENRICHMENT_CONCURRENCY = 6;
 const INFERENCE_CONCURRENCY = 3;
+const BACKLOG_DISCOVERY_LIMIT = 500;
 
 const inferredDependencySchema = z.object({
   edges: z.array(z.object({
@@ -880,7 +881,7 @@ export async function buildRankedBacklog(
     phase: 'listing',
     message: 'Listing open GitHub issues.',
   });
-  const listed = cache?.listed ?? await listRepoIssues(config.owner, config.repo, search, 50);
+  const listed = cache?.listed ?? await listRepoIssues(config.owner, config.repo, search, BACKLOG_DISCOVERY_LIMIT);
   if (cache && !cache.listed) {
     cache.listed = listed;
   }

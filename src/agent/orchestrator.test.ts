@@ -8,6 +8,7 @@ const {
   mockInvalidateSchedulerRunCache,
   mockToIssueStates,
   mockIngestStrategicDocs,
+  mockCreateBacklogTools,
   mockToolLoopStream,
   mockToolLoopState,
 } = vi.hoisted(() => ({
@@ -18,6 +19,7 @@ const {
   mockInvalidateSchedulerRunCache: vi.fn(),
   mockToIssueStates: vi.fn((queue) => queue),
   mockIngestStrategicDocs: vi.fn().mockResolvedValue(0),
+  mockCreateBacklogTools: vi.fn().mockReturnValue({}),
   mockToolLoopStream: vi.fn().mockResolvedValue({
     textStream: (async function* () {})(),
   }),
@@ -47,7 +49,7 @@ vi.mock('./scheduler.js', () => ({
 }));
 
 vi.mock('./tools/backlog.js', () => ({
-  createBacklogTools: vi.fn().mockReturnValue({}),
+  createBacklogTools: mockCreateBacklogTools,
 }));
 
 vi.mock('./tools/memory.js', () => ({
@@ -154,8 +156,9 @@ describe('createAgentOrchestrator', () => {
     expect(AGENT_SYSTEM_PROMPT).toContain('assessFeatureState');
     expect(AGENT_SYSTEM_PROMPT).toContain('reflectOnWork');
     expect(AGENT_SYSTEM_PROMPT).toContain('Do not select another issue');
-    expect(AGENT_SYSTEM_PROMPT).toContain('forward Runtime Config values into generateSpec and runLoop');
-    expect(AGENT_SYSTEM_PROMPT).toContain('pass reviewMode when reviewMode is set');
+    expect(AGENT_SYSTEM_PROMPT).toContain('pass model and provider to generateSpec');
+    expect(AGENT_SYSTEM_PROMPT).toContain('pass reviewMode to runLoop');
+    expect(AGENT_SYSTEM_PROMPT).not.toContain('pass model and provider to runLoop');
   });
 
   it('emits scope expansion and does not reselect the same issue in one run', async () => {
@@ -236,6 +239,10 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Blocked: #70 (blocked_dependency)');
     expect(mockToolLoopState.options.instructions).toContain('Initial backlog scope is limited to issues: #69.');
     expect(mockToolLoopState.options.instructions).not.toContain('Initial backlog scope is limited to issues: #70.');
+    expect(mockCreateBacklogTools).toHaveBeenLastCalledWith('acme', 'app', {
+      defaultLabels: undefined,
+      issueNumbers: [69],
+    });
     expect(events.some((event) => event.type === 'scope_expanded')).toBe(true);
     expect(events.filter((event) => event.type === 'task_selected').map((event) => event.issue)).toEqual([69]);
   });
