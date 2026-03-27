@@ -954,10 +954,14 @@ export async function buildRankedBacklog(
     message: `Enriching ${baseIssues.length} issue(s) with details and feature state.`,
     total: baseIssues.length,
   });
+  const enrichmentErrors: string[] = [];
   let enrichedCount = 0;
   const candidateResults = await mapWithConcurrency(baseIssues, ENRICHMENT_CONCURRENCY, async (issue) => {
     const detail = await getIssueDetail(config, issue.number, cache);
-    if (!detail) return null;
+    if (!detail) {
+      enrichmentErrors.push(`Failed to fetch issue #${issue.number} from GitHub while enriching backlog. Check gh connectivity.`);
+      return null;
+    }
     const featureName = deriveFeatureNameFromTitle(detail.title || issue.title);
     const featureState = await getFeatureState(config, issue.number, featureName, cache);
     const hintedDependencies = extractDependencyHints(
@@ -1014,6 +1018,7 @@ export async function buildRankedBacklog(
     return candidate;
   });
   const candidates = candidateResults.filter((candidate): candidate is BacklogCandidate => candidate != null);
+  errors.push(...enrichmentErrors);
   emitBacklogEvent(config, {
     type: 'backlog_timing',
     phase: 'enrichment',
@@ -1143,8 +1148,16 @@ export async function buildRankedBacklog(
 
   return {
     queue,
-    actionable: queue.filter(candidate => candidate.actionability === 'ready' || candidate.actionability === 'housekeeping'),
-    blocked: queue.filter(candidate => candidate.actionability !== 'ready' && candidate.actionability !== 'housekeeping'),
+    actionable: queue.filter(
+      candidate => candidate.actionability === 'ready'
+        || candidate.actionability === 'housekeeping'
+        || candidate.actionability === 'waiting_pr',
+    ),
+    blocked: queue.filter(
+      candidate => candidate.actionability !== 'ready'
+        && candidate.actionability !== 'housekeeping'
+        && candidate.actionability !== 'waiting_pr',
+    ),
     expansions,
     errors,
   };

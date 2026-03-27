@@ -113,6 +113,14 @@ import { AGENT_SYSTEM_PROMPT, buildConstraints, buildRuntimeConfig, createAgentO
 describe('createAgentOrchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockBuildRankedBacklog.mockReset();
+    mockBuildRankedBacklog.mockResolvedValue({
+      queue: [],
+      actionable: [],
+      blocked: [],
+      expansions: [],
+      errors: [],
+    });
     mockMemoryStoreRead.mockResolvedValue([]);
     mockMemoryStorePrune.mockResolvedValue(0);
     mockIngestStrategicDocs.mockResolvedValue(0);
@@ -193,12 +201,14 @@ describe('createAgentOrchestrator', () => {
         actionable: [queue[0]],
         blocked: [queue[1]],
         expansions: [{ issueNumber: 69, requestedBy: [70] }],
+        errors: [],
       })
       .mockResolvedValueOnce({
         queue,
         actionable: [queue[0]],
         blocked: [queue[1]],
         expansions: [{ issueNumber: 69, requestedBy: [70] }],
+        errors: [],
       });
 
     const events: Array<{ type: string; issue?: number }> = [];
@@ -267,6 +277,41 @@ describe('createAgentOrchestrator', () => {
 
     await expect(agent.generate({ prompt: 'Begin working through the backlog.' }))
       .rejects.toThrow('Failed to fetch requested issue #70 from GitHub');
+  });
+
+  it('fails explicitly when scheduler errors are present even if some items ranked', async () => {
+    const queue = [{
+      issueNumber: 69,
+      title: 'Build LoopOrchestrator runtime',
+      body: 'Runtime implementation.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Ready issue.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'loop-runtime',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    }];
+    mockBuildRankedBacklog.mockResolvedValue({
+      queue,
+      actionable: queue,
+      blocked: [],
+      expansions: [],
+      errors: ['Failed to fetch dependency issue #70 from GitHub. Check gh connectivity.'],
+    });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+    });
+
+    await expect(agent.generate({ prompt: 'Begin working through the backlog.' }))
+      .rejects.toThrow('Failed to fetch dependency issue #70 from GitHub');
+    expect(mockToolLoopStream).not.toHaveBeenCalled();
   });
 
   it('does not count skipped housekeeping toward maxItems', async () => {
@@ -450,6 +495,53 @@ describe('createAgentOrchestrator', () => {
     await expect(agent.generate({ prompt: 'Begin working through the backlog.' }))
       .rejects.toThrow('Worker stopped before calling reflectOnWork for issue #3.');
     expect(mockInvalidateSchedulerRunCache).not.toHaveBeenCalled();
+  });
+
+  it('dispatches waiting_pr issues through the worker path', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('partial');
+    const waitingIssue = {
+      issueNumber: 123,
+      title: 'Feature with open PR',
+      body: 'Implementation is already under review.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'waiting_pr',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'existing_work', message: 'Open PR exists.' }],
+      recommendation: 'pr_exists_open',
+      loopFeatureName: 'feature-open-pr',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [waitingIssue],
+        actionable: [waitingIssue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [waitingIssue],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+    });
+
+    const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
+    expect(result.text).toContain('Processed 1 issue(s).');
+    expect(result.text).toContain('Completed: #123');
   });
 });
 

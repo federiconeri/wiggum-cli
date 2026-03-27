@@ -568,6 +568,44 @@ describe('buildRankedBacklog', () => {
     expect(ranked.errors[0]).toContain('Failed to fetch issue #70');
   });
 
+  it('surfaces enrichment failures instead of silently dropping listed issues', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 70, title: 'Define structured loop action IPC', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockResolvedValue(null);
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig(), makeStore());
+
+    expect(ranked.queue).toEqual([]);
+    expect(ranked.errors[0]).toContain('Failed to fetch issue #70 from GitHub while enriching backlog');
+  });
+
+  it('treats waiting_pr issues as actionable so the worker can handle them', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 123, title: 'Feature with open PR', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockResolvedValue({
+      number: 123,
+      title: 'Feature with open PR',
+      body: 'Implementation is already under review.',
+      labels: ['loop'],
+      state: 'open',
+      createdAt: '2026-01-02T00:00:00Z',
+    });
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('pr_exists_open'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [123] }), makeStore());
+
+    expect(ranked.queue[0]?.actionability).toBe('waiting_pr');
+    expect(ranked.actionable.map(issue => issue.issueNumber)).toEqual([123]);
+    expect(ranked.blocked).toEqual([]);
+  });
+
   it('detects dependency cycles and blocks both issues', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

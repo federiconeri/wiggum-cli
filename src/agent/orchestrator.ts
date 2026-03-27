@@ -268,11 +268,15 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
       }
 
       const ranked = await buildRankedBacklog(this.config, store, schedulerCache);
-      if (ranked.queue.length === 0 && ranked.errors.length > 0) {
+      if (ranked.errors.length > 0) {
         throw new Error(ranked.errors[0]);
       }
       const queueStates = toIssueStates(ranked.queue);
-      blockedSnapshot = queueStates.filter(issue => issue.actionability !== 'ready' && issue.actionability !== 'housekeeping');
+      blockedSnapshot = queueStates.filter(
+        issue => issue.actionability !== 'ready'
+          && issue.actionability !== 'housekeeping'
+          && issue.actionability !== 'waiting_pr',
+      );
 
       if (ranked.expansions.length > 0) {
         this.emit({ type: 'scope_expanded', expansions: ranked.expansions });
