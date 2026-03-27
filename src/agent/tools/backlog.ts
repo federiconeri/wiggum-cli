@@ -21,6 +21,7 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
   const issueNumberSet = options.issueNumbers?.length
     ? new Set(options.issueNumbers)
     : undefined;
+  const listVisibleIssueNumbers = new Set<number>();
 
   const listIssues = tool({
     description: 'List open GitHub issues from the backlog, optionally filtered by labels or milestone.',
@@ -44,8 +45,10 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       const sorted = [...result.issues].sort((a, b) => a.number - b.number);
       if (issueNumberSet && options.scopeListIssuesToIssueNumbers !== false) {
         const filtered = sorted.filter(i => issueNumberSet.has(Number(i.number)));
+        for (const issue of filtered) listVisibleIssueNumbers.add(Number(issue.number));
         return { issues: filtered };
       }
+      for (const issue of sorted) listVisibleIssueNumbers.add(Number(issue.number));
       return { issues: sorted };
     },
   });
@@ -56,7 +59,12 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       issueNumber: z.number().int().min(1).describe('The issue number to read'),
     })),
     execute: async ({ issueNumber }) => {
-      if (issueNumberSet && options.scopeReadIssueToIssueNumbers !== false && !issueNumberSet.has(issueNumber)) {
+      if (
+        issueNumberSet
+        && options.scopeReadIssueToIssueNumbers !== false
+        && !issueNumberSet.has(issueNumber)
+        && !listVisibleIssueNumbers.has(issueNumber)
+      ) {
         return { error: `Issue #${issueNumber} is outside the selected worker scope` };
       }
       const detail = await fetchGitHubIssue(owner, repo, issueNumber);

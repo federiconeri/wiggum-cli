@@ -214,5 +214,34 @@ describe('createBacklogTools', () => {
       expect(result).toEqual({ error: 'Issue #7 is outside the selected worker scope' });
       expect(mockFetchGitHubIssue).not.toHaveBeenCalled();
     });
+
+    it('allows readIssue for issues surfaced by unscoped listIssues duplicate checks', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', {
+        issueNumbers: [3],
+        scopeListIssuesToIssueNumbers: false,
+        scopeReadIssueToIssueNumbers: true,
+      });
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 3, title: 'Selected issue', state: 'open', labels: ['feature'], createdAt: '2026-01-03T00:00:00Z' },
+          { number: 7, title: 'Existing blocker bug', state: 'open', labels: ['bug'], createdAt: '2026-01-07T00:00:00Z' },
+        ],
+      });
+      mockFetchGitHubIssue.mockResolvedValue({
+        title: 'Existing blocker bug',
+        body: 'Already tracked.',
+        labels: ['bug'],
+      });
+
+      await scopedTools.listIssues.execute({ labels: ['bug'], limit: 20 }, execCtx);
+      const result = await scopedTools.readIssue.execute({ issueNumber: 7 }, execCtx);
+
+      expect(result).toMatchObject({
+        title: 'Existing blocker bug',
+        labels: ['bug'],
+        dependsOn: [],
+      });
+      expect(mockFetchGitHubIssue).toHaveBeenCalledWith('testowner', 'testrepo', 7);
+    });
   });
 });
