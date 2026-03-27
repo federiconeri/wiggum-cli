@@ -205,9 +205,10 @@ describe('runGitHubDiagnostics', () => {
       { stdout: 'github.com\n  ✓ Logged in' },
       { stdout: '[]' },
       { stdout: '{"number":70,"title":"Example"}' },
+      { stdout: '{"number":71,"title":"Another"}' },
     ]);
 
-    const result = await runGitHubDiagnostics('acme', 'api', 70);
+    const result = await runGitHubDiagnostics('acme', 'api', [70, 71]);
 
     expect(result.success).toBe(true);
     expect(result.checks.map(check => check.name)).toEqual([
@@ -215,6 +216,7 @@ describe('runGitHubDiagnostics', () => {
       'gh auth status',
       'gh issue list',
       'gh issue view #70',
+      'gh issue view #71',
     ]);
     expect(result.checks.every(check => check.ok)).toBe(true);
   });

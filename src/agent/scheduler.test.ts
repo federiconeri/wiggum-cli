@@ -33,7 +33,7 @@ vi.mock('../utils/tracing.js', () => ({
   }),
 }));
 
-import { buildRankedBacklog, createSchedulerRunCache, extractDependencyHints } from './scheduler.js';
+import { buildRankedBacklog, createSchedulerRunCache, dedupeEdges, extractDependencyHints } from './scheduler.js';
 import type { AgentConfig } from './types.js';
 
 function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
@@ -253,6 +253,37 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue[0].issueNumber).toBe(1);
     expect(downstream?.actionability).toBe('blocked_dependency');
     expect(downstream?.inferredDependsOn).toEqual([{ issueNumber: 1, confidence: 'high' }]);
+  });
+
+  it('preserves a stronger duplicate inferred edge during deduplication', async () => {
+    const deduped = dedupeEdges([
+      {
+        sourceIssue: 2,
+        targetIssue: 1,
+        kind: 'inferred',
+        confidence: 'medium',
+        blocking: false,
+        evidence: { summary: 'Fallback inference.' },
+      },
+      {
+        sourceIssue: 2,
+        targetIssue: 1,
+        kind: 'inferred',
+        confidence: 'high',
+        blocking: true,
+        evidence: { summary: 'Model inference.' },
+      },
+    ]);
+
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]).toMatchObject({
+      sourceIssue: 2,
+      targetIssue: 1,
+      kind: 'inferred',
+      confidence: 'high',
+      blocking: true,
+      evidence: { summary: 'Model inference.' },
+    });
   });
 
   it('downgrades ancillary debug-style inferred blockers to ranking hints', async () => {

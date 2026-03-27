@@ -161,7 +161,7 @@ async function runDiagnosticCheck(name: string, cmd: string, args: string[]): Pr
 export async function runGitHubDiagnostics(
   owner: string,
   repo: string,
-  issueNumber?: number,
+  issueNumbers?: number[],
 ): Promise<GitHubDiagnostics> {
   const checks: GitHubDiagnosticCheck[] = [];
 
@@ -175,7 +175,7 @@ export async function runGitHubDiagnostics(
     '--json', 'number',
   ]));
 
-  if (issueNumber != null) {
+  for (const issueNumber of issueNumbers ?? []) {
     checks.push(await runDiagnosticCheck(`gh issue view #${issueNumber}`, 'gh', [
       'issue', 'view', String(issueNumber),
       '--repo', `${owner}/${repo}`,

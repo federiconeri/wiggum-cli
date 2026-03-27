@@ -38,7 +38,7 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
       process.exit(1);
     }
 
-    const diagnostics = await runGitHubDiagnostics(repo.owner, repo.repo, options.issues?.[0]);
+    const diagnostics = await runGitHubDiagnostics(repo.owner, repo.repo, options.issues);
     for (const check of diagnostics.checks) {
       const status = check.ok ? 'OK' : 'FAIL';
       console.log(`[diagnose-gh] ${status} ${check.name}: ${check.message}`);

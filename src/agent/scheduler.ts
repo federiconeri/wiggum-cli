@@ -636,14 +636,26 @@ function peerLooksFoundational(peer: BacklogCandidate): boolean {
   return /\b(core|base|foundation|setup|scaffold|schema|api|config|storage|backend|infrastructure)\b/i.test(`${peer.title}\n${peer.body}`);
 }
 
-function dedupeEdges(edges: DependencyEdge[]): DependencyEdge[] {
-  const seen = new Set<string>();
-  return edges.filter((edge) => {
+export function dedupeEdges(edges: DependencyEdge[]): DependencyEdge[] {
+  const deduped = new Map<string, DependencyEdge>();
+  const confidenceWeight = { low: 1, medium: 2, high: 3 } as const;
+
+  for (const edge of edges) {
     const key = `${edge.sourceIssue}:${edge.targetIssue}:${edge.kind}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    const existing = deduped.get(key);
+    if (!existing) {
+      deduped.set(key, edge);
+      continue;
+    }
+
+    const existingScore = confidenceWeight[existing.confidence] + (existing.blocking ? 10 : 0);
+    const nextScore = confidenceWeight[edge.confidence] + (edge.blocking ? 10 : 0);
+    if (nextScore >= existingScore) {
+      deduped.set(key, edge);
+    }
+  }
+
+  return [...deduped.values()];
 }
 
 function detectCycleForIssue(

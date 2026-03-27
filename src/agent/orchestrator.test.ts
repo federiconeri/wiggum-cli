@@ -555,6 +555,62 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Processed 1 issue(s).');
     expect(result.text).toContain('Partial: #123');
   });
+
+  it('allows resumable issues to be selected again within the same run', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('partial', 'partial');
+    const resumable = {
+      issueNumber: 74,
+      title: 'Build runtime',
+      body: 'Continue implementation.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'retry', message: 'Resume the in-progress implementation.' }],
+      recommendation: 'resume_implementation',
+      loopFeatureName: 'runtime',
+      attemptState: 'partial',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [resumable],
+        actionable: [resumable],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [resumable],
+        actionable: [resumable],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [resumable],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+    });
+
+    const result = await agent.generate({ prompt: 'Resume work until the issue is no longer actionable.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
+    expect(result.text).toContain('Processed 2 issue(s).');
+    expect(result.text).toContain('Partial: #74, #74');
+  });
 });
 
 describe('buildConstraints', () => {

@@ -167,9 +167,9 @@ describe('agentCommand', () => {
       ],
     });
 
-    await agentCommand({ diagnoseGh: true, issues: [70] });
+    await agentCommand({ diagnoseGh: true, issues: [70, 71] });
 
-    expect(mockRunGitHubDiagnostics).toHaveBeenCalledWith('acme', 'app', 70);
+    expect(mockRunGitHubDiagnostics).toHaveBeenCalledWith('acme', 'app', [70, 71]);
     expect(mockCreateAgentOrchestrator).not.toHaveBeenCalled();
     expect(consoleLogSpy).toHaveBeenCalledWith('[diagnose-gh] OK gh version: ok');
     expect(consoleLogSpy).toHaveBeenCalledWith('[diagnose-gh] OK gh issue list: ok');

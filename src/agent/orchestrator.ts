@@ -64,6 +64,12 @@ interface WorkerOutcomeTracker {
   reflected: boolean;
 }
 
+function canResumeWithinRun(candidate: BacklogCandidate): boolean {
+  if (candidate.attemptState !== 'partial' && candidate.attemptState !== 'failure') return false;
+  return candidate.recommendation === 'resume_implementation'
+    || candidate.recommendation === 'resume_pr_phase';
+}
+
 export function buildRuntimeConfig(config: AgentConfig): string {
   const lines: string[] = [];
   if (config.modelId) lines.push(`- model: ${config.modelId}`);
@@ -282,7 +288,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
     await store.prune();
 
     const processed: ProcessedIssueSummary[] = [];
-    const attemptedThisRun = new Set<number>();
+    const attemptedThisRun = new Map<number, WorkerOutcomeTracker['outcome']>();
     let completedBudget = 0;
     let blockedSnapshot: AgentIssueState[] = [];
     const schedulerCache = createSchedulerRunCache();
@@ -335,7 +341,10 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         this.emit({ type: 'task_blocked', issue: blocked });
       }
 
-      const next = ranked.actionable.find(candidate => !attemptedThisRun.has(candidate.issueNumber));
+      const next = ranked.actionable.find((candidate) => {
+        if (!attemptedThisRun.has(candidate.issueNumber)) return true;
+        return canResumeWithinRun(candidate);
+      });
       if (!next) {
         return buildFinalSummary(processed, blockedSnapshot);
       }
@@ -363,8 +372,6 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         featureState: next.featureState,
         loopFeatureName: next.loopFeatureName,
       };
-      attemptedThisRun.add(selected.issueNumber);
-
       this.emit({ type: 'task_selected', issue: selected });
       this.emit({ type: 'task_started', issue: selected });
 
@@ -393,7 +400,6 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
       }
 
       if (!tracker.reflected) {
-        attemptedThisRun.delete(selected.issueNumber);
         throw new Error(`Worker stopped before calling reflectOnWork for issue #${selected.issueNumber}.`);
       }
 
@@ -402,6 +408,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         phase: 'reflecting',
       };
       processed.push({ issue: completedIssue, outcome: tracker.outcome });
+      attemptedThisRun.set(selected.issueNumber, tracker.outcome);
       this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
       if (tracker.outcome !== 'skipped' && selected.scopeOrigin !== 'dependency') {
         completedBudget += 1;
