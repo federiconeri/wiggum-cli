@@ -224,9 +224,9 @@ export function extractDependencyHints(
   const numbers = matches.map(m => parseInt(m[1], 10));
   const inferredFromTitles: number[] = [];
 
-  if (DEPENDENCY_CUE_PATTERN.test(body)) {
-    const cueMatch = body.match(/\b(?:depends on|blocked by|requires|after)\b([^\n.;]*)/i);
-    const phrase = cueMatch?.[1]?.trim() ?? '';
+  const cueMatches = [...body.matchAll(/\b(?:depends on|blocked by|requires|after)\b([^\n.;]*)/gi)];
+  for (const cueMatch of cueMatches) {
+    const phrase = cueMatch[1]?.trim() ?? '';
     const segments = phrase
       .split(/\s+\+\s+|\s+and\s+|,/i)
       .map(segment => segment.trim())
@@ -805,6 +805,13 @@ async function expandIssueScope(
   const expansions: ScopeExpansion[] = [];
   const errors: string[] = [];
   const backlogSummaries = listedIssues.map(issue => ({ number: issue.number, title: issue.title }));
+  for (const issueNumber of config.issues) {
+    if (backlogSummaries.some(issue => issue.number === issueNumber)) continue;
+    const detail = await getIssueDetail(config, issueNumber, cache);
+    if (detail?.state === 'open') {
+      backlogSummaries.push({ number: detail.number, title: detail.title });
+    }
+  }
   const queue: Array<{ issueNumber: number; requestedBy: number }> = config.issues.map(issueNumber => ({
     issueNumber,
     requestedBy: issueNumber,

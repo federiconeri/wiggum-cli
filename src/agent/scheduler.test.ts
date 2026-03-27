@@ -608,6 +608,20 @@ describe('buildRankedBacklog', () => {
     expect(hints).not.toContain(66);
   });
 
+  it('parses multiple textual dependency clauses instead of only the first one', () => {
+    const hints = extractDependencyHints(
+      'Depends on orchestrator runtime. Requires storage setup. After API contract lands.',
+      [
+        { number: 60, title: 'Storage setup and migrations' },
+        { number: 61, title: 'Publish API contract for orchestration flow' },
+        { number: 69, title: 'Build LoopOrchestrator runtime (process supervision + PTY)' },
+      ],
+      70,
+    );
+
+    expect(hints).toEqual([60, 61, 69]);
+  });
+
   it('expands open prerequisites that are fetched outside the initial open backlog listing', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [
@@ -675,6 +689,28 @@ describe('buildRankedBacklog', () => {
     const ranked = await buildRankedBacklog(makeConfig({ issues: [69, 70] }), makeStore());
     const requestedIssue = ranked.queue.find((issue) => issue.issueNumber === 70);
 
+    expect(requestedIssue?.dependsOn).toEqual([69]);
+    expect(requestedIssue?.actionability).toBe('blocked_dependency');
+  });
+
+  it('hydrates scoped issue titles before title-based dependency expansion', async () => {
+    mockListRepoIssues.mockResolvedValue({ issues: [] });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 69
+        ? 'Build LoopOrchestrator runtime (process supervision + PTY)'
+        : 'Define structured loop action IPC',
+      body: number === 69 ? 'Runtime implementation.' : 'Depends on orchestrator runtime.',
+      labels: ['loop'],
+      state: 'open',
+      createdAt: number === 69 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [69, 70] }), makeStore());
+    const requestedIssue = ranked.queue.find((issue) => issue.issueNumber === 70);
+
+    expect(ranked.expansions).toEqual([]);
     expect(requestedIssue?.dependsOn).toEqual([69]);
     expect(requestedIssue?.actionability).toBe('blocked_dependency');
   });
