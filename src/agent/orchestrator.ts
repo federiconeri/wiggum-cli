@@ -125,6 +125,8 @@ function createWorkerAgent(config: AgentConfig, store: MemoryStore) {
   const backlog = createBacklogTools(config.owner, config.repo, {
     defaultLabels: config.labels,
     issueNumbers: config.issues,
+    scopeListIssuesToIssueNumbers: false,
+    scopeReadIssueToIssueNumbers: true,
   });
   const memory = createMemoryTools(store, config.projectRoot);
   const execution = config.dryRun

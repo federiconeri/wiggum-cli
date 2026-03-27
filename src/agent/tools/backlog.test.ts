@@ -122,6 +122,23 @@ describe('createBacklogTools', () => {
       expect(result.issues).toHaveLength(0);
     });
 
+    it('can bypass issue-number filtering for listIssues when duplicate checks need full backlog visibility', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', {
+        issueNumbers: [3, 5],
+        scopeListIssuesToIssueNumbers: false,
+      });
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 1, title: 'Other', state: 'open', labels: [], createdAt: '2026-01-01T00:00:00Z' },
+          { number: 3, title: 'Target A', state: 'open', labels: [], createdAt: '2026-01-03T00:00:00Z' },
+          { number: 5, title: 'Target B', state: 'open', labels: [], createdAt: '2026-01-05T00:00:00Z' },
+        ],
+      });
+
+      const result = await scopedTools.listIssues.execute({ limit: 20 }, execCtx);
+      expect(result.issues.map((i: any) => i.number)).toEqual([1, 3, 5]);
+    });
+
     it('combines issue number filter with label filter', async () => {
       const scopedTools = createBacklogTools('testowner', 'testrepo', {
         defaultLabels: ['P1'],
@@ -188,6 +205,14 @@ describe('createBacklogTools', () => {
 
       const result = await tools.readIssue.execute({ issueNumber: 999 }, execCtx);
       expect(result).toHaveProperty('error');
+    });
+
+    it('blocks readIssue calls outside the selected worker scope', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', { issueNumbers: [3, 5] });
+
+      const result = await scopedTools.readIssue.execute({ issueNumber: 7 }, execCtx);
+      expect(result).toEqual({ error: 'Issue #7 is outside the selected worker scope' });
+      expect(mockFetchGitHubIssue).not.toHaveBeenCalled();
     });
   });
 });

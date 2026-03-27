@@ -116,7 +116,43 @@ describe('buildRankedBacklog', () => {
 
     await buildRankedBacklog(makeConfig({ labels: ['loop', 'P1'] }), makeStore());
 
-    expect(mockListRepoIssues).toHaveBeenCalledWith('acme', 'app', 'label:loop label:P1', 500);
+    expect(mockListRepoIssues).toHaveBeenCalledWith('acme', 'app', 'label:loop label:P1', 100);
+  });
+
+  it('keeps expanding backlog discovery beyond the first 100 issues when the listing is full', async () => {
+    mockListRepoIssues
+      .mockResolvedValueOnce({
+        issues: Array.from({ length: 100 }, (_, index) => ({
+          number: index + 1,
+          title: `Issue ${index + 1}`,
+          state: 'open',
+          labels: [],
+          createdAt: '2026-01-01T00:00:00Z',
+        })),
+      })
+      .mockResolvedValueOnce({
+        issues: Array.from({ length: 101 }, (_, index) => ({
+          number: index + 1,
+          title: `Issue ${index + 1}`,
+          state: 'open',
+          labels: [],
+          createdAt: '2026-01-01T00:00:00Z',
+        })),
+      });
+    mockFetchGitHubIssue.mockResolvedValue({
+      number: 1,
+      title: 'Issue 1',
+      body: 'Body',
+      labels: [],
+      state: 'open',
+      createdAt: '2026-01-01T00:00:00Z',
+    });
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    await buildRankedBacklog(makeConfig({ issues: [1] }), makeStore());
+
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', undefined, 100);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 200);
   });
 
   it('prioritizes retry and resume work ahead of fresh work', async () => {
@@ -585,6 +621,27 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([74, 76, 77]);
     expect(ranked.queue.every((issue) => issue.scopeOrigin === 'requested')).toBe(true);
     expect(ranked.errors).toEqual([]);
+  });
+
+  it('uses hydrated scoped issues for title-based dependency inference when the initial listing is empty', async () => {
+    mockListRepoIssues.mockResolvedValue({ issues: [] });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 69
+        ? 'Build LoopOrchestrator runtime (process supervision + PTY)'
+        : 'Define structured loop action IPC',
+      body: number === 69 ? 'Runtime implementation.' : 'Depends on orchestrator runtime.',
+      labels: ['loop'],
+      state: 'open',
+      createdAt: number === 69 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [69, 70] }), makeStore());
+    const requestedIssue = ranked.queue.find((issue) => issue.issueNumber === 70);
+
+    expect(requestedIssue?.dependsOn).toEqual([69]);
+    expect(requestedIssue?.actionability).toBe('blocked_dependency');
   });
 
   it('surfaces GitHub fetch errors instead of silently returning an empty scoped backlog', async () => {

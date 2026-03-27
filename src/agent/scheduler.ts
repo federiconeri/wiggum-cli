@@ -43,7 +43,8 @@ const DEPENDENCY_CUE_PATTERN = /\b(depends on|blocked by|requires|after)\b/i;
 const MAX_MODEL_INFERENCE_CANDIDATES = 12;
 const ENRICHMENT_CONCURRENCY = 6;
 const INFERENCE_CONCURRENCY = 3;
-const BACKLOG_DISCOVERY_LIMIT = 500;
+const BACKLOG_DISCOVERY_STEP = 100;
+const BACKLOG_DISCOVERY_MAX_LIMIT = 5000;
 
 const inferredDependencySchema = z.object({
   edges: z.array(z.object({
@@ -160,6 +161,29 @@ async function getPersistedContext(
     cache.persistedContext = persistedContext;
   }
   return persistedContext;
+}
+
+async function discoverListedIssues(
+  config: AgentConfig,
+  search?: string,
+  cache?: SchedulerRunCache,
+): Promise<ListIssuesResult> {
+  if (cache?.listed) return cache.listed;
+
+  let requestedLimit = BACKLOG_DISCOVERY_STEP;
+  let latest: ListIssuesResult = { issues: [] };
+
+  while (true) {
+    latest = await listRepoIssues(config.owner, config.repo, search, requestedLimit);
+    if (latest.error) break;
+    if (latest.issues.length < requestedLimit || requestedLimit >= BACKLOG_DISCOVERY_MAX_LIMIT) break;
+    requestedLimit += BACKLOG_DISCOVERY_STEP;
+  }
+
+  if (cache) {
+    cache.listed = latest;
+  }
+  return latest;
 }
 
 async function resolveOpenDependencies(
@@ -881,10 +905,7 @@ export async function buildRankedBacklog(
     phase: 'listing',
     message: 'Listing open GitHub issues.',
   });
-  const listed = cache?.listed ?? await listRepoIssues(config.owner, config.repo, search, BACKLOG_DISCOVERY_LIMIT);
-  if (cache && !cache.listed) {
-    cache.listed = listed;
-  }
+  const listed = await discoverListedIssues(config, search, cache);
   emitBacklogEvent(config, {
     type: 'backlog_timing',
     phase: 'listing',
@@ -961,10 +982,10 @@ export async function buildRankedBacklog(
     const featureState = await getFeatureState(config, issue.number, featureName, cache);
     const hintedDependencies = extractDependencyHints(
       detail.body ?? '',
-      (listed.issues ?? []).map(issue => ({ number: issue.number, title: issue.title })),
+      scopedIssues.map(scopedIssue => ({ number: scopedIssue.number, title: scopedIssue.title })),
       issue.number,
     );
-    const dependsOn = await resolveOpenDependencies(config, hintedDependencies, listed.issues ?? [], cache);
+    const dependsOn = await resolveOpenDependencies(config, hintedDependencies, scopedIssues, cache);
     const attemptState = getAttemptState(memories, issue.number);
 
     const candidate: BacklogCandidate = {

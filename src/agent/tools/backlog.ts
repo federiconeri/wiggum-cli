@@ -5,6 +5,8 @@ import { listRepoIssues, fetchGitHubIssue } from '../../utils/github.js';
 export interface BacklogToolsOptions {
   defaultLabels?: string[];
   issueNumbers?: number[];
+  scopeListIssuesToIssueNumbers?: boolean;
+  scopeReadIssueToIssueNumbers?: boolean;
 }
 
 const DEPENDENCY_PATTERN = /\b(?:depends on|blocked by|requires|after)\s+#(\d+)/gi;
@@ -40,7 +42,7 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       if (result.error) return { issues: [], error: result.error };
       // Sort by issue number ascending — lower numbers are typically more foundational
       const sorted = [...result.issues].sort((a, b) => a.number - b.number);
-      if (issueNumberSet) {
+      if (issueNumberSet && options.scopeListIssuesToIssueNumbers !== false) {
         const filtered = sorted.filter(i => issueNumberSet.has(Number(i.number)));
         return { issues: filtered };
       }
@@ -54,6 +56,9 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       issueNumber: z.number().int().min(1).describe('The issue number to read'),
     })),
     execute: async ({ issueNumber }) => {
+      if (issueNumberSet && options.scopeReadIssueToIssueNumbers !== false && !issueNumberSet.has(issueNumber)) {
+        return { error: `Issue #${issueNumber} is outside the selected worker scope` };
+      }
       const detail = await fetchGitHubIssue(owner, repo, issueNumber);
       if (!detail) return { error: `Issue #${issueNumber} not found` };
       // Extract dependency hints from body (e.g. "depends on #1", "blocked by #3")
