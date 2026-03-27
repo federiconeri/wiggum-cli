@@ -58,6 +58,7 @@ export interface AgentOrchestrator {
 
 interface WorkerOutcomeTracker {
   outcome: 'success' | 'partial' | 'failure' | 'skipped' | 'unknown';
+  reflected: boolean;
 }
 
 export function buildRuntimeConfig(config: AgentConfig): string {
@@ -97,9 +98,10 @@ function createWorkerStepHandler(config: AgentConfig, tracker: WorkerOutcomeTrac
   return async ({ toolCalls, toolResults }: { toolCalls: Array<{ toolName: string; input: unknown }>; toolResults: Array<{ toolName: string; output: unknown }> }) => {
     try {
       for (const tc of toolCalls) {
-        if (tc.toolName === REFLECT_TOOL_NAME) {
+        if (tc.toolName === REFLECT_TOOL_NAME && toolResults.some(tr => tr.toolName === REFLECT_TOOL_NAME)) {
           const input = tc.input as { outcome?: WorkerOutcomeTracker['outcome'] };
           tracker.outcome = input.outcome ?? 'unknown';
+          tracker.reflected = true;
         }
       }
 
@@ -140,7 +142,7 @@ function createWorkerAgent(config: AgentConfig, store: MemoryStore) {
   };
 
   const fullPrompt = AGENT_SYSTEM_PROMPT + buildRuntimeConfig(config) + buildConstraints(config);
-  const tracker: WorkerOutcomeTracker = { outcome: 'unknown' };
+  const tracker: WorkerOutcomeTracker = { outcome: 'unknown', reflected: false };
   const { ToolLoopAgent: TracedToolLoopAgent } = getTracedAI();
 
   const agent = new TracedToolLoopAgent({
@@ -252,6 +254,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
 
     const processed: AgentIssueState[] = [];
     const attemptedThisRun = new Set<number>();
+    let completedBudget = 0;
     let blockedSnapshot: AgentIssueState[] = [];
     const schedulerCache = createSchedulerRunCache();
 
@@ -304,7 +307,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         return buildFinalSummary(processed, blockedSnapshot);
       }
 
-      if (this.config.maxItems != null && processed.length >= this.config.maxItems) {
+      if (this.config.maxItems != null && completedBudget >= this.config.maxItems) {
         return buildFinalSummary(processed, blockedSnapshot);
       }
 
@@ -313,6 +316,8 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         title: next.title,
         labels: next.labels,
         phase: 'planning',
+        scopeOrigin: next.scopeOrigin,
+        requestedBy: next.requestedBy,
         actionability: next.actionability,
         priorityTier: next.priorityTier,
         dependsOn: next.dependsOn,
@@ -352,12 +357,20 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         throw err;
       }
 
+      if (!tracker.reflected) {
+        attemptedThisRun.delete(selected.issueNumber);
+        throw new Error(`Worker stopped before calling reflectOnWork for issue #${selected.issueNumber}.`);
+      }
+
       const completedIssue: AgentIssueState = {
         ...selected,
         phase: 'reflecting',
       };
       processed.push(completedIssue);
       this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
+      if (tracker.outcome !== 'skipped' && selected.scopeOrigin !== 'dependency') {
+        completedBudget += 1;
+      }
       invalidateSchedulerRunCache(schedulerCache, [selected.issueNumber]);
     }
   }

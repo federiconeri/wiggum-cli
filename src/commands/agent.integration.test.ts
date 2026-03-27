@@ -10,6 +10,7 @@ const {
   mockInvalidateSchedulerRunCache,
   mockToIssueStates,
   mockToolLoopStream,
+  mockToolLoopState,
 } = vi.hoisted(() => ({
   mockResolveAgentEnv: vi.fn(),
   mockMemoryStoreRead: vi.fn().mockResolvedValue([]),
@@ -22,6 +23,10 @@ const {
   mockToolLoopStream: vi.fn().mockResolvedValue({
     textStream: (async function* () {})(),
   }),
+  mockToolLoopState: {
+    outcomes: [] as Array<'success' | 'partial' | 'failure' | 'skipped'>,
+    options: undefined as any,
+  },
 }));
 
 vi.mock('../agent/resolve-config.js', () => ({
@@ -94,7 +99,21 @@ vi.mock('../utils/tracing.js', () => ({
   currentSpan: () => ({ log: vi.fn() }),
   getTracedAI: () => ({
     ToolLoopAgent: class MockToolLoopAgent {
-      stream = mockToolLoopStream;
+      constructor(options: any) {
+        mockToolLoopState.options = options;
+      }
+
+      stream = vi.fn().mockImplementation(async (...args: any[]) => {
+        const result = await mockToolLoopStream(...args);
+        const outcome = mockToolLoopState.outcomes.shift();
+        if (outcome && mockToolLoopState.options?.onStepFinish) {
+          await mockToolLoopState.options.onStepFinish({
+            toolCalls: [{ toolName: 'reflectOnWork', input: { issueNumber: 69, outcome } }],
+            toolResults: [{ toolName: 'reflectOnWork', output: { memoriesWritten: 1 } }],
+          });
+        }
+        return result;
+      });
     },
   }),
 }));
@@ -124,6 +143,8 @@ describe('agentCommand integration', () => {
     mockToolLoopStream.mockResolvedValue({
       textStream: (async function* () {})(),
     });
+    mockToolLoopState.outcomes.length = 0;
+    mockToolLoopState.options = undefined;
 
     mockExit = vi.spyOn(process, 'exit').mockImplementation((code?: number | string | null) => {
       throw new Error(`process.exit(${code})`);
@@ -139,6 +160,7 @@ describe('agentCommand integration', () => {
   });
 
   it('streams the real orchestrator event flow for scoped dependency expansion', async () => {
+    mockToolLoopState.outcomes.push('partial');
     const queue = [
       {
         issueNumber: 69,
@@ -198,7 +220,7 @@ describe('agentCommand integration', () => {
     expect(output).toContain('[orchestrator] ranked 2 issue(s)\n');
     expect(output).toContain('[orchestrator] blocked #70 — Explicit dependency on #69.\n');
     expect(output).toContain('[orchestrator] selected #69 — Pulled into scope as a prerequisite for #70.\n');
-    expect(output).toContain('[orchestrator] completed #69 (unknown)\n');
+    expect(output).toContain('[orchestrator] completed #69 (partial)\n');
     expect(output).toContain('Processed 1 issue(s).\nCompleted: #69\nBlocked: #70 (blocked_dependency)\n');
     expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(2);
     expect(mockToolLoopStream).toHaveBeenCalledTimes(1);

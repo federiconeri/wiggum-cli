@@ -9,6 +9,7 @@ const {
   mockToIssueStates,
   mockIngestStrategicDocs,
   mockToolLoopStream,
+  mockToolLoopState,
 } = vi.hoisted(() => ({
   mockMemoryStoreRead: vi.fn().mockResolvedValue([]),
   mockMemoryStorePrune: vi.fn().mockResolvedValue(0),
@@ -20,6 +21,10 @@ const {
   mockToolLoopStream: vi.fn().mockResolvedValue({
     textStream: (async function* () {})(),
   }),
+  mockToolLoopState: {
+    outcomes: [] as Array<'success' | 'partial' | 'failure' | 'skipped'>,
+    options: undefined as any,
+  },
 }));
 
 vi.mock('./memory/store.js', () => {
@@ -84,7 +89,21 @@ vi.mock('../utils/logger.js', () => ({
 vi.mock('../utils/tracing.js', () => ({
   getTracedAI: () => ({
     ToolLoopAgent: class MockToolLoopAgent {
-      stream = mockToolLoopStream;
+      constructor(options: any) {
+        mockToolLoopState.options = options;
+      }
+
+      stream = vi.fn().mockImplementation(async (...args: any[]) => {
+        const result = await mockToolLoopStream(...args);
+        const outcome = mockToolLoopState.outcomes.shift();
+        if (outcome && mockToolLoopState.options?.onStepFinish) {
+          await mockToolLoopState.options.onStepFinish({
+            toolCalls: [{ toolName: 'reflectOnWork', input: { issueNumber: 1, outcome } }],
+            toolResults: [{ toolName: 'reflectOnWork', output: { memoriesWritten: 1 } }],
+          });
+        }
+        return result;
+      });
     },
   }),
 }));
@@ -102,6 +121,8 @@ describe('createAgentOrchestrator', () => {
     mockToolLoopStream.mockResolvedValue({
       textStream: (async function* () {})(),
     });
+    mockToolLoopState.outcomes.length = 0;
+    mockToolLoopState.options = undefined;
   });
 
   it('returns an agent-v1 compatible wrapper', () => {
@@ -128,6 +149,7 @@ describe('createAgentOrchestrator', () => {
   });
 
   it('emits scope expansion and does not reselect the same issue in one run', async () => {
+    mockToolLoopState.outcomes.push('partial');
     const queue = [
       {
         issueNumber: 69,
@@ -204,6 +226,27 @@ describe('createAgentOrchestrator', () => {
     expect(events.filter((event) => event.type === 'task_selected').map((event) => event.issue)).toEqual([69]);
   });
 
+  it('returns a clean empty summary when the backlog is genuinely empty', async () => {
+    mockBuildRankedBacklog.mockResolvedValue({
+      queue: [],
+      actionable: [],
+      blocked: [],
+      expansions: [],
+      errors: [],
+    });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+    });
+
+    const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
+
+    expect(result.text).toBe('Processed 0 issue(s).');
+  });
+
   it('fails explicitly when backlog fetch errors leave the queue empty', async () => {
     mockBuildRankedBacklog.mockResolvedValue({
       queue: [],
@@ -222,6 +265,189 @@ describe('createAgentOrchestrator', () => {
 
     await expect(agent.generate({ prompt: 'Begin working through the backlog.' }))
       .rejects.toThrow('Failed to fetch requested issue #70 from GitHub');
+  });
+
+  it('does not count skipped housekeeping toward maxItems', async () => {
+    mockToolLoopState.outcomes.push('skipped', 'partial');
+    const housekeeping = {
+      issueNumber: 2,
+      title: 'Already merged issue',
+      body: 'Merged already.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'housekeeping',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'housekeeping', message: 'Already merged.' }],
+      recommendation: 'pr_merged',
+      loopFeatureName: 'merged-issue',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    const fresh = {
+      issueNumber: 3,
+      title: 'Fresh issue',
+      body: 'Do work.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Ready issue.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'fresh-issue',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [housekeeping, fresh],
+        actionable: [housekeeping, fresh],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [housekeeping, fresh],
+        actionable: [fresh],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [housekeeping, fresh],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      maxItems: 1,
+    });
+
+    const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
+
+    expect(result.text).toContain('Processed 2 issue(s).');
+    expect(result.text).toContain('Completed: #2, #3');
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not count scope-expanded prerequisites toward maxItems', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('partial', 'partial');
+    const prerequisite = {
+      issueNumber: 69,
+      title: 'Build LoopOrchestrator runtime',
+      body: 'Runtime implementation.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'scope_expansion', message: 'Pulled into scope as a prerequisite for #70.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'loop-runtime',
+      scopeOrigin: 'dependency',
+      requestedBy: [70],
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    const requested = {
+      issueNumber: 70,
+      title: 'Define structured loop action IPC',
+      body: 'Depends on orchestrator runtime.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Requested issue is now actionable.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'loop-ipc',
+      scopeOrigin: 'requested',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    const initiallyBlocked = {
+      ...requested,
+      actionability: 'blocked_dependency',
+      blockedBy: [{ issueNumber: 69, reason: 'Explicit dependency on #69.', confidence: 'high' }],
+      selectionReasons: [{ kind: 'blocked', message: 'Explicit dependency on #69.', issueNumber: 69, confidence: 'high' }],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [prerequisite, initiallyBlocked],
+        actionable: [prerequisite],
+        blocked: [initiallyBlocked],
+        expansions: [{ issueNumber: 69, requestedBy: [70] }],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [prerequisite, requested],
+        actionable: [requested],
+        blocked: [],
+        expansions: [{ issueNumber: 69, requestedBy: [70] }],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [prerequisite, requested],
+        actionable: [],
+        blocked: [],
+        expansions: [{ issueNumber: 69, requestedBy: [70] }],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      maxItems: 1,
+    });
+
+    const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
+
+    expect(result.text).toContain('Processed 2 issue(s).');
+    expect(result.text).toContain('Completed: #69, #70');
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
+  });
+
+  it('fails when the worker stops before reflectOnWork completes', async () => {
+    mockBuildRankedBacklog.mockReset();
+    const fresh = {
+      issueNumber: 3,
+      title: 'Fresh issue',
+      body: 'Do work.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Ready issue.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'fresh-issue',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    mockBuildRankedBacklog.mockResolvedValue({
+      queue: [fresh],
+      actionable: [fresh],
+      blocked: [],
+      expansions: [],
+      errors: [],
+    });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+    });
+
+    await expect(agent.generate({ prompt: 'Begin working through the backlog.' }))
+      .rejects.toThrow('Worker stopped before calling reflectOnWork for issue #3.');
+    expect(mockInvalidateSchedulerRunCache).not.toHaveBeenCalled();
   });
 });
 

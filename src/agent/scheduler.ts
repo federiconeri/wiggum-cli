@@ -853,13 +853,16 @@ export async function buildRankedBacklog(
   store: MemoryStore,
   cache?: SchedulerRunCache,
 ): Promise<RankedBacklog> {
+  const search = config.labels?.length
+    ? config.labels.map(label => `label:${label}`).join(' ')
+    : undefined;
   const listStart = nowMs();
   emitBacklogEvent(config, {
     type: 'backlog_progress',
     phase: 'listing',
     message: 'Listing open GitHub issues.',
   });
-  const listed = cache?.listed ?? await listRepoIssues(config.owner, config.repo, undefined, 50);
+  const listed = cache?.listed ?? await listRepoIssues(config.owner, config.repo, search, 50);
   if (cache && !cache.listed) {
     cache.listed = listed;
   }
@@ -907,13 +910,10 @@ export async function buildRankedBacklog(
     ...scopeErrors,
     ...hydrateErrors,
   ];
-  if (!config.issues?.length && (listed.issues ?? []).length === 0 && !listed.error) {
-    errors.push('Failed to list open GitHub issues. Check gh connectivity.');
-  }
 
   const baseIssues = scopedIssues.filter(issue => {
     if (issueScope && !issueScope.has(issue.number)) return false;
-    if (config.labels?.length) {
+    if (!issueScope && config.labels?.length) {
       return config.labels.some(label => issue.labels.includes(label));
     }
     return true;

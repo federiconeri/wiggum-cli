@@ -102,6 +102,23 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue[0].actionability).toBe('housekeeping');
   });
 
+  it('does not turn a genuinely empty backlog into a GitHub error', async () => {
+    mockListRepoIssues.mockResolvedValue({ issues: [] });
+
+    const ranked = await buildRankedBacklog(makeConfig(), makeStore());
+
+    expect(ranked.queue).toEqual([]);
+    expect(ranked.errors).toEqual([]);
+  });
+
+  it('passes configured label filters into the GitHub issue listing query', async () => {
+    mockListRepoIssues.mockResolvedValue({ issues: [] });
+
+    await buildRankedBacklog(makeConfig({ labels: ['loop', 'P1'] }), makeStore());
+
+    expect(mockListRepoIssues).toHaveBeenCalledWith('acme', 'app', 'label:loop label:P1', 50);
+  });
+
   it('prioritizes retry and resume work ahead of fresh work', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [
@@ -355,6 +372,30 @@ describe('buildRankedBacklog', () => {
     mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
 
     const ranked = await buildRankedBacklog(makeConfig({ issues: [2] }), makeStore());
+
+    expect(ranked.expansions).toEqual([{ issueNumber: 1, requestedBy: [2] }]);
+    expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([1, 2]);
+    expect(ranked.queue[0].scopeOrigin).toBe('dependency');
+    expect(ranked.queue[1].actionability).toBe('blocked_dependency');
+  });
+
+  it('keeps scope-expanded prerequisites even when label filters are set', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 2, title: 'Add auth UI', labels: ['P1'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 1 ? 'Create auth API' : 'Add auth UI',
+      body: number === 1 ? 'Build the API.' : 'Build the UI. Depends on #1',
+      labels: number === 1 ? ['backend'] : ['P1'],
+      state: 'open',
+      createdAt: number === 1 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [2], labels: ['P1'] }), makeStore());
 
     expect(ranked.expansions).toEqual([{ issueNumber: 1, requestedBy: [2] }]);
     expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([1, 2]);
