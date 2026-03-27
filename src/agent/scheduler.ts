@@ -40,8 +40,6 @@ const GENERIC_DEPENDENCY_TOKENS = new Set([
   'execution',
 ]);
 const DEPENDENCY_CUE_PATTERN = /\b(depends on|blocked by|requires|after)\b/i;
-const MAX_SCOPE_EXPANSION_ISSUES = 3;
-const MAX_SCOPE_EXPANSION_DEPTH = 3;
 const MAX_MODEL_INFERENCE_CANDIDATES = 12;
 const ENRICHMENT_CONCURRENCY = 6;
 const INFERENCE_CONCURRENCY = 3;
@@ -777,15 +775,14 @@ async function expandIssueScope(
   const expansions: ScopeExpansion[] = [];
   const errors: string[] = [];
   const backlogSummaries = listedIssues.map(issue => ({ number: issue.number, title: issue.title }));
-  const queue: Array<{ issueNumber: number; depth: number; requestedBy: number }> = config.issues.map(issueNumber => ({
+  const queue: Array<{ issueNumber: number; requestedBy: number }> = config.issues.map(issueNumber => ({
     issueNumber,
-    depth: 0,
     requestedBy: issueNumber,
   }));
 
-  while (queue.length > 0 && expansions.length < MAX_SCOPE_EXPANSION_ISSUES) {
+  while (queue.length > 0) {
     const current = queue.shift();
-    if (!current || current.depth >= MAX_SCOPE_EXPANSION_DEPTH) continue;
+    if (!current) continue;
 
     const detail = await getIssueDetail(config, current.issueNumber, cache);
     if (!detail) {
@@ -823,11 +820,8 @@ async function expandIssueScope(
 
       queue.push({
         issueNumber: dependencyNumber,
-        depth: current.depth + 1,
         requestedBy: current.requestedBy,
       });
-
-      if (expansions.length >= MAX_SCOPE_EXPANSION_ISSUES) break;
     }
   }
 

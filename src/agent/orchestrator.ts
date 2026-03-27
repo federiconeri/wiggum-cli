@@ -218,10 +218,31 @@ ${issue.body}
 You must fully handle this selected issue and then stop.`;
 }
 
-function buildFinalSummary(processed: AgentIssueState[], blocked: AgentIssueState[]): string {
+interface ProcessedIssueSummary {
+  issue: AgentIssueState;
+  outcome: WorkerOutcomeTracker['outcome'];
+}
+
+function buildFinalSummary(processed: ProcessedIssueSummary[], blocked: AgentIssueState[]): string {
   const lines = [`Processed ${processed.length} issue(s).`];
-  if (processed.length > 0) {
-    lines.push(`Completed: ${processed.map(issue => `#${issue.issueNumber}`).join(', ')}`);
+  const byOutcome = new Map<WorkerOutcomeTracker['outcome'], number[]>();
+  for (const item of processed) {
+    const issues = byOutcome.get(item.outcome) ?? [];
+    issues.push(item.issue.issueNumber);
+    byOutcome.set(item.outcome, issues);
+  }
+  const orderedOutcomes: Array<{ outcome: WorkerOutcomeTracker['outcome']; label: string }> = [
+    { outcome: 'success', label: 'Completed' },
+    { outcome: 'partial', label: 'Partial' },
+    { outcome: 'failure', label: 'Failed' },
+    { outcome: 'skipped', label: 'Skipped' },
+    { outcome: 'unknown', label: 'Unknown' },
+  ];
+  for (const { outcome, label } of orderedOutcomes) {
+    const issues = byOutcome.get(outcome);
+    if (issues?.length) {
+      lines.push(`${label}: ${issues.map(issueNumber => `#${issueNumber}`).join(', ')}`);
+    }
   }
   if (blocked.length > 0) {
     lines.push(`Blocked: ${blocked.map(issue => `#${issue.issueNumber} (${issue.actionability})`).join(', ')}`);
@@ -256,7 +277,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
     await ingestStrategicDocs(this.config.projectRoot, store);
     await store.prune();
 
-    const processed: AgentIssueState[] = [];
+    const processed: ProcessedIssueSummary[] = [];
     const attemptedThisRun = new Set<number>();
     let completedBudget = 0;
     let blockedSnapshot: AgentIssueState[] = [];
@@ -345,6 +366,8 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
 
       const workerConfig: AgentConfig = {
         ...this.config,
+        issues: [selected.issueNumber],
+        labels: undefined,
         maxItems: 1,
       };
       const { agent, tracker } = createWorkerAgent(workerConfig, store);
@@ -360,7 +383,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         }
       } catch (err) {
         const failed: AgentIssueState = { ...selected, error: err instanceof Error ? err.message : String(err) };
-        processed.push(failed);
+        processed.push({ issue: failed, outcome: tracker.outcome });
         this.emit({ type: 'task_completed', issue: failed, outcome: tracker.outcome });
         throw err;
       }
@@ -374,7 +397,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         ...selected,
         phase: 'reflecting',
       };
-      processed.push(completedIssue);
+      processed.push({ issue: completedIssue, outcome: tracker.outcome });
       this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
       if (tracker.outcome !== 'skipped' && selected.scopeOrigin !== 'dependency') {
         completedBudget += 1;

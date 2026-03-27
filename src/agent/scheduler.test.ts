@@ -427,6 +427,36 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue[1].actionability).toBe('blocked_dependency');
   });
 
+  it('expands all open prerequisites for scoped runs instead of stopping after three', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 10, title: 'Complex integration issue', labels: ['P1'], createdAt: '2026-01-05T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 10 ? 'Complex integration issue' : `Prerequisite ${number}`,
+      body: number === 10
+        ? 'Depends on #1. Depends on #2. Depends on #3. Depends on #4.'
+        : `Implement prerequisite #${number}.`,
+      labels: number === 10 ? ['P1'] : ['infra'],
+      state: 'open',
+      createdAt: `2026-01-0${number === 10 ? 5 : number}T00:00:00Z`,
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [10] }), makeStore());
+
+    expect(ranked.expansions).toEqual([
+      { issueNumber: 1, requestedBy: [10] },
+      { issueNumber: 2, requestedBy: [10] },
+      { issueNumber: 3, requestedBy: [10] },
+      { issueNumber: 4, requestedBy: [10] },
+    ]);
+    expect(ranked.queue.map(issue => issue.issueNumber)).toEqual([1, 2, 3, 4, 10]);
+    expect(ranked.queue[4]?.actionability).toBe('blocked_dependency');
+  });
+
   it('expands issue scope from natural language body cues and backlog titles', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

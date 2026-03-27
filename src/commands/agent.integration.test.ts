@@ -221,7 +221,7 @@ describe('agentCommand integration', () => {
     expect(output).toContain('[orchestrator] blocked #70 — Explicit dependency on #69.\n');
     expect(output).toContain('[orchestrator] selected #69 — Pulled into scope as a prerequisite for #70.\n');
     expect(output).toContain('[orchestrator] completed #69 (partial)\n');
-    expect(output).toContain('Processed 1 issue(s).\nCompleted: #69\nBlocked: #70 (blocked_dependency)\n');
+    expect(output).toContain('Processed 1 issue(s).\nPartial: #69\nBlocked: #70 (blocked_dependency)\n');
     expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(2);
     expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
     expect(consoleErrorSpy).not.toHaveBeenCalled();

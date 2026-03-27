@@ -232,8 +232,10 @@ describe('createAgentOrchestrator', () => {
     expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
     expect(mockInvalidateSchedulerRunCache).toHaveBeenCalledWith(mockBuildRankedBacklog.mock.calls[0][2], [69]);
     expect(result.text).toContain('Processed 1 issue(s).');
-    expect(result.text).toContain('Completed: #69');
+    expect(result.text).toContain('Partial: #69');
     expect(result.text).toContain('Blocked: #70 (blocked_dependency)');
+    expect(mockToolLoopState.options.instructions).toContain('Initial backlog scope is limited to issues: #69.');
+    expect(mockToolLoopState.options.instructions).not.toContain('Initial backlog scope is limited to issues: #70.');
     expect(events.some((event) => event.type === 'scope_expanded')).toBe(true);
     expect(events.filter((event) => event.type === 'task_selected').map((event) => event.issue)).toEqual([69]);
   });
@@ -378,7 +380,8 @@ describe('createAgentOrchestrator', () => {
     const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
 
     expect(result.text).toContain('Processed 2 issue(s).');
-    expect(result.text).toContain('Completed: #2, #3');
+    expect(result.text).toContain('Partial: #3');
+    expect(result.text).toContain('Skipped: #2');
     expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
   });
 
@@ -457,7 +460,7 @@ describe('createAgentOrchestrator', () => {
     const result = await agent.generate({ prompt: 'Begin working through the backlog.' });
 
     expect(result.text).toContain('Processed 2 issue(s).');
-    expect(result.text).toContain('Completed: #69, #70');
+    expect(result.text).toContain('Partial: #69, #70');
     expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
   });
 
@@ -541,7 +544,7 @@ describe('createAgentOrchestrator', () => {
 
     expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
     expect(result.text).toContain('Processed 1 issue(s).');
-    expect(result.text).toContain('Completed: #123');
+    expect(result.text).toContain('Partial: #123');
   });
 });
 
