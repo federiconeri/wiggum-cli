@@ -370,13 +370,6 @@ describe('createAgentOrchestrator', () => {
         expansions: [],
         errors: [],
       })
-      .mockResolvedValueOnce({
-        queue: [housekeeping, fresh],
-        actionable: [],
-        blocked: [],
-        expansions: [],
-        errors: [],
-      });
 
     const agent = createAgentOrchestrator({
       model: {} as any,
@@ -392,6 +385,7 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Partial: #3');
     expect(result.text).toContain('Skipped: #2');
     expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
+    expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(2);
   });
 
   it('does not count scope-expanded prerequisites toward maxItems', async () => {
@@ -450,13 +444,6 @@ describe('createAgentOrchestrator', () => {
         expansions: [{ issueNumber: 69, requestedBy: [70] }],
         errors: [],
       })
-      .mockResolvedValueOnce({
-        queue: [prerequisite, requested],
-        actionable: [],
-        blocked: [],
-        expansions: [{ issueNumber: 69, requestedBy: [70] }],
-        errors: [],
-      });
 
     const agent = createAgentOrchestrator({
       model: {} as any,
@@ -471,6 +458,7 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Processed 2 issue(s).');
     expect(result.text).toContain('Partial: #69, #70');
     expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
+    expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(2);
   });
 
   it('fails when the worker stops before reflectOnWork completes', async () => {
@@ -688,8 +676,10 @@ describe('buildConstraints', () => {
 
 describe('AGENT_SYSTEM_PROMPT', () => {
   it('includes an explicit worker path for pr_closed recommendations', () => {
-    expect(AGENT_SYSTEM_PROMPT).toContain('pr_closed -> comment about the closed PR, then runLoop with resume: true');
-    expect(AGENT_SYSTEM_PROMPT).toContain('You must treat pr_closed as a resume path after commenting on the closed PR state.');
+    expect(AGENT_SYSTEM_PROMPT).toContain('pr_closed -> comment about the closed PR, then re-triage:');
+    expect(AGENT_SYSTEM_PROMPT).toContain('if branch commits or a plan already exist, runLoop with resume: true');
+    expect(AGENT_SYSTEM_PROMPT).toContain('otherwise restart with generateSpec -> runLoop without resume');
+    expect(AGENT_SYSTEM_PROMPT).toContain('You must not force pr_closed into resume mode when there is no branch or plan state to resume.');
   });
 });
 
