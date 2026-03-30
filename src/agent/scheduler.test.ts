@@ -666,6 +666,49 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue[1]?.dependsOn).toEqual([69]);
   });
 
+  it('keeps off-label issues visible in dependency inference context for label-scoped runs', async () => {
+    mockListRepoIssues
+      .mockResolvedValueOnce({
+        issues: [
+          { number: 76, title: 'Build native-agent evaluation harness and baseline benchmarks', labels: ['ai/llm-ui'], createdAt: '2026-01-02T00:00:00Z' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        issues: [
+          { number: 74, title: 'Create native agent runtime interface + tool execution contract', labels: ['ai/llm-core'], createdAt: '2026-01-01T00:00:00Z' },
+          { number: 76, title: 'Build native-agent evaluation harness and baseline benchmarks', labels: ['ai/llm-ui'], createdAt: '2026-01-02T00:00:00Z' },
+        ],
+      });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 74
+        ? 'Create native agent runtime interface + tool execution contract'
+        : 'Build native-agent evaluation harness and baseline benchmarks',
+      body: number === 74
+        ? 'Define native runtime interface, runtime contract, and tool execution contract.'
+        : 'Build evaluation harness for the native runtime contract and tool execution baseline benchmarks.',
+      labels: number === 74 ? ['ai/llm-core'] : ['ai/llm-ui'],
+      state: 'open',
+      createdAt: number === 74 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+    mockGenerateObject.mockImplementation(async ({ prompt }: { prompt: string }) => ({
+      object: {
+        edges: prompt.includes('#74: Create native agent runtime interface + tool execution contract')
+          ? [{ targetIssue: 74, confidence: 'high', evidence: 'The evaluation harness depends on the runtime/tool contract first.' }]
+          : [],
+      },
+    }));
+
+    const ranked = await buildRankedBacklog(makeConfig({ labels: ['ai/llm-ui'] }), makeStore());
+
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:ai/llm-ui', 100);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 100);
+    expect(ranked.queue.map(issue => issue.issueNumber)).toEqual([76]);
+    expect(ranked.queue[0]?.inferredDependsOn).toEqual([{ issueNumber: 74, confidence: 'high' }]);
+    expect(ranked.queue[0]?.actionability).toBe('blocked_dependency');
+  });
+
   it('expands all open prerequisites for scoped runs instead of stopping after three', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

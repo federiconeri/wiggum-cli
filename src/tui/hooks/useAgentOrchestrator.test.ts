@@ -107,7 +107,9 @@ describe('applyOrchestratorEvent', () => {
       completedRef,
     );
 
-    expect(completed.value).toEqual([]);
+    expect(completed.value).toEqual([
+      { issueNumber: 71, title: 'Failed issue', labels: [], phase: 'reflecting', error: 'failed' },
+    ]);
     expect(completedRef.current.has(71)).toBe(false);
   });
 
@@ -133,8 +135,36 @@ describe('applyOrchestratorEvent', () => {
       completedRef,
     );
 
-    expect(completed.value).toEqual([]);
+    expect(completed.value).toEqual([
+      { issueNumber: 72, title: 'Retry later', labels: [], phase: 'reflecting' },
+    ]);
     expect(completedRef.current.has(72)).toBe(false);
+  });
+
+  it('preserves failure outcomes in processed state without marking them complete', () => {
+    const completedRef = { current: new Set<number>() };
+    const activeIssue = createStateSetter<AgentIssueState | null>(null);
+    const queue = createStateSetter<AgentIssueState[]>([]);
+    const completed = createStateSetter<AgentIssueState[]>([]);
+    const logEntries = createStateSetter<AgentLogEntry[]>([]);
+
+    applyOrchestratorEvent(
+      {
+        type: 'task_completed',
+        issue: { issueNumber: 73, title: 'Crashed issue', labels: [], phase: 'reflecting' },
+        outcome: 'failure',
+      },
+      activeIssue.setter,
+      queue.setter,
+      completed.setter,
+      logEntries.setter,
+      completedRef,
+    );
+
+    expect(completed.value).toEqual([
+      { issueNumber: 73, title: 'Crashed issue', labels: [], phase: 'reflecting', error: 'failed' },
+    ]);
+    expect(completedRef.current.has(73)).toBe(false);
   });
 
   it('moves successful resumable issues back out of completed when they reappear in the queue', () => {

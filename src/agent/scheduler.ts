@@ -1033,9 +1033,13 @@ export async function buildRankedBacklog(
     durationMs: nowMs() - hydrationStart,
     count: scopedIssues.length,
   });
+  const inferenceSeed = !issueScope && config.labels?.length
+    ? await discoverListedIssues(config, undefined, cache, 'listedUnfiltered')
+    : listed;
   const errors = [
     ...(listed.error ? [listed.error] : []),
     ...(expansionSeed.error && expansionSeed.error !== listed.error ? [expansionSeed.error] : []),
+    ...(inferenceSeed.error && inferenceSeed.error !== listed.error && inferenceSeed.error !== expansionSeed.error ? [inferenceSeed.error] : []),
     ...scopeErrors,
     ...hydrateErrors,
   ];
@@ -1054,7 +1058,19 @@ export async function buildRankedBacklog(
         }
         return [...byNumber.values()];
       })()
-    : scopedIssues;
+    : (() => {
+        const visibleIssues = config.labels?.length
+          ? (inferenceSeed.issues ?? [])
+          : (listed.issues ?? []);
+        const byNumber = new Map<number, GitHubIssueListItem>();
+        for (const issue of visibleIssues) {
+          byNumber.set(issue.number, issue);
+        }
+        for (const issue of scopedIssues) {
+          byNumber.set(issue.number, issue);
+        }
+        return [...byNumber.values()];
+      })();
 
   const baseIssues = issueScope
     ? scopedIssues

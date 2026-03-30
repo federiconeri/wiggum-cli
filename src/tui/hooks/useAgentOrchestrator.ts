@@ -394,17 +394,16 @@ export function applyOrchestratorEvent(
       break;
 
     case 'task_completed':
+      setCompleted((prev) => {
+        const filtered = prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber);
+        return [...filtered, {
+          ...event.issue,
+          error: event.outcome === 'failure' ? 'failed' : event.issue.error,
+        }];
+      });
       if (event.outcome === 'success' || event.outcome === 'skipped') {
-        setCompleted((prev) => {
-          const filtered = prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber);
-          return [...filtered, {
-            ...event.issue,
-            error: event.outcome === 'failure' ? 'failed' : event.issue.error,
-          }];
-        });
         completedIssuesRef.current.add(event.issue.issueNumber);
       } else {
-        setCompleted((prev) => prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber));
         completedIssuesRef.current.delete(event.issue.issueNumber);
       }
       setQueue((prev) => prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber));
