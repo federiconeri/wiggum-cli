@@ -68,8 +68,20 @@ interface WorkerOutcomeTracker {
   reflected: boolean;
 }
 
-function canResumeWithinRun(candidate: BacklogCandidate): boolean {
-  if (candidate.attemptState !== 'partial' && candidate.attemptState !== 'failure') return false;
+const MAX_WITHIN_RUN_SELECTIONS_PER_ISSUE = 3;
+
+function canResumeWithinRun(
+  candidate: BacklogCandidate,
+  prior: { outcome: WorkerOutcomeTracker['outcome']; selections: number } | undefined,
+): boolean {
+  if (!prior) return true;
+  if (prior.selections >= MAX_WITHIN_RUN_SELECTIONS_PER_ISSUE) return false;
+
+  if (prior.outcome === 'success') {
+    return candidate.recommendation === 'resume_pr_phase';
+  }
+
+  if (prior.outcome !== 'partial' && prior.outcome !== 'failure') return false;
   return candidate.recommendation === 'resume_implementation'
     || candidate.recommendation === 'resume_pr_phase';
 }
@@ -293,7 +305,8 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
     await store.prune();
 
     const processed: ProcessedIssueSummary[] = [];
-    const attemptedThisRun = new Map<number, WorkerOutcomeTracker['outcome']>();
+    const attemptedThisRun = new Map<number, { outcome: WorkerOutcomeTracker['outcome']; selections: number }>();
+    const pendingPostSuccessVerification = new Set<number>();
     let completedBudget = 0;
     let blockedSnapshot: AgentIssueState[] = [];
     const schedulerCache = createSchedulerRunCache();
@@ -303,7 +316,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         throw new Error('Aborted');
       }
 
-      if (this.config.maxItems != null && completedBudget >= this.config.maxItems) {
+      if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingPostSuccessVerification.size === 0) {
         return buildFinalSummary(processed, blockedSnapshot);
       }
 
@@ -350,9 +363,17 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         this.emit({ type: 'task_blocked', issue: blocked });
       }
 
+      for (const issueNumber of [...pendingPostSuccessVerification]) {
+        const stillNeedsFollowUp = ranked.actionable.some(
+          candidate => candidate.issueNumber === issueNumber && candidate.recommendation === 'resume_pr_phase',
+        );
+        if (!stillNeedsFollowUp) {
+          pendingPostSuccessVerification.delete(issueNumber);
+        }
+      }
+
       const next = ranked.actionable.find((candidate) => {
-        if (!attemptedThisRun.has(candidate.issueNumber)) return true;
-        return canResumeWithinRun(candidate);
+        return canResumeWithinRun(candidate, attemptedThisRun.get(candidate.issueNumber));
       });
       if (!next) {
         return buildFinalSummary(processed, blockedSnapshot);
@@ -414,7 +435,16 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         phase: 'reflecting',
       };
       processed.push({ issue: completedIssue, outcome: tracker.outcome });
-      attemptedThisRun.set(selected.issueNumber, tracker.outcome);
+      const prior = attemptedThisRun.get(selected.issueNumber);
+      attemptedThisRun.set(selected.issueNumber, {
+        outcome: tracker.outcome,
+        selections: (prior?.selections ?? 0) + 1,
+      });
+      if (tracker.outcome === 'success' && selected.scopeOrigin !== 'dependency') {
+        pendingPostSuccessVerification.add(selected.issueNumber);
+      } else {
+        pendingPostSuccessVerification.delete(selected.issueNumber);
+      }
       this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
       if (tracker.outcome === 'success' && selected.scopeOrigin !== 'dependency') {
         completedBudget += 1;

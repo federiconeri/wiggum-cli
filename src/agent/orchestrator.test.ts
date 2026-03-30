@@ -651,6 +651,64 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Partial: #74, #74');
   });
 
+  it('allows a successful implementation pass to be reselected for the PR phase', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('success', 'partial');
+    const issue = {
+      issueNumber: 88,
+      title: 'Ship runtime feature',
+      body: 'Implementation work.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'retry', message: 'Continue through the PR phase.' }],
+      recommendation: 'resume_pr_phase',
+      loopFeatureName: 'runtime-feature',
+      attemptState: 'success',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [{ ...issue, recommendation: 'start_fresh', attemptState: 'never_tried' }],
+        actionable: [{ ...issue, recommendation: 'start_fresh', attemptState: 'never_tried' }],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [issue],
+        actionable: [issue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [issue],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      maxItems: 1,
+    });
+
+    const result = await agent.generate({ prompt: 'Complete implementation and PR work.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
+    expect(result.text).toContain('Processed 2 issue(s).');
+    expect(result.text).toContain('Completed: #88');
+    expect(result.text).toContain('Partial: #88');
+  });
+
   it('does not consume maxItems on partial requested outcomes', async () => {
     mockBuildRankedBacklog.mockReset();
     mockToolLoopState.outcomes.push('partial', 'partial');
@@ -707,6 +765,70 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Processed 2 issue(s).');
     expect(result.text).toContain('Partial: #74, #74');
     expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(3);
+  });
+
+  it('stops retrying the same partial issue after the within-run retry cap', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('partial', 'partial', 'partial');
+    const resumable = {
+      issueNumber: 90,
+      title: 'Persistently blocked issue',
+      body: 'Still blocked.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'retry', message: 'Resume the blocked implementation.' }],
+      recommendation: 'resume_implementation',
+      loopFeatureName: 'blocked-issue',
+      attemptState: 'partial',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [resumable],
+        actionable: [resumable],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [resumable],
+        actionable: [resumable],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [resumable],
+        actionable: [resumable],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [resumable],
+        actionable: [resumable],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+    });
+
+    const result = await agent.generate({ prompt: 'Keep trying until the orchestrator gives up.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(3);
+    expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(4);
+    expect(result.text).toContain('Processed 3 issue(s).');
+    expect(result.text).toContain('Partial: #90, #90, #90');
   });
 });
 
