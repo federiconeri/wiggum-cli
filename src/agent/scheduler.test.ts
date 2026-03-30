@@ -184,8 +184,36 @@ describe('buildRankedBacklog', () => {
 
     expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', undefined, 100);
     expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 200);
-    expect(ranked.errors).toEqual([]);
+    expect(ranked.errors).toEqual(['GitHub issue listing failed: transient network error']);
     expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([1]);
+  });
+
+  it('surfaces unfiltered expansion-seed listing failures for scoped runs with labels', async () => {
+    mockListRepoIssues
+      .mockResolvedValueOnce({
+        issues: [
+          { number: 70, title: 'Define structured loop action IPC', labels: ['loop-ui'], createdAt: '2026-01-02T00:00:00Z', state: 'open' },
+        ],
+      })
+      .mockResolvedValueOnce({
+        issues: [],
+        error: 'GitHub issue listing failed: unfiltered backlog unavailable',
+      });
+    mockFetchGitHubIssue.mockResolvedValue({
+      number: 70,
+      title: 'Define structured loop action IPC',
+      body: 'Depends on orchestrator runtime.',
+      labels: ['loop-ui'],
+      state: 'open',
+      createdAt: '2026-01-02T00:00:00Z',
+    });
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [70], labels: ['loop-ui'] }), makeStore());
+
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:loop-ui', 100);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 100);
+    expect(ranked.errors).toContain('GitHub issue listing failed: unfiltered backlog unavailable');
   });
 
   it('prioritizes retry and resume work ahead of fresh work', async () => {

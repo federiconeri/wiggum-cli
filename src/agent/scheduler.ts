@@ -182,7 +182,9 @@ async function discoverListedIssues(
   while (true) {
     const current = await listRepoIssues(config.owner, config.repo, search, requestedLimit);
     if (current.error) {
-      latest = lastSuccessful ?? current;
+      latest = lastSuccessful
+        ? { ...lastSuccessful, error: current.error }
+        : current;
       break;
     }
     latest = current;
@@ -995,6 +997,7 @@ export async function buildRankedBacklog(
   });
   const errors = [
     ...(listed.error ? [listed.error] : []),
+    ...(expansionSeed.error && expansionSeed.error !== listed.error ? [expansionSeed.error] : []),
     ...scopeErrors,
     ...hydrateErrors,
   ];
