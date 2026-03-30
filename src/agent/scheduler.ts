@@ -993,8 +993,23 @@ export async function buildRankedBacklog(
     ...hydrateErrors,
   ];
 
-  const baseIssues = scopedIssues.filter(issue => {
-    if (issueScope && !issueScope.has(issue.number)) return false;
+  const contextIssues = issueScope
+    ? (() => {
+        const visibleIssues = config.issues?.length && config.labels?.length
+          ? (expansionSeed.issues ?? [])
+          : (listed.issues ?? []);
+        const byNumber = new Map<number, GitHubIssueListItem>();
+        for (const issue of visibleIssues) {
+          byNumber.set(issue.number, issue);
+        }
+        for (const issue of scopedIssues) {
+          byNumber.set(issue.number, issue);
+        }
+        return [...byNumber.values()];
+      })()
+    : scopedIssues;
+
+  const baseIssues = contextIssues.filter(issue => {
     if (!issueScope && config.labels?.length) {
       return config.labels.some(label => issue.labels.includes(label));
     }
@@ -1024,10 +1039,10 @@ export async function buildRankedBacklog(
     const featureState = await getFeatureState(config, issue.number, loopFeatureName, cache);
     const hintedDependencies = extractDependencyHints(
       detail.body ?? '',
-      scopedIssues.map(scopedIssue => ({ number: scopedIssue.number, title: scopedIssue.title })),
+      contextIssues.map(contextIssue => ({ number: contextIssue.number, title: contextIssue.title })),
       issue.number,
     );
-    const dependencyResolution = await resolveOpenDependencies(config, hintedDependencies, scopedIssues, cache);
+    const dependencyResolution = await resolveOpenDependencies(config, hintedDependencies, contextIssues, cache);
     enrichmentErrors.push(...dependencyResolution.errors);
     const dependsOn = dependencyResolution.openDependencies;
     const attemptState = getAttemptState(memories, issue.number);
@@ -1040,7 +1055,7 @@ export async function buildRankedBacklog(
       createdAt: issue.createdAt,
       phase: 'idle',
       scopeOrigin: issueScope
-        ? (config.issues?.includes(issue.number) ? 'requested' : 'dependency')
+        ? (config.issues?.includes(issue.number) ? 'requested' : issueScope.has(issue.number) ? 'dependency' : undefined)
         : undefined,
       requestedBy: expansions.find(expansion => expansion.issueNumber === issue.number)?.requestedBy,
       priorityTier: derivePriorityTier(detail.labels ?? issue.labels ?? []),
@@ -1193,12 +1208,14 @@ export async function buildRankedBacklog(
     message: `Ranking ${candidates.length} issue(s).`,
     total: candidates.length,
   });
-  const queue = [...candidates].sort((left, right) => {
+  const queue = [...candidates]
+    .filter(candidate => !issueScope || issueScope.has(candidate.issueNumber))
+    .sort((left, right) => {
     const leftScore = left.score?.total ?? 0;
     const rightScore = right.score?.total ?? 0;
     if (rightScore !== leftScore) return rightScore - leftScore;
     return left.issueNumber - right.issueNumber;
-  });
+    });
   emitBacklogEvent(config, {
     type: 'backlog_timing',
     phase: 'ranking',

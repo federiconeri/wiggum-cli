@@ -750,6 +750,42 @@ describe('buildRankedBacklog', () => {
     expect(ranked.errors).toEqual([]);
   });
 
+  it('keeps non-explicit inferred prerequisites visible for scoped runs without adding them to the queue', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 74, title: 'Create native agent runtime interface + tool execution contract', labels: ['ai/llm'], createdAt: '2026-01-01T00:00:00Z' },
+        { number: 76, title: 'Build native-agent evaluation harness and baseline benchmarks', labels: ['ai/llm'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 74
+        ? 'Create native agent runtime interface + tool execution contract'
+        : 'Build native-agent evaluation harness and baseline benchmarks',
+      body: number === 74
+        ? 'Define native runtime interface, runtime contract, and tool execution contract.'
+        : 'Build evaluation harness for the native runtime contract and tool execution baseline benchmarks.',
+      labels: ['ai/llm'],
+      state: 'open',
+      createdAt: number === 74 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+    mockGenerateObject.mockImplementation(async ({ prompt }: { prompt: string }) => ({
+      object: {
+        edges: prompt.includes('#76: Build native-agent evaluation harness and baseline benchmarks')
+          ? [{ targetIssue: 74, confidence: 'high', evidence: 'The evaluation harness depends on the runtime/tool contract first.' }]
+          : [],
+      },
+    }));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [76] }), makeStore());
+
+    expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([76]);
+    expect(ranked.queue[0]?.inferredDependsOn).toEqual([{ issueNumber: 74, confidence: 'high' }]);
+    expect(ranked.queue[0]?.actionability).toBe('blocked_out_of_scope');
+    expect(ranked.queue[0]?.blockedBy?.[0]).toMatchObject({ issueNumber: 74 });
+  });
+
   it('uses hydrated scoped issues for title-based dependency inference when the initial listing is empty', async () => {
     mockListRepoIssues.mockResolvedValue({ issues: [] });
     mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({

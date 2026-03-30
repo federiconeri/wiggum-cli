@@ -415,7 +415,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
       processed.push({ issue: completedIssue, outcome: tracker.outcome });
       attemptedThisRun.set(selected.issueNumber, tracker.outcome);
       this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
-      if (tracker.outcome !== 'skipped' && selected.scopeOrigin !== 'dependency') {
+      if (tracker.outcome === 'success' && selected.scopeOrigin !== 'dependency') {
         completedBudget += 1;
       }
       invalidateSchedulerRunCache(schedulerCache, [selected.issueNumber]);
