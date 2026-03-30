@@ -509,6 +509,49 @@ describe('createAgentOrchestrator', () => {
     expect(mockInvalidateSchedulerRunCache).not.toHaveBeenCalled();
   });
 
+  it('emits a failure outcome when the worker crashes before reflectOnWork', async () => {
+    mockBuildRankedBacklog.mockReset();
+    const fresh = {
+      issueNumber: 3,
+      title: 'Fresh issue',
+      body: 'Do work.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Ready issue.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'fresh-issue',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    mockBuildRankedBacklog.mockResolvedValue({
+      queue: [fresh],
+      actionable: [fresh],
+      blocked: [],
+      expansions: [],
+      errors: [],
+    });
+    mockToolLoopStream.mockRejectedValueOnce(new Error('worker crashed'));
+
+    const events: Array<{ type: string; outcome?: string; issue?: number }> = [];
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      onOrchestratorEvent: (event) => {
+        if (event.type === 'task_completed') {
+          events.push({ type: event.type, outcome: event.outcome, issue: event.issue.issueNumber });
+        }
+      },
+    });
+
+    await expect(agent.generate({ prompt: 'Begin working through the backlog.' }))
+      .rejects.toThrow('worker crashed');
+    expect(events).toContainEqual({ type: 'task_completed', issue: 3, outcome: 'failure' });
+  });
+
   it('dispatches waiting_pr issues through the worker path', async () => {
     mockBuildRankedBacklog.mockReset();
     mockToolLoopState.outcomes.push('partial');

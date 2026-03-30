@@ -396,8 +396,9 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         }
       } catch (err) {
         const failed: AgentIssueState = { ...selected, error: err instanceof Error ? err.message : String(err) };
-        processed.push({ issue: failed, outcome: tracker.outcome });
-        this.emit({ type: 'task_completed', issue: failed, outcome: tracker.outcome });
+        const failureOutcome: WorkerOutcomeTracker['outcome'] = tracker.outcome === 'unknown' ? 'failure' : tracker.outcome;
+        processed.push({ issue: failed, outcome: failureOutcome });
+        this.emit({ type: 'task_completed', issue: failed, outcome: failureOutcome });
         throw err;
       }
 

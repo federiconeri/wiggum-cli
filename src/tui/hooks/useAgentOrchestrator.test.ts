@@ -107,8 +107,33 @@ describe('applyOrchestratorEvent', () => {
       completedRef,
     );
 
-    expect(completed.value).toEqual([
-      { issueNumber: 71, title: 'Failed issue', labels: [], phase: 'reflecting', error: 'failed' },
+    expect(completed.value).toEqual([]);
+    expect(completedRef.current.has(71)).toBe(false);
+  });
+
+  it('does not keep partial outcomes in completed state', () => {
+    const completedRef = { current: new Set<number>([72]) };
+    const activeIssue = createStateSetter<AgentIssueState | null>(null);
+    const queue = createStateSetter<AgentIssueState[]>([]);
+    const completed = createStateSetter<AgentIssueState[]>([
+      { issueNumber: 72, title: 'Old partial', labels: [], phase: 'reflecting' },
     ]);
+    const logEntries = createStateSetter<AgentLogEntry[]>([]);
+
+    applyOrchestratorEvent(
+      {
+        type: 'task_completed',
+        issue: { issueNumber: 72, title: 'Retry later', labels: [], phase: 'reflecting' },
+        outcome: 'partial',
+      },
+      activeIssue.setter,
+      queue.setter,
+      completed.setter,
+      logEntries.setter,
+      completedRef,
+    );
+
+    expect(completed.value).toEqual([]);
+    expect(completedRef.current.has(72)).toBe(false);
   });
 });

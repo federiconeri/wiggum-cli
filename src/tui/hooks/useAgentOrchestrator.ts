@@ -381,17 +381,26 @@ export function applyOrchestratorEvent(
       break;
 
     case 'task_completed':
-      setCompleted((prev) => {
-        const filtered = prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber);
-        return [...filtered, {
-          ...event.issue,
-          error: event.outcome === 'failure' ? 'failed' : event.issue.error,
-        }];
-      });
-      completedIssuesRef.current.add(event.issue.issueNumber);
+      if (event.outcome === 'success' || event.outcome === 'skipped') {
+        setCompleted((prev) => {
+          const filtered = prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber);
+          return [...filtered, {
+            ...event.issue,
+            error: event.outcome === 'failure' ? 'failed' : event.issue.error,
+          }];
+        });
+        completedIssuesRef.current.add(event.issue.issueNumber);
+      } else {
+        setCompleted((prev) => prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber));
+        completedIssuesRef.current.delete(event.issue.issueNumber);
+      }
       setQueue((prev) => prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber));
       setActiveIssue((prev) => prev?.issueNumber === event.issue.issueNumber ? null : prev);
-      setLogEntries((prev) => appendLog(prev, `Completed #${event.issue.issueNumber} (${event.outcome})`, event.outcome === 'failure' ? 'error' : 'success'));
+      setLogEntries((prev) => appendLog(
+        prev,
+        `${event.outcome === 'failure' ? 'Failed' : event.outcome === 'partial' ? 'Paused' : 'Completed'} #${event.issue.issueNumber} (${event.outcome})`,
+        event.outcome === 'failure' ? 'error' : event.outcome === 'partial' ? 'warn' : 'success',
+      ));
       break;
 
     default:
