@@ -177,10 +177,16 @@ async function discoverListedIssues(
 
   let requestedLimit = BACKLOG_DISCOVERY_STEP;
   let latest: ListIssuesResult = { issues: [] };
+  let lastSuccessful: ListIssuesResult | null = null;
 
   while (true) {
-    latest = await listRepoIssues(config.owner, config.repo, search, requestedLimit);
-    if (latest.error) break;
+    const current = await listRepoIssues(config.owner, config.repo, search, requestedLimit);
+    if (current.error) {
+      latest = lastSuccessful ?? current;
+      break;
+    }
+    latest = current;
+    lastSuccessful = current;
     if (latest.issues.length < requestedLimit || requestedLimit >= BACKLOG_DISCOVERY_MAX_LIMIT) break;
     requestedLimit += BACKLOG_DISCOVERY_STEP;
   }

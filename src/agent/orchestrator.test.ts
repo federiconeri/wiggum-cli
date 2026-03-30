@@ -242,8 +242,9 @@ describe('createAgentOrchestrator', () => {
     expect(mockCreateBacklogTools).toHaveBeenLastCalledWith('acme', 'app', {
       defaultLabels: undefined,
       issueNumbers: [69],
-      scopeListIssuesToIssueNumbers: false,
+      scopeListIssuesToIssueNumbers: true,
       scopeReadIssueToIssueNumbers: true,
+      allowGlobalBugDuplicateChecks: true,
     });
     expect(events.some((event) => event.type === 'scope_expanded')).toBe(true);
     expect(events.filter((event) => event.type === 'task_selected').map((event) => event.issue)).toEqual([69]);

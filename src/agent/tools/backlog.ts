@@ -7,6 +7,7 @@ export interface BacklogToolsOptions {
   issueNumbers?: number[];
   scopeListIssuesToIssueNumbers?: boolean;
   scopeReadIssueToIssueNumbers?: boolean;
+  allowGlobalBugDuplicateChecks?: boolean;
 }
 
 const DEPENDENCY_PATTERN = /\b(?:depends on|blocked by|requires|after)\s+#(\d+)/gi;
@@ -43,7 +44,12 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       if (result.error) return { issues: [], error: result.error };
       // Sort by issue number ascending — lower numbers are typically more foundational
       const sorted = [...result.issues].sort((a, b) => a.number - b.number);
-      if (issueNumberSet && options.scopeListIssuesToIssueNumbers !== false) {
+      const isBugDuplicateCheck = options.allowGlobalBugDuplicateChecks === true
+        && milestone == null
+        && uniqueLabels.length === 1
+        && uniqueLabels[0] === 'bug';
+
+      if (issueNumberSet && options.scopeListIssuesToIssueNumbers !== false && !isBugDuplicateCheck) {
         const filtered = sorted.filter(i => issueNumberSet.has(Number(i.number)));
         for (const issue of filtered) listVisibleIssueNumbers.add(Number(issue.number));
         return { issues: filtered };

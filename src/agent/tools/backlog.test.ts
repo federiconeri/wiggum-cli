@@ -122,10 +122,27 @@ describe('createBacklogTools', () => {
       expect(result.issues).toHaveLength(0);
     });
 
-    it('can bypass issue-number filtering for listIssues when duplicate checks need full backlog visibility', async () => {
+    it('can bypass issue-number filtering only for explicit bug duplicate checks', async () => {
       const scopedTools = createBacklogTools('testowner', 'testrepo', {
         issueNumbers: [3, 5],
-        scopeListIssuesToIssueNumbers: false,
+        allowGlobalBugDuplicateChecks: true,
+      });
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 1, title: 'Other', state: 'open', labels: [], createdAt: '2026-01-01T00:00:00Z' },
+          { number: 3, title: 'Target A', state: 'open', labels: [], createdAt: '2026-01-03T00:00:00Z' },
+          { number: 5, title: 'Target B', state: 'open', labels: [], createdAt: '2026-01-05T00:00:00Z' },
+        ],
+      });
+
+      const result = await scopedTools.listIssues.execute({ labels: ['bug'], limit: 20 }, execCtx);
+      expect(result.issues.map((i: any) => i.number)).toEqual([1, 3, 5]);
+    });
+
+    it('keeps non-bug listIssues calls scoped to the selected issue numbers', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', {
+        issueNumbers: [3, 5],
+        allowGlobalBugDuplicateChecks: true,
       });
       mockListRepoIssues.mockResolvedValue({
         issues: [
@@ -136,7 +153,7 @@ describe('createBacklogTools', () => {
       });
 
       const result = await scopedTools.listIssues.execute({ limit: 20 }, execCtx);
-      expect(result.issues.map((i: any) => i.number)).toEqual([1, 3, 5]);
+      expect(result.issues.map((i: any) => i.number)).toEqual([3, 5]);
     });
 
     it('combines issue number filter with label filter', async () => {
@@ -218,8 +235,8 @@ describe('createBacklogTools', () => {
     it('allows readIssue for issues surfaced by unscoped listIssues duplicate checks', async () => {
       const scopedTools = createBacklogTools('testowner', 'testrepo', {
         issueNumbers: [3],
-        scopeListIssuesToIssueNumbers: false,
         scopeReadIssueToIssueNumbers: true,
+        allowGlobalBugDuplicateChecks: true,
       });
       mockListRepoIssues.mockResolvedValue({
         issues: [

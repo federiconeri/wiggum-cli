@@ -155,6 +155,39 @@ describe('buildRankedBacklog', () => {
     expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 200);
   });
 
+  it('retains the last successful backlog listing when a larger relist fails', async () => {
+    mockListRepoIssues
+      .mockResolvedValueOnce({
+        issues: Array.from({ length: 100 }, (_, index) => ({
+          number: index + 1,
+          title: `Issue ${index + 1}`,
+          state: 'open',
+          labels: [],
+          createdAt: '2026-01-01T00:00:00Z',
+        })),
+      })
+      .mockResolvedValueOnce({
+        issues: [],
+        error: 'GitHub issue listing failed: transient network error',
+      });
+    mockFetchGitHubIssue.mockResolvedValue({
+      number: 1,
+      title: 'Issue 1',
+      body: 'Body',
+      labels: [],
+      state: 'open',
+      createdAt: '2026-01-01T00:00:00Z',
+    });
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [1] }), makeStore());
+
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', undefined, 100);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 200);
+    expect(ranked.errors).toEqual([]);
+    expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([1]);
+  });
+
   it('prioritizes retry and resume work ahead of fresh work', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [
