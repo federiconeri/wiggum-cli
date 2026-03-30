@@ -285,10 +285,6 @@ export function deriveFeatureNameFromTitle(title: string): string {
   return (words.length > 0 ? words : ['feature']).join('-');
 }
 
-function deriveFeatureStateName(title: string, issueNumber: number): string {
-  return `${deriveFeatureNameFromTitle(title)}-${issueNumber}`;
-}
-
 function derivePriorityTier(labels: string[]): PriorityTier {
   if (labels.includes('P0')) return 'P0';
   if (labels.includes('P1')) return 'P1';
@@ -1010,8 +1006,7 @@ export async function buildRankedBacklog(
       return null;
     }
     const loopFeatureName = deriveFeatureNameFromTitle(detail.title || issue.title);
-    const featureStateName = deriveFeatureStateName(detail.title || issue.title, issue.number);
-    const featureState = await getFeatureState(config, issue.number, featureStateName, cache);
+    const featureState = await getFeatureState(config, issue.number, loopFeatureName, cache);
     const hintedDependencies = extractDependencyHints(
       detail.body ?? '',
       scopedIssues.map(scopedIssue => ({ number: scopedIssue.number, title: scopedIssue.title })),

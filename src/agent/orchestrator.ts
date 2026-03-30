@@ -29,6 +29,7 @@ You are given exactly one backlog issue that has already been selected by a high
    - generate_plan -> runLoop without resume
    - resume_implementation -> runLoop with resume: true
    - resume_pr_phase -> runLoop with resume: true
+   - pr_closed -> comment about the closed PR, then runLoop with resume: true
    - pr_exists_open / linked_pr_open -> comment and stop
    - pr_merged / linked_pr_merged -> check boxes, close issue, reflect with outcome "skipped", stop
 6. After every runLoop:
@@ -43,6 +44,7 @@ You are given exactly one backlog issue that has already been selected by a high
 - You must stay within the selected issue.
 - You must pass issueNumber to assessFeatureState.
 - You must pass resume: true for resume_implementation and resume_pr_phase.
+- You must treat pr_closed as a resume path after commenting on the closed PR state.
 - You must forward Runtime Config values using the tool schemas:
   - pass model and provider to generateSpec when they are set
   - pass reviewMode to runLoop when it is set

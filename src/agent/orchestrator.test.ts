@@ -643,6 +643,13 @@ describe('buildConstraints', () => {
   });
 });
 
+describe('AGENT_SYSTEM_PROMPT', () => {
+  it('includes an explicit worker path for pr_closed recommendations', () => {
+    expect(AGENT_SYSTEM_PROMPT).toContain('pr_closed -> comment about the closed PR, then runLoop with resume: true');
+    expect(AGENT_SYSTEM_PROMPT).toContain('You must treat pr_closed as a resume path after commenting on the closed PR state.');
+  });
+});
+
 describe('buildRuntimeConfig', () => {
   const base = { model: {} as any, projectRoot: '/fake', owner: 'o', repo: 'r' };
 
