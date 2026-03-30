@@ -804,6 +804,27 @@ describe('buildRankedBacklog', () => {
     expect(ranked.errors[0]).toContain('Failed to fetch issue #70');
   });
 
+  it('does not expand dependencies for requested issues that are already closed', async () => {
+    mockListRepoIssues.mockResolvedValue({ issues: [] });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 69
+        ? 'Build LoopOrchestrator runtime (process supervision + PTY)'
+        : 'Define structured loop action IPC',
+      body: number === 70 ? 'Depends on #69' : 'Runtime implementation.',
+      labels: ['loop'],
+      state: number === 70 ? 'closed' : 'open',
+      createdAt: number === 69 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [70] }), makeStore());
+
+    expect(ranked.queue).toEqual([]);
+    expect(ranked.expansions).toEqual([]);
+    expect(ranked.errors).toEqual([]);
+  });
+
   it('surfaces enrichment failures instead of silently dropping listed issues', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

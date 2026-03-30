@@ -819,21 +819,30 @@ async function expandIssueScope(
     return { effectiveScope: undefined, expansions: [], errors: [] };
   }
 
-  const effectiveScope = new Set(config.issues);
+  const effectiveScope = new Set<number>();
   const expansions: ScopeExpansion[] = [];
   const errors: string[] = [];
   const backlogSummaries = listedIssues.map(issue => ({ number: issue.number, title: issue.title }));
+  const queue: Array<{ issueNumber: number; requestedBy: number }> = [];
+
   for (const issueNumber of config.issues) {
-    if (backlogSummaries.some(issue => issue.number === issueNumber)) continue;
-    const detail = await getIssueDetail(config, issueNumber, cache);
-    if (detail?.state === 'open') {
-      backlogSummaries.push({ number: detail.number, title: detail.title });
+    if (backlogSummaries.some(issue => issue.number === issueNumber)) {
+      effectiveScope.add(issueNumber);
+      queue.push({ issueNumber, requestedBy: issueNumber });
+      continue;
     }
+
+    const detail = await getIssueDetail(config, issueNumber, cache);
+    if (!detail) {
+      errors.push(`Failed to fetch issue #${issueNumber} from GitHub while expanding dependencies. Check gh connectivity.`);
+      continue;
+    }
+    if (detail.state !== 'open') continue;
+
+    backlogSummaries.push({ number: detail.number, title: detail.title });
+    effectiveScope.add(issueNumber);
+    queue.push({ issueNumber, requestedBy: issueNumber });
   }
-  const queue: Array<{ issueNumber: number; requestedBy: number }> = config.issues.map(issueNumber => ({
-    issueNumber,
-    requestedBy: issueNumber,
-  }));
 
   while (queue.length > 0) {
     const current = queue.shift();
