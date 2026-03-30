@@ -827,6 +827,134 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Completed: #91');
   });
 
+  it('counts only one successful pass per issue toward maxItems', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('success', 'success', 'success');
+    const prFollowUpIssue = {
+      issueNumber: 88,
+      title: 'Ship runtime feature',
+      body: 'Implementation work.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'retry', message: 'Continue through the PR phase.' }],
+      recommendation: 'resume_pr_phase',
+      loopFeatureName: 'runtime-feature',
+      attemptState: 'success',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    const secondIssue = {
+      issueNumber: 89,
+      title: 'Follow-up issue',
+      body: 'Separate requested work.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Another requested issue remains.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'follow-up-issue',
+      attemptState: 'never_tried',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [{ ...prFollowUpIssue, recommendation: 'start_fresh', attemptState: 'never_tried' }, secondIssue],
+        actionable: [{ ...prFollowUpIssue, recommendation: 'start_fresh', attemptState: 'never_tried' }, secondIssue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [prFollowUpIssue, secondIssue],
+        actionable: [prFollowUpIssue, secondIssue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [secondIssue],
+        actionable: [secondIssue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      maxItems: 2,
+    });
+
+    const result = await agent.generate({ prompt: 'Complete two logical issues.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(3);
+    expect(result.text).toContain('Processed 3 issue(s).');
+    expect(result.text).toContain('Completed: #88, #88, #89');
+  });
+
+  it('continues with a ranked queue when only pagination listing errors remain', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('success');
+    const issue = {
+      issueNumber: 92,
+      title: 'Issue from last successful listing page',
+      body: 'Continue with the already ranked backlog item.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Actionable work exists from the successful listing snapshot.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'issue-from-last-successful-listing-page',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [issue],
+        actionable: [issue],
+        blocked: [],
+        expansions: [],
+        errors: ['GitHub issue listing failed: transient network error'],
+      })
+      .mockResolvedValueOnce({
+        queue: [],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      maxItems: 1,
+    });
+
+    const result = await agent.generate({ prompt: 'Proceed with the ranked queue despite a later relist hiccup.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
+    expect(result.text).toContain('Processed 1 issue(s).');
+    expect(result.text).toContain('Completed: #92');
+  });
+
   it('does not consume maxItems on partial requested outcomes', async () => {
     mockBuildRankedBacklog.mockReset();
     mockToolLoopState.outcomes.push('partial', 'partial');

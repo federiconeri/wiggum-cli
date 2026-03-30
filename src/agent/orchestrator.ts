@@ -77,6 +77,10 @@ function shouldCountTowardCompletedBudget(
     && issue.actionability !== 'waiting_pr';
 }
 
+function isRecoverableListingError(error: string): boolean {
+  return error.startsWith('GitHub issue listing failed:');
+}
+
 const MAX_WITHIN_RUN_SELECTIONS_PER_ISSUE = 3;
 
 function canResumeWithinRun(
@@ -316,6 +320,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
     const processed: ProcessedIssueSummary[] = [];
     const attemptedThisRun = new Map<number, { outcome: WorkerOutcomeTracker['outcome']; selections: number }>();
     const pendingPostSuccessVerification = new Set<number>();
+    const countedSuccessfulIssues = new Set<number>();
     let completedBudget = 0;
     let blockedSnapshot: AgentIssueState[] = [];
     const schedulerCache = createSchedulerRunCache();
@@ -331,10 +336,14 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
 
       const ranked = await buildRankedBacklog(this.config, store, schedulerCache);
       if (ranked.errors.length > 0) {
+        const canProceedWithRankedQueue = ranked.queue.length > 0
+          && ranked.errors.every(isRecoverableListingError);
         if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingPostSuccessVerification.size > 0) {
           return buildFinalSummary(processed, blockedSnapshot);
         }
-        throw new Error(ranked.errors[0]);
+        if (!canProceedWithRankedQueue) {
+          throw new Error(ranked.errors[0]);
+        }
       }
       const queueStates = toIssueStates(ranked.queue);
       blockedSnapshot = queueStates.filter(
@@ -458,8 +467,9 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         pendingPostSuccessVerification.delete(selected.issueNumber);
       }
       this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
-      if (shouldCountTowardCompletedBudget(selected, tracker.outcome)) {
+      if (shouldCountTowardCompletedBudget(selected, tracker.outcome) && !countedSuccessfulIssues.has(selected.issueNumber)) {
         completedBudget += 1;
+        countedSuccessfulIssues.add(selected.issueNumber);
       }
       invalidateSchedulerRunCache(schedulerCache, [selected.issueNumber]);
     }
