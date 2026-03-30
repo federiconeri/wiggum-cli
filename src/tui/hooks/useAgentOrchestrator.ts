@@ -360,7 +360,20 @@ export function applyOrchestratorEvent(
       break;
 
     case 'queue_ranked':
-      setQueue(event.queue.filter((issue) => !completedIssuesRef.current.has(issue.issueNumber)));
+      {
+        const resumedIssueNumbers = new Set(
+          event.queue
+            .filter(issue => issue.recommendation === 'resume_pr_phase')
+            .map(issue => issue.issueNumber),
+        );
+        if (resumedIssueNumbers.size > 0) {
+          for (const issueNumber of resumedIssueNumbers) {
+            completedIssuesRef.current.delete(issueNumber);
+          }
+          setCompleted((prev) => prev.filter((issue) => !resumedIssueNumbers.has(issue.issueNumber)));
+        }
+        setQueue(event.queue.filter((issue) => !completedIssuesRef.current.has(issue.issueNumber)));
+      }
       break;
 
     case 'task_selected':

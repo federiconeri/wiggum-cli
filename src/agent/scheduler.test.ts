@@ -640,6 +640,32 @@ describe('buildRankedBacklog', () => {
     expect(requestedIssue?.actionability).toBe('blocked_dependency');
   });
 
+  it('queues explicit off-label prerequisites in label-scoped runs', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 70, title: 'Define structured loop action IPC', labels: ['loop-ui'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 69
+        ? 'Build LoopOrchestrator runtime (process supervision + PTY)'
+        : 'Define structured loop action IPC',
+      body: number === 69 ? 'Runtime implementation.' : 'Depends on #69',
+      labels: number === 69 ? ['loop-core'] : ['loop-ui'],
+      state: 'open',
+      createdAt: number === 69 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ labels: ['loop-ui'] }), makeStore());
+
+    expect(ranked.queue.map(issue => issue.issueNumber)).toEqual([69, 70]);
+    expect(ranked.queue[0]?.labels).toEqual(['loop-core']);
+    expect(ranked.queue[1]?.actionability).toBe('blocked_dependency');
+    expect(ranked.queue[1]?.dependsOn).toEqual([69]);
+  });
+
   it('expands all open prerequisites for scoped runs instead of stopping after three', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

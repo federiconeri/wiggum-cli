@@ -136,4 +136,33 @@ describe('applyOrchestratorEvent', () => {
     expect(completed.value).toEqual([]);
     expect(completedRef.current.has(72)).toBe(false);
   });
+
+  it('moves successful resumable issues back out of completed when they reappear in the queue', () => {
+    const completedRef = { current: new Set<number>([88]) };
+    const activeIssue = createStateSetter<AgentIssueState | null>(null);
+    const queue = createStateSetter<AgentIssueState[]>([]);
+    const completed = createStateSetter<AgentIssueState[]>([
+      { issueNumber: 88, title: 'Done for now', labels: [], phase: 'reflecting' },
+    ]);
+    const logEntries = createStateSetter<AgentLogEntry[]>([]);
+
+    applyOrchestratorEvent(
+      {
+        type: 'queue_ranked',
+        queue: [
+          { issueNumber: 88, title: 'Needs PR phase', labels: [], phase: 'idle', recommendation: 'resume_pr_phase' },
+          { issueNumber: 89, title: 'Another item', labels: [], phase: 'idle' },
+        ],
+      },
+      activeIssue.setter,
+      queue.setter,
+      completed.setter,
+      logEntries.setter,
+      completedRef,
+    );
+
+    expect(completed.value).toEqual([]);
+    expect(completedRef.current.has(88)).toBe(false);
+    expect(queue.value.map(issue => issue.issueNumber)).toEqual([88, 89]);
+  });
 });

@@ -1078,7 +1078,7 @@ export async function buildRankedBacklog(
   });
   const enrichmentErrors: string[] = [];
   let enrichedCount = 0;
-  const candidateResults = await mapWithConcurrency(baseIssues, ENRICHMENT_CONCURRENCY, async (issue) => {
+  const enrichIssueCandidate = async (issue: GitHubIssueListItem): Promise<BacklogCandidate | null> => {
     const detail = await getIssueDetail(config, issue.number, cache);
     if (!detail) {
       enrichmentErrors.push(`Failed to fetch issue #${issue.number} from GitHub while enriching backlog. Check gh connectivity.`);
@@ -1140,8 +1140,47 @@ export async function buildRankedBacklog(
       });
     }
     return candidate;
-  });
+  };
+
+  const candidateResults = await mapWithConcurrency(baseIssues, ENRICHMENT_CONCURRENCY, enrichIssueCandidate);
   const candidates = candidateResults.filter((candidate): candidate is BacklogCandidate => candidate != null);
+
+  if (!issueScope && config.labels?.length) {
+    const knownIssues = new Map<number, GitHubIssueListItem>(contextIssues.map(issue => [issue.number, issue]));
+    const candidatesByNumber = new Map<number, BacklogCandidate>(candidates.map(candidate => [candidate.issueNumber, candidate]));
+    const pending = [...new Set(candidates.flatMap(candidate => candidate.dependsOn ?? []))]
+      .filter((issueNumber): issueNumber is number => issueNumber != null && !candidatesByNumber.has(issueNumber));
+
+    while (pending.length > 0) {
+      const dependencyNumber = pending.shift();
+      if (dependencyNumber == null || candidatesByNumber.has(dependencyNumber)) continue;
+
+      let seed = knownIssues.get(dependencyNumber);
+      if (!seed) {
+        const detail = await getIssueDetail(config, dependencyNumber, cache);
+        if (!detail || detail.state !== 'open') continue;
+        seed = {
+          number: detail.number,
+          title: detail.title,
+          state: detail.state,
+          labels: detail.labels,
+          createdAt: detail.createdAt,
+        };
+        knownIssues.set(dependencyNumber, seed);
+      }
+
+      const candidate = await enrichIssueCandidate(seed);
+      if (!candidate) continue;
+      candidates.push(candidate);
+      candidatesByNumber.set(candidate.issueNumber, candidate);
+      for (const transitiveDependency of candidate.dependsOn ?? []) {
+        if (!candidatesByNumber.has(transitiveDependency) && !pending.includes(transitiveDependency)) {
+          pending.push(transitiveDependency);
+        }
+      }
+    }
+  }
+
   errors.push(...enrichmentErrors);
   emitBacklogEvent(config, {
     type: 'backlog_timing',
