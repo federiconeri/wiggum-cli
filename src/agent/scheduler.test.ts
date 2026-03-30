@@ -697,6 +697,32 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue[1]?.actionability).toBe('blocked_dependency');
   });
 
+  it('surfaces explicit dependency fetch failures instead of treating the issue as ready', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 70, title: 'Define structured loop action IPC', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => {
+      if (number === 60) return null;
+      return {
+        number,
+        title: 'Define structured loop action IPC',
+        body: 'Depends on #60',
+        labels: ['loop'],
+        state: 'open',
+        createdAt: '2026-01-02T00:00:00Z',
+      };
+    });
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [70] }), makeStore());
+
+    expect(ranked.errors[0]).toContain('Failed to fetch dependency issue #60');
+    expect(ranked.queue[0]?.dependsOn).toEqual([60]);
+    expect(ranked.queue[0]?.actionability).toBe('blocked_out_of_scope');
+  });
+
   it('hydrates scoped issues directly when issue listing is unavailable', async () => {
     mockListRepoIssues.mockResolvedValue({ issues: [] });
     mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({

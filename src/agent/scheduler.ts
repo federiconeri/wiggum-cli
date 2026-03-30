@@ -196,9 +196,10 @@ async function resolveOpenDependencies(
   dependencies: number[],
   listedIssues: GitHubIssueListItem[],
   cache?: SchedulerRunCache,
-): Promise<number[]> {
+): Promise<{ openDependencies: number[]; errors: string[] }> {
   const listedOpen = new Set(listedIssues.map(issue => issue.number));
   const openDependencies: number[] = [];
+  const errors: string[] = [];
 
   for (const dependencyNumber of dependencies) {
     if (listedOpen.has(dependencyNumber)) {
@@ -209,10 +210,15 @@ async function resolveOpenDependencies(
     const dependencyDetail = await getIssueDetail(config, dependencyNumber, cache);
     if (dependencyDetail?.state === 'open') {
       openDependencies.push(dependencyNumber);
+      continue;
+    }
+    if (!dependencyDetail) {
+      openDependencies.push(dependencyNumber);
+      errors.push(`Failed to fetch dependency issue #${dependencyNumber} from GitHub while resolving explicit prerequisites. Check gh connectivity.`);
     }
   }
 
-  return openDependencies;
+  return { openDependencies, errors };
 }
 
 export function extractDependencyHints(
@@ -1012,7 +1018,9 @@ export async function buildRankedBacklog(
       scopedIssues.map(scopedIssue => ({ number: scopedIssue.number, title: scopedIssue.title })),
       issue.number,
     );
-    const dependsOn = await resolveOpenDependencies(config, hintedDependencies, scopedIssues, cache);
+    const dependencyResolution = await resolveOpenDependencies(config, hintedDependencies, scopedIssues, cache);
+    enrichmentErrors.push(...dependencyResolution.errors);
+    const dependsOn = dependencyResolution.openDependencies;
     const attemptState = getAttemptState(memories, issue.number);
 
     const candidate: BacklogCandidate = {

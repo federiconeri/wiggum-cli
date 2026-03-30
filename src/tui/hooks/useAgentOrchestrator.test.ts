@@ -86,4 +86,29 @@ describe('applyOrchestratorEvent', () => {
     ]);
     expect(completedRef.current.has(69)).toBe(true);
   });
+
+  it('marks completed issues with an error flag when the reflected outcome is failure', () => {
+    const completedRef = { current: new Set<number>() };
+    const activeIssue = createStateSetter<AgentIssueState | null>(null);
+    const queue = createStateSetter<AgentIssueState[]>([]);
+    const completed = createStateSetter<AgentIssueState[]>([]);
+    const logEntries = createStateSetter<AgentLogEntry[]>([]);
+
+    applyOrchestratorEvent(
+      {
+        type: 'task_completed',
+        issue: { issueNumber: 71, title: 'Failed issue', labels: [], phase: 'reflecting' },
+        outcome: 'failure',
+      },
+      activeIssue.setter,
+      queue.setter,
+      completed.setter,
+      logEntries.setter,
+      completedRef,
+    );
+
+    expect(completed.value).toEqual([
+      { issueNumber: 71, title: 'Failed issue', labels: [], phase: 'reflecting', error: 'failed' },
+    ]);
+  });
 });
