@@ -144,7 +144,7 @@ export async function listRepoIssues(
     if (msg.includes('auth') || msg.includes('login') || msg.includes('not logged')) {
       return { issues: [], error: 'Run "gh auth login" to enable issue browsing' };
     }
-    return { issues: [] };
+    return { issues: [], error: `GitHub issue listing failed: ${msg}` };
   }
 }
 

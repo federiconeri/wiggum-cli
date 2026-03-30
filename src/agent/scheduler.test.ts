@@ -180,6 +180,29 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue[0].recommendation).toBe('resume_implementation');
   });
 
+  it('uses a unique feature-state name per issue even when titles slug to the same feature', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 1, title: 'Add auth UI', labels: ['P1'], createdAt: '2026-01-01T00:00:00Z' },
+        { number: 2, title: 'Fix auth UI', labels: ['P1'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 1 ? 'Add auth UI' : 'Fix auth UI',
+      body: 'UI work.',
+      labels: ['P1'],
+      state: 'open',
+      createdAt: number === 1 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    await buildRankedBacklog(makeConfig(), makeStore());
+
+    expect(mockAssessFeatureStateImpl).toHaveBeenNthCalledWith(1, '/repo', 'auth-ui-1', 1);
+    expect(mockAssessFeatureStateImpl).toHaveBeenNthCalledWith(2, '/repo', 'auth-ui-2', 2);
+  });
+
   it('enforces explicit dependencies as hard blockers', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

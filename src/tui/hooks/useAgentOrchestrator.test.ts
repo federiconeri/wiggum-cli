@@ -43,4 +43,47 @@ describe('applyOrchestratorEvent', () => {
 
     expect(queue.value.map(issue => issue.issueNumber)).toEqual([70]);
   });
+
+  it('replaces stale completed state when the same issue is retried', () => {
+    const completedRef = { current: new Set<number>([69]) };
+    const activeIssue = createStateSetter<AgentIssueState | null>(null);
+    const queue = createStateSetter<AgentIssueState[]>([]);
+    const completed = createStateSetter<AgentIssueState[]>([
+      { issueNumber: 69, title: 'Done (stale)', labels: [], phase: 'reflecting' },
+    ]);
+    const logEntries = createStateSetter<AgentLogEntry[]>([]);
+
+    applyOrchestratorEvent(
+      {
+        type: 'task_selected',
+        issue: { issueNumber: 69, title: 'Retrying', labels: [], phase: 'idle' },
+      },
+      activeIssue.setter,
+      queue.setter,
+      completed.setter,
+      logEntries.setter,
+      completedRef,
+    );
+
+    expect(completed.value).toEqual([]);
+    expect(completedRef.current.has(69)).toBe(false);
+
+    applyOrchestratorEvent(
+      {
+        type: 'task_completed',
+        issue: { issueNumber: 69, title: 'Done (fresh)', labels: [], phase: 'reflecting' },
+        outcome: 'success',
+      },
+      activeIssue.setter,
+      queue.setter,
+      completed.setter,
+      logEntries.setter,
+      completedRef,
+    );
+
+    expect(completed.value).toEqual([
+      { issueNumber: 69, title: 'Done (fresh)', labels: [], phase: 'reflecting' },
+    ]);
+    expect(completedRef.current.has(69)).toBe(true);
+  });
 });

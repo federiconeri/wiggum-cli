@@ -364,6 +364,8 @@ export function applyOrchestratorEvent(
       break;
 
     case 'task_selected':
+      completedIssuesRef.current.delete(event.issue.issueNumber);
+      setCompleted((prev) => prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber));
       setActiveIssue({ ...event.issue, phase: 'planning' as AgentPhase });
       setQueue((prev) => prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber));
       setLogEntries((prev) => appendLog(prev, `Selected #${event.issue.issueNumber}: ${event.issue.title}`));
@@ -379,7 +381,10 @@ export function applyOrchestratorEvent(
       break;
 
     case 'task_completed':
-      setCompleted((prev) => prev.some((issue) => issue.issueNumber === event.issue.issueNumber) ? prev : [...prev, event.issue]);
+      setCompleted((prev) => {
+        const filtered = prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber);
+        return [...filtered, event.issue];
+      });
       completedIssuesRef.current.add(event.issue.issueNumber);
       setQueue((prev) => prev.filter((issue) => issue.issueNumber !== event.issue.issueNumber));
       setActiveIssue((prev) => prev?.issueNumber === event.issue.issueNumber ? null : prev);

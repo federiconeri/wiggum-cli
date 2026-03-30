@@ -167,10 +167,11 @@ describe('listRepoIssues', () => {
     expect(args).toContain('auth');
   });
 
-  it('returns empty array on failure', async () => {
+  it('surfaces non-auth listing failures as an error', async () => {
     mockExecFileError('network error');
     const result = await listRepoIssues('acme', 'api');
     expect(result.issues).toEqual([]);
+    expect(result.error).toContain('GitHub issue listing failed');
   });
 
   it('returns auth error message when not authenticated', async () => {
