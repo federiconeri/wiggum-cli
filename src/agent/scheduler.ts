@@ -553,6 +553,44 @@ function buildFallbackInferredEdges(issue: BacklogCandidate, peers: BacklogCandi
   return edges;
 }
 
+function buildInferenceBacklog(
+  candidates: BacklogCandidate[],
+  contextIssues: GitHubIssueListItem[],
+): BacklogCandidate[] {
+  const byNumber = new Map<number, BacklogCandidate>();
+  for (const candidate of candidates) {
+    byNumber.set(candidate.issueNumber, candidate);
+  }
+
+  for (const issue of contextIssues) {
+    if (byNumber.has(issue.number)) continue;
+    byNumber.set(issue.number, {
+      issueNumber: issue.number,
+      title: issue.title,
+      body: '',
+      labels: issue.labels ?? [],
+      createdAt: issue.createdAt,
+      phase: 'idle',
+      priorityTier: derivePriorityTier(issue.labels ?? []),
+      dependsOn: [],
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+      attemptState: 'never_tried',
+      featureState: {
+        recommendation: 'start_fresh',
+        hasExistingBranch: false,
+        commitsAhead: 0,
+        hasPlan: false,
+        hasOpenPr: false,
+      },
+      loopFeatureName: deriveFeatureNameFromTitle(issue.title),
+      recommendation: 'start_fresh',
+    });
+  }
+
+  return [...byNumber.values()];
+}
+
 async function inferDependenciesWithModel(
   config: AgentConfig,
   issue: BacklogCandidate,
@@ -1018,12 +1056,14 @@ export async function buildRankedBacklog(
       })()
     : scopedIssues;
 
-  const baseIssues = contextIssues.filter(issue => {
-    if (!issueScope && config.labels?.length) {
-      return config.labels.some(label => issue.labels.includes(label));
-    }
-    return true;
-  });
+  const baseIssues = issueScope
+    ? scopedIssues
+    : contextIssues.filter(issue => {
+        if (config.labels?.length) {
+          return config.labels.some(label => issue.labels.includes(label));
+        }
+        return true;
+      });
 
   const memories = await store.read({ type: 'work_log', limit: 200 });
   const persistedContext = await getPersistedContext(config, cache);
@@ -1110,6 +1150,8 @@ export async function buildRankedBacklog(
     count: candidates.length,
   });
 
+  const inferenceBacklog = buildInferenceBacklog(candidates, contextIssues);
+
   const preliminaryEnforcedDependencyMap = new Map<number, DependencyEdge[]>();
   for (const candidate of candidates) {
     preliminaryEnforcedDependencyMap.set(candidate.issueNumber, [...candidate.explicitDependencyEdges]);
@@ -1160,7 +1202,7 @@ export async function buildRankedBacklog(
       return;
     }
 
-    candidate.inferredDependencyEdges = await inferDependencyEdges(config, candidate, candidates, codebaseContext);
+    candidate.inferredDependencyEdges = await inferDependencyEdges(config, candidate, inferenceBacklog, codebaseContext);
     candidate.inferredDependsOn = candidate.inferredDependencyEdges.map((edge) => ({
       issueNumber: edge.targetIssue,
       confidence: edge.confidence,

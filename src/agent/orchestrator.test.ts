@@ -595,6 +595,75 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Partial: #123');
   });
 
+  it('does not consume maxItems on waiting_pr bookkeeping passes', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('success', 'success');
+    const waitingIssue = {
+      issueNumber: 123,
+      title: 'Feature with open PR',
+      body: 'Implementation is already under review.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'waiting_pr',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'existing_work', message: 'Open PR exists.' }],
+      recommendation: 'pr_exists_open',
+      loopFeatureName: 'feature-open-pr',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    const freshIssue = {
+      issueNumber: 124,
+      title: 'Fresh implementation issue',
+      body: 'Needs real implementation work.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Fresh work remains.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'fresh-implementation-issue',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [waitingIssue, freshIssue],
+        actionable: [waitingIssue, freshIssue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [freshIssue],
+        actionable: [freshIssue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      maxItems: 1,
+    });
+
+    const result = await agent.generate({ prompt: 'Handle open PR bookkeeping, then continue to real work.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
+    expect(result.text).toContain('Processed 2 issue(s).');
+    expect(result.text).toContain('Completed: #123, #124');
+  });
+
   it('allows resumable issues to be selected again within the same run', async () => {
     mockBuildRankedBacklog.mockReset();
     mockToolLoopState.outcomes.push('partial', 'partial');
@@ -707,6 +776,55 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Processed 2 issue(s).');
     expect(result.text).toContain('Completed: #88');
     expect(result.text).toContain('Partial: #88');
+  });
+
+  it('returns the success summary when the post-success verification rescan fails', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('success');
+    const issue = {
+      issueNumber: 91,
+      title: 'Successful issue',
+      body: 'Complete the implementation.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Do the requested work.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'successful-issue',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [issue],
+        actionable: [issue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: ['GitHub issue listing failed: transient outage'],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      maxItems: 1,
+    });
+
+    const result = await agent.generate({ prompt: 'Complete one issue.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
+    expect(result.text).toContain('Processed 1 issue(s).');
+    expect(result.text).toContain('Completed: #91');
   });
 
   it('does not consume maxItems on partial requested outcomes', async () => {

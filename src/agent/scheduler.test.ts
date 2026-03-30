@@ -216,6 +216,35 @@ describe('buildRankedBacklog', () => {
     expect(ranked.errors).toContain('GitHub issue listing failed: unfiltered backlog unavailable');
   });
 
+  it('restricts scoped enrichment to the requested issue set', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 69, title: 'Build LoopOrchestrator runtime', labels: ['loop'], createdAt: '2026-01-01T00:00:00Z', state: 'open' },
+        { number: 70, title: 'Define structured loop action IPC', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z', state: 'open' },
+        { number: 71, title: 'Review loop orchestrator rollout', labels: ['loop'], createdAt: '2026-01-03T00:00:00Z', state: 'open' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 69
+        ? 'Build LoopOrchestrator runtime'
+        : number === 70
+          ? 'Define structured loop action IPC'
+          : 'Review loop orchestrator rollout',
+      body: number === 70 ? 'Work the selected issue only.' : 'Unrelated backlog item.',
+      labels: ['loop'],
+      state: 'open',
+      createdAt: '2026-01-01T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [70] }), makeStore());
+
+    expect(ranked.queue.map(issue => issue.issueNumber)).toEqual([70]);
+    expect(mockAssessFeatureStateImpl).toHaveBeenCalledTimes(1);
+    expect(mockAssessFeatureStateImpl).toHaveBeenCalledWith('/repo', 'define-structured-loop-action', 70);
+  });
+
   it('prioritizes retry and resume work ahead of fresh work', async () => {
     mockListRepoIssues.mockResolvedValue({
       issues: [

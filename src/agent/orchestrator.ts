@@ -68,6 +68,15 @@ interface WorkerOutcomeTracker {
   reflected: boolean;
 }
 
+function shouldCountTowardCompletedBudget(
+  issue: Pick<AgentIssueState, 'scopeOrigin' | 'actionability'>,
+  outcome: WorkerOutcomeTracker['outcome'],
+): boolean {
+  return outcome === 'success'
+    && issue.scopeOrigin !== 'dependency'
+    && issue.actionability !== 'waiting_pr';
+}
+
 const MAX_WITHIN_RUN_SELECTIONS_PER_ISSUE = 3;
 
 function canResumeWithinRun(
@@ -322,6 +331,9 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
 
       const ranked = await buildRankedBacklog(this.config, store, schedulerCache);
       if (ranked.errors.length > 0) {
+        if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingPostSuccessVerification.size > 0) {
+          return buildFinalSummary(processed, blockedSnapshot);
+        }
         throw new Error(ranked.errors[0]);
       }
       const queueStates = toIssueStates(ranked.queue);
@@ -440,13 +452,13 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         outcome: tracker.outcome,
         selections: (prior?.selections ?? 0) + 1,
       });
-      if (tracker.outcome === 'success' && selected.scopeOrigin !== 'dependency') {
+      if (shouldCountTowardCompletedBudget(selected, tracker.outcome)) {
         pendingPostSuccessVerification.add(selected.issueNumber);
       } else {
         pendingPostSuccessVerification.delete(selected.issueNumber);
       }
       this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
-      if (tracker.outcome === 'success' && selected.scopeOrigin !== 'dependency') {
+      if (shouldCountTowardCompletedBudget(selected, tracker.outcome)) {
         completedBudget += 1;
       }
       invalidateSchedulerRunCache(schedulerCache, [selected.issueNumber]);
