@@ -43,7 +43,6 @@ const DEPENDENCY_CUE_PATTERN = /\b(depends on|blocked by|requires|after)\b/i;
 const MAX_MODEL_INFERENCE_CANDIDATES = 12;
 const ENRICHMENT_CONCURRENCY = 6;
 const INFERENCE_CONCURRENCY = 3;
-const BACKLOG_DISCOVERY_STEP = 100;
 const BACKLOG_DISCOVERY_MAX_LIMIT = 5000;
 
 const inferredDependencySchema = z.object({
@@ -174,24 +173,7 @@ async function discoverListedIssues(
 ): Promise<ListIssuesResult> {
   const cached = cache?.[cacheKey];
   if (cached) return cached;
-
-  let requestedLimit = BACKLOG_DISCOVERY_STEP;
-  let latest: ListIssuesResult = { issues: [] };
-  let lastSuccessful: ListIssuesResult | null = null;
-
-  while (true) {
-    const current = await listRepoIssues(config.owner, config.repo, search, requestedLimit);
-    if (current.error) {
-      latest = lastSuccessful
-        ? { ...lastSuccessful, error: current.error }
-        : current;
-      break;
-    }
-    latest = current;
-    lastSuccessful = current;
-    if (latest.issues.length < requestedLimit || requestedLimit >= BACKLOG_DISCOVERY_MAX_LIMIT) break;
-    requestedLimit += BACKLOG_DISCOVERY_STEP;
-  }
+  const latest = await listRepoIssues(config.owner, config.repo, search, BACKLOG_DISCOVERY_MAX_LIMIT);
 
   if (cache) {
     cache[cacheKey] = latest;

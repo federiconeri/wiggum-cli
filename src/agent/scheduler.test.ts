@@ -116,29 +116,20 @@ describe('buildRankedBacklog', () => {
 
     await buildRankedBacklog(makeConfig({ labels: ['loop', 'P1'] }), makeStore());
 
-    expect(mockListRepoIssues).toHaveBeenCalledWith('acme', 'app', 'label:loop label:P1', 100);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:loop label:P1', 5000);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 5000);
   });
 
-  it('keeps expanding backlog discovery beyond the first 100 issues when the listing is full', async () => {
-    mockListRepoIssues
-      .mockResolvedValueOnce({
-        issues: Array.from({ length: 100 }, (_, index) => ({
-          number: index + 1,
-          title: `Issue ${index + 1}`,
-          state: 'open',
-          labels: [],
-          createdAt: '2026-01-01T00:00:00Z',
-        })),
-      })
-      .mockResolvedValueOnce({
-        issues: Array.from({ length: 101 }, (_, index) => ({
-          number: index + 1,
-          title: `Issue ${index + 1}`,
-          state: 'open',
-          labels: [],
-          createdAt: '2026-01-01T00:00:00Z',
-        })),
-      });
+  it('uses a single bounded backlog discovery request per rebuild', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: Array.from({ length: 101 }, (_, index) => ({
+        number: index + 1,
+        title: `Issue ${index + 1}`,
+        state: 'open',
+        labels: [],
+        createdAt: '2026-01-01T00:00:00Z',
+      })),
+    });
     mockFetchGitHubIssue.mockResolvedValue({
       number: 1,
       title: 'Issue 1',
@@ -151,41 +142,21 @@ describe('buildRankedBacklog', () => {
 
     await buildRankedBacklog(makeConfig({ issues: [1] }), makeStore());
 
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', undefined, 100);
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 200);
+    expect(mockListRepoIssues).toHaveBeenCalledTimes(1);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', undefined, 5000);
   });
 
-  it('retains the last successful backlog listing when a larger relist fails', async () => {
-    mockListRepoIssues
-      .mockResolvedValueOnce({
-        issues: Array.from({ length: 100 }, (_, index) => ({
-          number: index + 1,
-          title: `Issue ${index + 1}`,
-          state: 'open',
-          labels: [],
-          createdAt: '2026-01-01T00:00:00Z',
-        })),
-      })
-      .mockResolvedValueOnce({
-        issues: [],
-        error: 'GitHub issue listing failed: transient network error',
-      });
-    mockFetchGitHubIssue.mockResolvedValue({
-      number: 1,
-      title: 'Issue 1',
-      body: 'Body',
-      labels: [],
-      state: 'open',
-      createdAt: '2026-01-01T00:00:00Z',
+  it('surfaces backlog listing failures directly from the single bounded discovery request', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [],
+      error: 'GitHub issue listing failed: transient network error',
     });
-    mockAssessFeatureStateImpl.mockResolvedValue(featureState('start_fresh'));
 
-    const ranked = await buildRankedBacklog(makeConfig({ issues: [1] }), makeStore());
+    const ranked = await buildRankedBacklog(makeConfig(), makeStore());
 
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', undefined, 100);
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 200);
+    expect(mockListRepoIssues).toHaveBeenCalledWith('acme', 'app', undefined, 5000);
     expect(ranked.errors).toEqual(['GitHub issue listing failed: transient network error']);
-    expect(ranked.queue.map((issue) => issue.issueNumber)).toEqual([1]);
+    expect(ranked.queue).toEqual([]);
   });
 
   it('surfaces unfiltered expansion-seed listing failures for scoped runs with labels', async () => {
@@ -211,8 +182,8 @@ describe('buildRankedBacklog', () => {
 
     const ranked = await buildRankedBacklog(makeConfig({ issues: [70], labels: ['loop-ui'] }), makeStore());
 
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:loop-ui', 100);
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 100);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:loop-ui', 5000);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 5000);
     expect(ranked.errors).toContain('GitHub issue listing failed: unfiltered backlog unavailable');
   });
 
@@ -633,8 +604,8 @@ describe('buildRankedBacklog', () => {
     const ranked = await buildRankedBacklog(makeConfig({ issues: [70], labels: ['loop-ui'] }), makeStore());
     const requestedIssue = ranked.queue.find((issue) => issue.issueNumber === 70);
 
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:loop-ui', 100);
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 100);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:loop-ui', 5000);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 5000);
     expect(ranked.expansions).toEqual([{ issueNumber: 69, requestedBy: [70] }]);
     expect(requestedIssue?.dependsOn).toEqual([69]);
     expect(requestedIssue?.actionability).toBe('blocked_dependency');
@@ -702,8 +673,8 @@ describe('buildRankedBacklog', () => {
 
     const ranked = await buildRankedBacklog(makeConfig({ labels: ['ai/llm-ui'] }), makeStore());
 
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:ai/llm-ui', 100);
-    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 100);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(1, 'acme', 'app', 'label:ai/llm-ui', 5000);
+    expect(mockListRepoIssues).toHaveBeenNthCalledWith(2, 'acme', 'app', undefined, 5000);
     expect(ranked.queue.map(issue => issue.issueNumber)).toEqual([76]);
     expect(ranked.queue[0]?.inferredDependsOn).toEqual([{ issueNumber: 74, confidence: 'high' }]);
     expect(ranked.queue[0]?.actionability).toBe('blocked_dependency');

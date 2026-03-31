@@ -181,7 +181,7 @@ describe('App — runProps plumbing', () => {
     unmount();
   });
 
-  it('derives the agent header provider from the overridden model', async () => {
+  it('keeps the agent header provider aligned with the configured/session provider', async () => {
     const sessionState = createTestSessionState({ provider: 'anthropic', model: 'claude-sonnet-4-6' });
 
     const { unmount } = render(
@@ -197,7 +197,7 @@ describe('App — runProps plumbing', () => {
 
     expect(capturedAgentScreenProps.current).not.toBeNull();
     const header = capturedAgentScreenProps.current?.header as React.ReactElement<{ providerOverride?: string; modelOverride?: string }> | undefined;
-    expect(header?.props.providerOverride).toBe('openai');
+    expect(header?.props.providerOverride).toBe('anthropic');
     expect(header?.props.modelOverride).toBe('gpt-5.3-codex');
 
     unmount();

@@ -13,7 +13,7 @@ import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { Box, Text, render, useStdout, type Instance } from 'ink';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { AVAILABLE_MODELS, type AIProvider } from '../ai/providers.js';
+import type { AIProvider } from '../ai/providers.js';
 import type { ScanResult } from '../scanner/types.js';
 import type { SessionState } from '../repl/session-state.js';
 import { loadConfigWithDefaults } from '../utils/config.js';
@@ -102,15 +102,6 @@ export interface AppProps {
   onExit?: () => void;
 }
 
-function inferProviderForModel(modelId?: string, fallback?: string | null): string | undefined {
-  if (modelId) {
-    const provider = (Object.entries(AVAILABLE_MODELS) as [AIProvider, Array<{ value: string }>][])
-      .find(([, models]) => models.some(model => model.value === modelId))?.[0];
-    if (provider) return provider;
-  }
-  return fallback || undefined;
-}
-
 /**
  * Main App component for the Ink-based TUI
  *
@@ -157,10 +148,7 @@ export function App({
     ? (typeof screenProps?.modelOverride === 'string' ? screenProps.modelOverride : agentProps?.modelOverride)
     : undefined;
   const agentProviderOverride = currentScreen === 'agent'
-    ? inferProviderForModel(
-        agentModelOverride,
-        sessionState.config?.agent.defaultProvider || sessionState.provider || undefined,
-      )
+    ? (sessionState.config?.agent.defaultProvider || sessionState.provider || undefined)
     : undefined;
   const effectiveAgentModel = currentScreen === 'agent'
     ? (agentModelOverride || sessionState.config?.agent.defaultModel || sessionState.model)
