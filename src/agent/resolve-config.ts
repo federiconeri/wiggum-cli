@@ -46,7 +46,7 @@ export async function resolveAgentEnv(
 
   if (!provider) {
     throw new Error(
-      'No AI provider configured. Run `wiggum init` or set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.',
+      'No AI provider configured. Run `wiggum init` or set a supported provider API key.',
     );
   }
 

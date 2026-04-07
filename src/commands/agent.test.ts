@@ -75,6 +75,7 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 import { agentCommand } from './agent.js';
+import { logger } from '../utils/logger.js';
 
 describe('agentCommand', () => {
   let mockExit: ReturnType<typeof vi.spyOn>;
@@ -127,7 +128,7 @@ describe('agentCommand', () => {
 
     await expect(agentCommand()).rejects.toThrow('process.exit(1)');
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
+    expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('No AI provider configured'),
     );
     expect(mockCreateAgentOrchestrator).not.toHaveBeenCalled();
@@ -138,7 +139,7 @@ describe('agentCommand', () => {
 
     await expect(agentCommand()).rejects.toThrow('process.exit(1)');
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
+    expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('No GitHub remote detected'),
     );
     expect(mockCreateAgentOrchestrator).not.toHaveBeenCalled();

@@ -64,3 +64,36 @@ describe('isUrl', () => {
     expect(isUrl('not a url')).toBe(false);
   });
 });
+
+describe('fetchContent HTML sanitization', () => {
+  it('removes script/style blocks and preserves encoded angle brackets', async () => {
+    mockIsGitHubIssueUrl.mockReturnValue(null);
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'text/html; charset=utf-8' },
+      text: async () => `
+        <html>
+          <head><style>.x { color: red; }</style></head>
+          <body>
+            <script>alert('xss')</script>
+            Hello&nbsp;&lt;script&gt;safe&lt;/script&gt; &amp; &quot;ok&quot;
+          </body>
+        </html>
+      `,
+    } as unknown as Response);
+
+    const result = await fetchContent('https://example.com/page', '/tmp');
+
+    fetchSpy.mockRestore();
+
+    expect(result.error).toBeUndefined();
+    expect(result.content).toContain('Hello');
+    expect(result.content).not.toContain("alert('xss')");
+    expect(result.content).toContain('&lt;script&gt;safe&lt;/script&gt;');
+    expect(result.content).toContain('&amp;');
+    expect(result.content).toContain('"ok"');
+  });
+});

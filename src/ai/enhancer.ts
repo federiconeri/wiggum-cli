@@ -264,11 +264,10 @@ export class AIEnhancer {
   async enhance(scanResult: ScanResult): Promise<EnhancedScanResult> {
     // Check if API key is available
     if (!this.isAvailable()) {
-      const envVar = this.getRequiredEnvVar();
       return {
         ...scanResult,
         aiEnhanced: false,
-        aiError: `API key not found. Set ${envVar} to enable AI enhancement.`,
+        aiError: 'API key not found. Configure credentials to enable AI enhancement.',
       };
     }
 

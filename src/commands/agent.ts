@@ -58,7 +58,7 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   try {
     env = await resolveAgentEnv(projectRoot, { model: options.model });
   } catch (err) {
-    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    logger.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   }
 

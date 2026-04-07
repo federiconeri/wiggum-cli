@@ -84,6 +84,20 @@ function looksLikeAbbreviation(fragment: string): boolean {
   );
 }
 
+/** Remove trailing sentence punctuation without regex backtracking. */
+function stripTrailingSentencePunctuation(text: string): string {
+  let end = text.length;
+  while (end > 0) {
+    const char = text.charCodeAt(end - 1);
+    if (char === 46 || char === 33 || char === 63) { // . ! ?
+      end -= 1;
+      continue;
+    }
+    break;
+  }
+  return text.slice(0, end);
+}
+
 /**
  * Enforce single-sentence: split conservatively on `. ` boundaries, skipping
  * abbreviation-like fragments, then return only the first sentence.
@@ -182,7 +196,7 @@ export function polishGoalSentence(text: string): string {
   result = toOneSentence(result);
 
   // Strip any trailing sentence-ending punctuation before we add our own
-  result = result.replace(/[.!?]+$/, '').trim();
+  result = stripTrailingSentencePunctuation(result).trim();
 
   // 5. Imperative verb enforcement
   if (!IMPERATIVE_VERB_PATTERN.test(result)) {

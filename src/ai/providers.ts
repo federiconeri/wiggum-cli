@@ -137,15 +137,15 @@ export function hasApiKey(provider: AIProvider): boolean {
  */
 function getApiKey(provider: AIProvider): string {
   const envVar = API_KEY_ENV_VARS[provider];
-  const apiKey = process.env[envVar];
+  const credential = process.env[envVar];
 
-  if (!apiKey) {
+  if (!credential) {
     throw new Error(
-      `API key not found. Set ${envVar} environment variable to use ${provider} provider.`
+      `API key not found for provider: ${provider}.`
     );
   }
 
-  return apiKey;
+  return credential;
 }
 
 /**
