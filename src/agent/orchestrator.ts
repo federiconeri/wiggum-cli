@@ -83,6 +83,12 @@ function isRecoverableListingError(error: string): boolean {
 
 const MAX_WITHIN_RUN_SELECTIONS_PER_ISSUE = 3;
 
+function needsFollowUpAfterSuccess(candidate: Pick<BacklogCandidate, 'recommendation'>): boolean {
+  return candidate.recommendation === 'resume_pr_phase'
+    || candidate.recommendation === 'pr_merged'
+    || candidate.recommendation === 'linked_pr_merged';
+}
+
 function canResumeWithinRun(
   candidate: BacklogCandidate,
   prior: { outcome: WorkerOutcomeTracker['outcome']; selections: number } | undefined,
@@ -91,7 +97,7 @@ function canResumeWithinRun(
   if (prior.selections >= MAX_WITHIN_RUN_SELECTIONS_PER_ISSUE) return false;
 
   if (prior.outcome === 'success') {
-    return candidate.recommendation === 'resume_pr_phase';
+    return needsFollowUpAfterSuccess(candidate);
   }
 
   if (prior.outcome !== 'partial' && prior.outcome !== 'failure') return false;
@@ -386,7 +392,7 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
 
       for (const issueNumber of [...pendingPostSuccessVerification]) {
         const stillNeedsFollowUp = ranked.actionable.some(
-          candidate => candidate.issueNumber === issueNumber && candidate.recommendation === 'resume_pr_phase',
+          candidate => candidate.issueNumber === issueNumber && needsFollowUpAfterSuccess(candidate),
         );
         if (!stillNeedsFollowUp) {
           pendingPostSuccessVerification.delete(issueNumber);

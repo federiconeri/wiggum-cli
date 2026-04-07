@@ -778,6 +778,64 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Partial: #88');
   });
 
+  it('allows a successful implementation pass to be reselected for merged housekeeping', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('success', 'skipped');
+    const issue = {
+      issueNumber: 93,
+      title: 'Ship runtime feature',
+      body: 'Implementation work.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'housekeeping',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'housekeeping', message: 'Issue appears already shipped and only needs housekeeping.' }],
+      recommendation: 'pr_merged',
+      loopFeatureName: 'runtime-feature',
+      attemptState: 'success',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [{ ...issue, recommendation: 'start_fresh', actionability: 'ready', attemptState: 'never_tried' }],
+        actionable: [{ ...issue, recommendation: 'start_fresh', actionability: 'ready', attemptState: 'never_tried' }],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [issue],
+        actionable: [issue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      maxItems: 1,
+    });
+
+    const result = await agent.generate({ prompt: 'Complete implementation, then do housekeeping when merged.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
+    expect(result.text).toContain('Processed 2 issue(s).');
+    expect(result.text).toContain('Completed: #93');
+    expect(result.text).toContain('Skipped: #93');
+  });
+
   it('returns the success summary when the post-success verification rescan fails', async () => {
     mockBuildRankedBacklog.mockReset();
     mockToolLoopState.outcomes.push('success');

@@ -95,6 +95,12 @@ function appendLog(
   return next;
 }
 
+function shouldReopenCompletedIssue(issue: Pick<AgentIssueState, 'recommendation'>): boolean {
+  return issue.recommendation === 'resume_pr_phase'
+    || issue.recommendation === 'pr_merged'
+    || issue.recommendation === 'linked_pr_merged';
+}
+
 interface PollingState {
   interval: ReturnType<typeof setInterval>;
   featureName: string;
@@ -363,7 +369,7 @@ export function applyOrchestratorEvent(
       {
         const resumedIssueNumbers = new Set(
           event.queue
-            .filter(issue => issue.recommendation === 'resume_pr_phase')
+            .filter(shouldReopenCompletedIssue)
             .map(issue => issue.issueNumber),
         );
         if (resumedIssueNumbers.size > 0) {

@@ -195,4 +195,33 @@ describe('applyOrchestratorEvent', () => {
     expect(completedRef.current.has(88)).toBe(false);
     expect(queue.value.map(issue => issue.issueNumber)).toEqual([88, 89]);
   });
+
+  it('reopens completed items when the scheduler returns a merged-housekeeping pass', () => {
+    const completedRef = { current: new Set<number>([94]) };
+    const activeIssue = createStateSetter<AgentIssueState | null>(null);
+    const queue = createStateSetter<AgentIssueState[]>([]);
+    const completed = createStateSetter<AgentIssueState[]>([
+      { issueNumber: 94, title: 'Done for now', labels: [], phase: 'reflecting' },
+    ]);
+    const logEntries = createStateSetter<AgentLogEntry[]>([]);
+
+    applyOrchestratorEvent(
+      {
+        type: 'queue_ranked',
+        queue: [
+          { issueNumber: 94, title: 'Needs housekeeping', labels: [], phase: 'idle', recommendation: 'pr_merged' },
+          { issueNumber: 95, title: 'Another item', labels: [], phase: 'idle' },
+        ],
+      },
+      activeIssue.setter,
+      queue.setter,
+      completed.setter,
+      logEntries.setter,
+      completedRef,
+    );
+
+    expect(completed.value).toEqual([]);
+    expect(completedRef.current.has(94)).toBe(false);
+    expect(queue.value.map(issue => issue.issueNumber)).toEqual([94, 95]);
+  });
 });
