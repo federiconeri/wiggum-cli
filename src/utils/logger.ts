@@ -17,7 +17,7 @@ export const logger = {
   },
 
   error(message: string): void {
-    console.log(pc.red('error'), message);
+    process.stderr.write(`${pc.red('error')} ${message}\n`);
   },
 
   debug(message: string): void {

@@ -37,28 +37,69 @@ export function isUrl(input: string): boolean {
  * Simple extraction that removes scripts, styles, and HTML tags
  */
 function extractTextFromHtml(html: string): string {
-  // Remove script and style tags with their content
-  let text = html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '');
+  // Remove script, style, and noscript blocks before generic tag stripping.
+  let text = stripElementBlocks(html, 'script');
+  text = stripElementBlocks(text, 'style');
+  text = stripElementBlocks(text, 'noscript');
 
   // Remove HTML tags but keep content
   text = text.replace(/<[^>]+>/g, ' ');
 
-  // Decode common HTML entities
-  text = text
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'");
+  // Decode only safe presentation entities; keep angle brackets encoded.
+  text = decodeSafeHtmlEntities(text);
 
   // Clean up whitespace
   text = text.replace(/\s+/g, ' ').trim();
 
   return text;
+}
+
+/**
+ * Remove full HTML element blocks (open tag + content + closing tag) using
+ * deterministic string scanning instead of regex.
+ */
+function stripElementBlocks(input: string, tagName: string): string {
+  let output = input;
+  const openToken = `<${tagName}`;
+  const closeToken = `</${tagName}`;
+
+  while (true) {
+    const lower = output.toLowerCase();
+    const openStart = lower.indexOf(openToken);
+    if (openStart === -1) {
+      break;
+    }
+
+    const openEnd = lower.indexOf('>', openStart + openToken.length);
+    if (openEnd === -1) {
+      output = output.slice(0, openStart);
+      break;
+    }
+
+    const closeStart = lower.indexOf(closeToken, openEnd + 1);
+    if (closeStart === -1) {
+      output = output.slice(0, openStart);
+      break;
+    }
+
+    const closeEnd = lower.indexOf('>', closeStart + closeToken.length);
+    if (closeEnd === -1) {
+      output = output.slice(0, openStart);
+      break;
+    }
+
+    output = output.slice(0, openStart) + output.slice(closeEnd + 1);
+  }
+
+  return output;
+}
+
+/** Decode non-structural entities only (quotes/spaces), preserving `<`/`>`/`&`. */
+function decodeSafeHtmlEntities(input: string): string {
+  return input
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/g, "'");
 }
 
 /**

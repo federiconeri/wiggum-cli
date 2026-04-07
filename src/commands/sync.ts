@@ -29,7 +29,7 @@ export async function syncProjectContext(projectRoot: string): Promise<string> {
   // Detect provider
   const provider = getAvailableProvider();
   if (!provider) {
-    throw new Error('No AI provider available. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or OPENROUTER_API_KEY.');
+    throw new Error('No AI provider available. Configure a supported provider API key and try again.');
   }
 
   // Resolve model
@@ -83,7 +83,7 @@ export async function syncCommand(): Promise<void> {
   try {
     contextPath = await syncProjectContext(process.cwd());
   } catch (err) {
-    console.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    logger.error(`Error: ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
     return; // unreachable, but satisfies TS control flow
   }

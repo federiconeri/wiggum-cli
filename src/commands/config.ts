@@ -215,18 +215,18 @@ export async function handleConfigCommand(
   }
 
   const rawService = args[1]?.toLowerCase() ?? '';
-  const apiKey = args[2];
+  const value = args[2];
   const loopCliSetting = normalizeLoopCliSetting(rawService);
 
   if (loopCliSetting) {
-    if (!isLoopCliValue(apiKey)) {
-      logger.error(`Invalid ${loopCliSetting} value: '${apiKey}'. Allowed values: ${LOOP_CLI_VALUES.join(', ')}`);
+    if (!isLoopCliValue(value)) {
+      logger.error(`Invalid ${loopCliSetting} value: '${value}'. Allowed values: ${LOOP_CLI_VALUES.join(', ')}`);
       return state;
     }
 
     try {
-      await saveLoopCliToConfig(state.projectRoot, loopCliSetting, apiKey);
-      logger.success(`${loopCliSetting} saved to ralph.config.cjs (${apiKey})`);
+      await saveLoopCliToConfig(state.projectRoot, loopCliSetting, value);
+      logger.success(`${loopCliSetting} saved to ralph.config.cjs (${value})`);
       console.log('');
     } catch (error) {
       logger.error(`Failed to save ${loopCliSetting}: ${error instanceof Error ? error.message : String(error)}`);
@@ -254,17 +254,17 @@ export async function handleConfigCommand(
   const { envVar } = CONFIGURABLE_SERVICES[service];
 
   // Validate API key format (basic check)
-  if (!apiKey || apiKey.length < 10) {
+  if (!value || value.length < 10) {
     logger.error('Invalid API key. Key appears too short.');
     return state;
   }
 
   try {
     // Save to .env.local
-    saveKeyToEnvLocal(state.projectRoot, envVar, apiKey);
+    saveKeyToEnvLocal(state.projectRoot, envVar, value);
 
     // Also set in current process environment
-    process.env[envVar] = apiKey;
+    process.env[envVar] = value;
 
     logger.success(`${envVar} saved to .ralph/.env.local`);
     console.log(pc.dim('Restart Wiggum to apply changes to tool availability.'));

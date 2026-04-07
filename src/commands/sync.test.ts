@@ -66,6 +66,7 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 import { syncCommand, syncProjectContext } from './sync.js';
+import { logger } from '../utils/logger.js';
 
 describe('syncProjectContext', () => {
   beforeEach(() => {
@@ -141,7 +142,6 @@ describe('syncProjectContext', () => {
 describe('syncCommand', () => {
   let mockExit: ReturnType<typeof vi.spyOn>;
   let consoleLogSpy: ReturnType<typeof vi.spyOn>;
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -158,13 +158,11 @@ describe('syncCommand', () => {
       throw new Error(`process.exit(${code})`);
     });
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     mockExit.mockRestore();
     consoleLogSpy.mockRestore();
-    consoleErrorSpy.mockRestore();
   });
 
   it('prints path and exits 0 on success', async () => {
@@ -180,7 +178,7 @@ describe('syncCommand', () => {
 
     await expect(syncCommand()).rejects.toThrow('process.exit(1)');
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
+    expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('No AI provider available'),
     );
   });
@@ -194,7 +192,7 @@ describe('syncCommand', () => {
 
     await expect(syncCommand()).rejects.toThrow('process.exit(1)');
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith(
+    expect(logger.error).toHaveBeenCalledWith(
       expect.stringContaining('AI analysis failed'),
     );
   });
