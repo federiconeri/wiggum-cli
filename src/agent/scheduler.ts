@@ -310,8 +310,8 @@ function attemptWeight(attemptState: AttemptState, recommendation?: string): num
 function actionabilityWeight(actionability: TaskActionability): number {
   switch (actionability) {
     case 'housekeeping': return 1000;
+    case 'waiting_pr': return 900;
     case 'ready': return 800;
-    case 'waiting_pr': return 0;
     case 'blocked_dependency': return 0;
     case 'blocked_cycle': return 0;
     case 'blocked_out_of_scope': return 0;
@@ -880,6 +880,18 @@ async function expandIssueScope(
     if (!detail) {
       errors.push(`Failed to fetch issue #${current.issueNumber} from GitHub while expanding dependencies. Check gh connectivity.`);
       continue;
+    }
+
+    if (current.issueNumber === current.requestedBy) {
+      const featureState = await getFeatureState(
+        config,
+        current.issueNumber,
+        deriveFeatureNameFromTitle(detail.title),
+        cache,
+      );
+      if (featureState.recommendation === 'pr_exists_open' || featureState.recommendation === 'linked_pr_open') {
+        continue;
+      }
     }
 
     const dependencyNumbers = extractDependencyHints(detail.body ?? '', backlogSummaries, current.issueNumber);

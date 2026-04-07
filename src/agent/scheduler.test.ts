@@ -212,7 +212,7 @@ describe('buildRankedBacklog', () => {
     const ranked = await buildRankedBacklog(makeConfig({ issues: [70] }), makeStore());
 
     expect(ranked.queue.map(issue => issue.issueNumber)).toEqual([70]);
-    expect(mockAssessFeatureStateImpl).toHaveBeenCalledTimes(1);
+    expect(mockAssessFeatureStateImpl.mock.calls.every(([, , issueNumber]) => issueNumber === 70)).toBe(true);
     expect(mockAssessFeatureStateImpl).toHaveBeenCalledWith('/repo', 'define-structured-loop-action', 70);
   });
 
@@ -1027,6 +1027,56 @@ describe('buildRankedBacklog', () => {
     expect(ranked.queue[0]?.actionability).toBe('waiting_pr');
     expect(ranked.actionable.map(issue => issue.issueNumber)).toEqual([123]);
     expect(ranked.blocked).toEqual([]);
+  });
+
+  it('ranks waiting_pr issues ahead of normal ready work', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 123, title: 'Feature with open PR', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+        { number: 124, title: 'Fresh implementation issue', labels: ['loop'], createdAt: '2026-01-03T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 123 ? 'Feature with open PR' : 'Fresh implementation issue',
+      body: number === 123 ? 'Implementation is already under review.' : 'Needs fresh implementation.',
+      labels: ['loop'],
+      state: 'open',
+      createdAt: number === 123 ? '2026-01-02T00:00:00Z' : '2026-01-03T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockImplementation(async (_root: string, _featureName: string, issueNumber: number) =>
+      issueNumber === 123 ? featureState('pr_exists_open') : featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig(), makeStore());
+
+    expect(ranked.queue.map(issue => issue.issueNumber)).toEqual([123, 124]);
+    expect(ranked.queue[0]?.actionability).toBe('waiting_pr');
+    expect(ranked.queue[1]?.actionability).toBe('ready');
+  });
+
+  it('does not expand dependencies for scoped requested issues that are already in an open PR state', async () => {
+    mockListRepoIssues.mockResolvedValue({
+      issues: [
+        { number: 69, title: 'Build LoopOrchestrator runtime (process supervision + PTY)', labels: ['loop'], createdAt: '2026-01-01T00:00:00Z' },
+        { number: 70, title: 'Define structured loop action IPC', labels: ['loop'], createdAt: '2026-01-02T00:00:00Z' },
+      ],
+    });
+    mockFetchGitHubIssue.mockImplementation(async (_owner: string, _repo: string, number: number) => ({
+      number,
+      title: number === 69 ? 'Build LoopOrchestrator runtime (process supervision + PTY)' : 'Define structured loop action IPC',
+      body: number === 69 ? 'Runtime implementation.' : 'Depends on #69',
+      labels: ['loop'],
+      state: 'open',
+      createdAt: number === 69 ? '2026-01-01T00:00:00Z' : '2026-01-02T00:00:00Z',
+    }));
+    mockAssessFeatureStateImpl.mockImplementation(async (_root: string, _featureName: string, issueNumber: number) =>
+      issueNumber === 70 ? featureState('pr_exists_open') : featureState('start_fresh'));
+
+    const ranked = await buildRankedBacklog(makeConfig({ issues: [70] }), makeStore());
+
+    expect(ranked.expansions).toEqual([]);
+    expect(ranked.queue.map(issue => issue.issueNumber)).toEqual([70]);
+    expect(ranked.queue[0]?.actionability).toBe('waiting_pr');
   });
 
   it('detects dependency cycles and blocks both issues', async () => {
