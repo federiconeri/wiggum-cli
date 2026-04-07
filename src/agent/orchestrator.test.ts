@@ -136,6 +136,7 @@ describe('createAgentOrchestrator', () => {
   });
 
   it('returns an agent-v1 compatible wrapper', () => {
+    const events: Array<{ type: string; outcome?: string; issue?: number }> = [];
     const agent = createAgentOrchestrator({
       model: {} as any,
       projectRoot: '/fake',
@@ -471,6 +472,7 @@ describe('createAgentOrchestrator', () => {
 
   it('fails when the worker stops before reflectOnWork completes', async () => {
     mockBuildRankedBacklog.mockReset();
+    const events: Array<{ type: string; outcome?: string; issue?: number }> = [];
     const fresh = {
       issueNumber: 3,
       title: 'Fresh issue',
@@ -498,11 +500,17 @@ describe('createAgentOrchestrator', () => {
       projectRoot: '/fake',
       owner: 'acme',
       repo: 'app',
+      onOrchestratorEvent: (event) => {
+        if (event.type === 'task_completed') {
+          events.push({ type: event.type, outcome: event.outcome, issue: event.issue.issueNumber });
+        }
+      },
     });
 
     await expect(agent.generate({ prompt: 'Begin working through the backlog.' }))
       .rejects.toThrow('Worker stopped before calling reflectOnWork for issue #3.');
     expect(mockInvalidateSchedulerRunCache).not.toHaveBeenCalled();
+    expect(events).toContainEqual({ type: 'task_completed', issue: 3, outcome: 'failure' });
   });
 
   it('emits a failure outcome when the worker crashes before reflectOnWork', async () => {

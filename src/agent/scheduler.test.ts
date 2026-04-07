@@ -633,6 +633,7 @@ describe('buildRankedBacklog', () => {
 
     expect(ranked.queue.map(issue => issue.issueNumber)).toEqual([69, 70]);
     expect(ranked.queue[0]?.labels).toEqual(['loop-core']);
+    expect(ranked.queue[0]?.scopeOrigin).toBe('dependency');
     expect(ranked.queue[1]?.actionability).toBe('blocked_dependency');
     expect(ranked.queue[1]?.dependsOn).toEqual([69]);
   });

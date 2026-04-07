@@ -497,7 +497,13 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
       }
 
       if (!tracker.reflected) {
-        throw new Error(`Worker stopped before calling reflectOnWork for issue #${selected.issueNumber}.`);
+        const failed: AgentIssueState = {
+          ...selected,
+          error: `Worker stopped before calling reflectOnWork for issue #${selected.issueNumber}.`,
+        };
+        processed.push({ issue: failed, outcome: 'failure' });
+        this.emit({ type: 'task_completed', issue: failed, outcome: 'failure' });
+        throw new Error(failed.error);
       }
 
       const completedIssue: AgentIssueState = {

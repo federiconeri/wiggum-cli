@@ -1110,6 +1110,14 @@ export async function buildRankedBacklog(
     enrichmentErrors.push(...dependencyResolution.errors);
     const dependsOn = dependencyResolution.openDependencies;
     const attemptState = getAttemptState(memories, issue.number);
+    const requestedBy = expansions.find(expansion => expansion.issueNumber === issue.number)?.requestedBy;
+    const scopeOrigin = config.issues?.includes(issue.number)
+      ? 'requested'
+      : requestedBy?.length
+        ? 'dependency'
+        : issueScope?.has(issue.number)
+          ? 'dependency'
+          : undefined;
 
     const candidate: BacklogCandidate = {
       issueNumber: issue.number,
@@ -1118,10 +1126,8 @@ export async function buildRankedBacklog(
       body: detail.body ?? '',
       createdAt: issue.createdAt,
       phase: 'idle',
-      scopeOrigin: issueScope
-        ? (config.issues?.includes(issue.number) ? 'requested' : issueScope.has(issue.number) ? 'dependency' : undefined)
-        : undefined,
-      requestedBy: expansions.find(expansion => expansion.issueNumber === issue.number)?.requestedBy,
+      scopeOrigin,
+      requestedBy,
       priorityTier: derivePriorityTier(detail.labels ?? issue.labels ?? []),
       dependsOn,
       explicitDependencyEdges: dependsOn.map((targetIssue) => ({
@@ -1186,6 +1192,7 @@ export async function buildRankedBacklog(
 
       const candidate = await enrichIssueCandidate(seed);
       if (!candidate) continue;
+      candidate.scopeOrigin = 'dependency';
       candidates.push(candidate);
       candidatesByNumber.set(candidate.issueNumber, candidate);
       for (const transitiveDependency of candidate.dependsOn ?? []) {
