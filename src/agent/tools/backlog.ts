@@ -5,6 +5,9 @@ import { listRepoIssues, fetchGitHubIssue } from '../../utils/github.js';
 export interface BacklogToolsOptions {
   defaultLabels?: string[];
   issueNumbers?: number[];
+  scopeListIssuesToIssueNumbers?: boolean;
+  scopeReadIssueToIssueNumbers?: boolean;
+  allowGlobalBugDuplicateChecks?: boolean;
 }
 
 const DEPENDENCY_PATTERN = /\b(?:depends on|blocked by|requires|after)\s+#(\d+)/gi;
@@ -19,6 +22,7 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
   const issueNumberSet = options.issueNumbers?.length
     ? new Set(options.issueNumbers)
     : undefined;
+  const listVisibleIssueNumbers = new Set<number>();
 
   const listIssues = tool({
     description: 'List open GitHub issues from the backlog, optionally filtered by labels or milestone.',
@@ -40,10 +44,17 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       if (result.error) return { issues: [], error: result.error };
       // Sort by issue number ascending — lower numbers are typically more foundational
       const sorted = [...result.issues].sort((a, b) => a.number - b.number);
-      if (issueNumberSet) {
+      const isBugDuplicateCheck = options.allowGlobalBugDuplicateChecks === true
+        && milestone == null
+        && uniqueLabels.length === 1
+        && uniqueLabels[0] === 'bug';
+
+      if (issueNumberSet && options.scopeListIssuesToIssueNumbers !== false && !isBugDuplicateCheck) {
         const filtered = sorted.filter(i => issueNumberSet.has(Number(i.number)));
+        for (const issue of filtered) listVisibleIssueNumbers.add(Number(issue.number));
         return { issues: filtered };
       }
+      for (const issue of sorted) listVisibleIssueNumbers.add(Number(issue.number));
       return { issues: sorted };
     },
   });
@@ -54,6 +65,14 @@ export function createBacklogTools(owner: string, repo: string, options: Backlog
       issueNumber: z.number().int().min(1).describe('The issue number to read'),
     })),
     execute: async ({ issueNumber }) => {
+      if (
+        issueNumberSet
+        && options.scopeReadIssueToIssueNumbers !== false
+        && !issueNumberSet.has(issueNumber)
+        && !listVisibleIssueNumbers.has(issueNumber)
+      ) {
+        return { error: `Issue #${issueNumber} is outside the selected worker scope` };
+      }
       const detail = await fetchGitHubIssue(owner, repo, issueNumber);
       if (!detail) return { error: `Issue #${issueNumber} not found` };
       // Extract dependency hints from body (e.g. "depends on #1", "blocked by #3")

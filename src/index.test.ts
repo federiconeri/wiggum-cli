@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand, mockSyncCommand } = vi.hoisted(() => {
+const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand, mockSyncCommand, mockAgentCommand } = vi.hoisted(() => {
   const mockRenderApp = vi.fn().mockReturnValue({
     unmount: vi.fn(),
     waitUntilExit: vi.fn().mockResolvedValue(undefined),
@@ -13,7 +13,8 @@ const { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigComma
   const mockIsCI = vi.fn().mockReturnValue(false);
   const mockNewAutoCommand = vi.fn().mockResolvedValue(undefined);
   const mockSyncCommand = vi.fn().mockResolvedValue(undefined);
-  return { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand, mockSyncCommand };
+  const mockAgentCommand = vi.fn().mockResolvedValue(undefined);
+  return { mockRenderApp, mockRunCommand, mockMonitorCommand, mockHandleConfigCommand, mockIsCI, mockNewAutoCommand, mockSyncCommand, mockAgentCommand };
 });
 
 // Mock all heavy dependencies before imports
@@ -87,6 +88,10 @@ vi.mock('./commands/new-auto.js', () => ({
 
 vi.mock('./commands/sync.js', () => ({
   syncCommand: mockSyncCommand,
+}));
+
+vi.mock('./commands/agent.js', () => ({
+  agentCommand: mockAgentCommand,
 }));
 
 import { main, parseCliArgs } from './index.js';
@@ -232,6 +237,14 @@ describe('parseCliArgs', () => {
       command: 'monitor',
       positionalArgs: ['foo'],
       flags: { stream: true },
+    });
+  });
+
+  it('--diagnose-gh flag parsed as boolean', () => {
+    expect(parseCliArgs(['agent', '--diagnose-gh', '--issues', '70'])).toEqual({
+      command: 'agent',
+      positionalArgs: [],
+      flags: { diagnoseGh: true, issues: '70' },
     });
   });
 
@@ -633,6 +646,28 @@ describe('main', () => {
     }
 
     expect(mockMonitorCommand).toHaveBeenCalledWith('my-feature', expect.any(Object));
+  });
+
+  it('agent --diagnose-gh in TTY calls agentCommand headless instead of opening TUI', async () => {
+    process.argv = ['node', 'ralph.js', 'agent', '--diagnose-gh', '--issues', '70'];
+    const originalIsTTY = process.stdout.isTTY;
+    Object.defineProperty(process.stdout, 'isTTY', { value: true, configurable: true });
+    mockIsCI.mockReturnValue(false);
+
+    try {
+      await main();
+    } finally {
+      Object.defineProperty(process.stdout, 'isTTY', { value: originalIsTTY, configurable: true });
+      mockIsCI.mockReturnValue(false);
+    }
+
+    expect(mockAgentCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        diagnoseGh: true,
+        issues: [70],
+      }),
+    );
+    expect(mockRenderApp).not.toHaveBeenCalled();
   });
 
   // ─── config command routing ───────────────────────────────────────────────────

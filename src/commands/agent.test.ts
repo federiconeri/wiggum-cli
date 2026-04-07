@@ -5,6 +5,7 @@ const {
   mockGetAvailableProvider,
   mockGetModel,
   mockDetectGitHubRemote,
+  mockRunGitHubDiagnostics,
   mockCreateAgentOrchestrator,
   mockLoadConfigWithDefaults,
   mockGenerate,
@@ -26,6 +27,10 @@ const {
       modelId: 'claude-sonnet-4-6',
     }),
     mockDetectGitHubRemote: vi.fn().mockResolvedValue({ owner: 'acme', repo: 'app' }),
+    mockRunGitHubDiagnostics: vi.fn().mockResolvedValue({
+      success: true,
+      checks: [{ name: 'gh version', ok: true, message: 'ok' }],
+    }),
     mockCreateAgentOrchestrator: vi.fn().mockImplementation(() => ({
       generate: mockGenerate,
       stream: mockStream,
@@ -49,6 +54,7 @@ vi.mock('../ai/providers.js', () => ({
 
 vi.mock('../utils/github.js', () => ({
   detectGitHubRemote: mockDetectGitHubRemote,
+  runGitHubDiagnostics: mockRunGitHubDiagnostics,
 }));
 
 vi.mock('../utils/config.js', () => ({
@@ -80,7 +86,15 @@ describe('agentCommand', () => {
     vi.clearAllMocks();
     mockGetAvailableProvider.mockReturnValue('anthropic');
     mockDetectGitHubRemote.mockResolvedValue({ owner: 'acme', repo: 'app' });
+    mockRunGitHubDiagnostics.mockResolvedValue({
+      success: true,
+      checks: [{ name: 'gh version', ok: true, message: 'ok' }],
+    });
     mockGenerate.mockResolvedValue({ text: 'Agent completed 3 issues.' });
+    mockCreateAgentOrchestrator.mockImplementation(() => ({
+      generate: mockGenerate,
+      stream: mockStream,
+    }));
     mockLoadConfigWithDefaults.mockResolvedValue({
       agent: {
         defaultProvider: 'anthropic',
@@ -144,6 +158,23 @@ describe('agentCommand', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith('Agent completed 3 issues.');
   });
 
+  it('runs GitHub diagnostics without creating the orchestrator', async () => {
+    mockRunGitHubDiagnostics.mockResolvedValue({
+      success: true,
+      checks: [
+        { name: 'gh version', ok: true, message: 'ok' },
+        { name: 'gh issue list', ok: true, message: 'ok' },
+      ],
+    });
+
+    await agentCommand({ diagnoseGh: true, issues: [70, 71] });
+
+    expect(mockRunGitHubDiagnostics).toHaveBeenCalledWith('acme', 'app', [70, 71]);
+    expect(mockCreateAgentOrchestrator).not.toHaveBeenCalled();
+    expect(consoleLogSpy).toHaveBeenCalledWith('[diagnose-gh] OK gh version: ok');
+    expect(consoleLogSpy).toHaveBeenCalledWith('[diagnose-gh] OK gh issue list: ok');
+  });
+
   it('uses stream mode when --stream flag is set', async () => {
     async function* fakeTextStream() {
       yield 'Streaming ';
@@ -157,6 +188,56 @@ describe('agentCommand', () => {
     expect(stdoutWriteSpy).toHaveBeenCalledWith('Streaming ');
     expect(stdoutWriteSpy).toHaveBeenCalledWith('output');
     expect(mockGenerate).not.toHaveBeenCalled();
+  });
+
+  it('streams orchestrator scheduler events to stdout in stream mode', async () => {
+    let orchestratorConfig: any;
+    mockCreateAgentOrchestrator.mockImplementation((config) => {
+      orchestratorConfig = config;
+      return {
+        generate: mockGenerate,
+        stream: vi.fn().mockImplementation(async () => {
+          config.onOrchestratorEvent?.({
+            type: 'backlog_progress',
+            phase: 'enrichment',
+            message: 'Enriching 3 issue(s) with details and feature state.',
+            total: 3,
+          });
+          config.onOrchestratorEvent?.({
+            type: 'backlog_timing',
+            phase: 'dependency_inference',
+            durationMs: 250,
+            count: 3,
+          });
+          config.onOrchestratorEvent?.({ type: 'scope_expanded', expansions: [{ issueNumber: 69, requestedBy: [70] }] });
+          config.onOrchestratorEvent?.({
+            type: 'task_blocked',
+            issue: {
+              issueNumber: 70,
+              title: 'Define structured loop action IPC',
+              labels: ['loop'],
+              phase: 'idle',
+              actionability: 'blocked_dependency',
+              blockedBy: [{ issueNumber: 69, reason: 'Explicit dependency on #69.' }],
+            },
+          });
+          return {
+            textStream: (async function* () {
+              yield 'Summary';
+            })(),
+          };
+        }),
+      };
+    });
+
+    await agentCommand({ stream: true });
+
+    expect(orchestratorConfig).toBeDefined();
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] Enriching 3 issue(s) with details and feature state.\n');
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] dependency_inference took 250ms (3)\n');
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] expanded scope with #69\n');
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('[orchestrator] blocked #70 — Explicit dependency on #69.\n');
+    expect(stdoutWriteSpy).toHaveBeenCalledWith('Summary');
   });
 
   it('passes maxSteps and maxItems to orchestrator config', async () => {
@@ -247,6 +328,16 @@ describe('agentCommand', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Network timeout'),
+    );
+  });
+
+  it('prints a GitHub diagnostic hint when backlog fetch fails', async () => {
+    mockStream.mockRejectedValue(new Error('Failed to fetch issue #70 from GitHub while expanding dependencies. Check gh connectivity.'));
+
+    await expect(agentCommand({ stream: true, issues: [70] })).rejects.toThrow('process.exit(1)');
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining("Hint: run 'wiggum agent --diagnose-gh --issues 70'"),
     );
   });
 

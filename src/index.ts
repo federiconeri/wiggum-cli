@@ -317,6 +317,7 @@ Options for agent:
   --review-mode <mode>      Review mode: 'manual', 'auto', or 'merge' (default: manual)
   --dry-run                 Plan what would be done without executing
   --stream                  Stream output in real-time (default: wait for completion)
+  --diagnose-gh             Run GitHub connectivity checks for agent backlog access
 
 In the TUI:
   /init                     Initialize or reconfigure project
@@ -481,10 +482,11 @@ Press Esc to cancel any operation.
         reviewMode: reviewModeFlag as 'manual' | 'auto' | 'merge' | undefined,
         dryRun: parsed.flags.dryRun === true,
         stream: parsed.flags.stream === true,
+        diagnoseGh: parsed.flags.diagnoseGh === true,
       };
 
-      if (agentOpts.stream === true) {
-        // Explicit --stream: always headless
+      if (agentOpts.stream === true || agentOpts.diagnoseGh === true) {
+        // Explicit headless modes
         const { agentCommand } = await import('./commands/agent.js');
         await agentCommand(agentOpts);
       } else if (process.stdout.isTTY && !isCI()) {

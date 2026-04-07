@@ -60,6 +60,22 @@ describe('HeaderContent', () => {
     unmount();
   });
 
+  it('prefers provider and model overrides when provided', () => {
+    const { lastFrame, unmount } = render(
+      <HeaderContent
+        version="0.8.0"
+        sessionState={makeSessionState({ provider: 'openai', model: 'gpt-5.2' })}
+        providerOverride="openai"
+        modelOverride="gpt-5.3-codex"
+      />,
+    );
+
+    const frame = stripAnsi(lastFrame() ?? '');
+    expect(frame).toContain('openai/gpt-5.3-codex');
+    expect(frame).not.toContain('openai/gpt-5.2');
+    unmount();
+  });
+
   it('shows "not configured" when no provider', () => {
     const { lastFrame, unmount } = render(
       <HeaderContent

@@ -144,6 +144,15 @@ export function App({
   const columns = stdout?.columns ?? 80;
   const rows = stdout?.rows ?? 24;
   const compact = rows < 20 || columns < 60;
+  const agentModelOverride = currentScreen === 'agent'
+    ? (typeof screenProps?.modelOverride === 'string' ? screenProps.modelOverride : agentProps?.modelOverride)
+    : undefined;
+  const agentProviderOverride = currentScreen === 'agent'
+    ? (sessionState.config?.agent.defaultProvider || sessionState.provider || undefined)
+    : undefined;
+  const effectiveAgentModel = currentScreen === 'agent'
+    ? (agentModelOverride || sessionState.config?.agent.defaultModel || sessionState.model)
+    : undefined;
 
   // Shared header element - includes columns/rows in deps so the
   // header subtree re-renders on terminal resize (banner auto-compacts)
@@ -152,11 +161,13 @@ export function App({
       <HeaderContent
         version={version}
         sessionState={sessionState}
+        providerOverride={agentProviderOverride}
+        modelOverride={effectiveAgentModel}
         backgroundRuns={backgroundRuns}
         compact={compact}
       />
     ),
-    [version, sessionState, backgroundRuns, compact, columns, rows]
+    [version, sessionState, agentProviderOverride, effectiveAgentModel, backgroundRuns, compact, columns, rows]
   );
 
   /**

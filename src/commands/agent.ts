@@ -14,6 +14,7 @@ import {
 import { resolveAgentEnv } from '../agent/resolve-config.js';
 import type { AgentConfig } from '../agent/types.js';
 import { initTracing, flushTracing, traced, currentSpan } from '../utils/tracing.js';
+import { detectGitHubRemote, runGitHubDiagnostics } from '../utils/github.js';
 
 export interface AgentOptions {
   model?: string;
@@ -24,10 +25,30 @@ export interface AgentOptions {
   reviewMode?: 'manual' | 'auto' | 'merge';
   dryRun?: boolean;
   stream?: boolean;
+  diagnoseGh?: boolean;
 }
 
 export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   const projectRoot = process.cwd();
+
+  if (options.diagnoseGh) {
+    const repo = await detectGitHubRemote(projectRoot);
+    if (!repo) {
+      console.error('Error: No GitHub remote detected. Run this inside a git repo with an origin remote.');
+      process.exit(1);
+    }
+
+    const diagnostics = await runGitHubDiagnostics(repo.owner, repo.repo, options.issues);
+    for (const check of diagnostics.checks) {
+      const status = check.ok ? 'OK' : 'FAIL';
+      console.log(`[diagnose-gh] ${status} ${check.name}: ${check.message}`);
+    }
+
+    if (!diagnostics.success) {
+      process.exit(1);
+    }
+    return;
+  }
 
   // Initialize Braintrust tracing (no-op if BRAINTRUST_API_KEY not set)
   initTracing();
@@ -69,6 +90,39 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
           ? (tr.result as Record<string, unknown>).status ?? (tr.result as Record<string, unknown>).success ?? 'done'
           : 'done';
         log(`[tool:done] ${tr.toolName} → ${summary}`);
+      }
+    },
+    onOrchestratorEvent: (event) => {
+      const log = options.stream
+        ? (msg: string) => process.stdout.write(`${msg}\n`)
+        : (msg: string) => logger.info(msg);
+
+      switch (event.type) {
+        case 'scope_expanded':
+          log(`[orchestrator] expanded scope with ${event.expansions.map(expansion => `#${expansion.issueNumber}`).join(', ')}`);
+          break;
+        case 'backlog_progress':
+          log(`[orchestrator] ${event.message}`);
+          break;
+        case 'backlog_timing':
+          log(`[orchestrator] ${event.phase} took ${event.durationMs}ms${event.count != null ? ` (${event.count})` : ''}`);
+          break;
+        case 'queue_ranked':
+          log(`[orchestrator] ranked ${event.queue.length} issue(s)`);
+          break;
+        case 'task_selected': {
+          const reason = event.issue.selectionReasons?.[0]?.message;
+          log(`[orchestrator] selected #${event.issue.issueNumber}${reason ? ` — ${reason}` : ''}`);
+          break;
+        }
+        case 'task_blocked':
+          log(`[orchestrator] blocked #${event.issue.issueNumber} — ${event.issue.blockedBy?.[0]?.reason ?? event.issue.actionability ?? 'blocked'}`);
+          break;
+        case 'task_completed':
+          log(`[orchestrator] completed #${event.issue.issueNumber} (${event.outcome})`);
+          break;
+        default:
+          break;
       }
     },
     onProgress: (toolName, line) => {
@@ -129,6 +183,9 @@ export async function agentCommand(options: AgentOptions = {}): Promise<void> {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Error: Agent failed — ${message}`);
+    if (message.includes('GitHub') || message.includes('gh ')) {
+      console.error(`Hint: run 'wiggum agent --diagnose-gh${options.issues?.length ? ` --issues ${options.issues.join(',')}` : ''}' to inspect GitHub connectivity.`);
+    }
     process.exit(1);
   } finally {
     await flushTracing();

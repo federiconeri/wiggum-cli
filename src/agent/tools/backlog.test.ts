@@ -122,6 +122,40 @@ describe('createBacklogTools', () => {
       expect(result.issues).toHaveLength(0);
     });
 
+    it('can bypass issue-number filtering only for explicit bug duplicate checks', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', {
+        issueNumbers: [3, 5],
+        allowGlobalBugDuplicateChecks: true,
+      });
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 1, title: 'Other', state: 'open', labels: [], createdAt: '2026-01-01T00:00:00Z' },
+          { number: 3, title: 'Target A', state: 'open', labels: [], createdAt: '2026-01-03T00:00:00Z' },
+          { number: 5, title: 'Target B', state: 'open', labels: [], createdAt: '2026-01-05T00:00:00Z' },
+        ],
+      });
+
+      const result = await scopedTools.listIssues.execute({ labels: ['bug'], limit: 20 }, execCtx);
+      expect(result.issues.map((i: any) => i.number)).toEqual([1, 3, 5]);
+    });
+
+    it('keeps non-bug listIssues calls scoped to the selected issue numbers', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', {
+        issueNumbers: [3, 5],
+        allowGlobalBugDuplicateChecks: true,
+      });
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 1, title: 'Other', state: 'open', labels: [], createdAt: '2026-01-01T00:00:00Z' },
+          { number: 3, title: 'Target A', state: 'open', labels: [], createdAt: '2026-01-03T00:00:00Z' },
+          { number: 5, title: 'Target B', state: 'open', labels: [], createdAt: '2026-01-05T00:00:00Z' },
+        ],
+      });
+
+      const result = await scopedTools.listIssues.execute({ limit: 20 }, execCtx);
+      expect(result.issues.map((i: any) => i.number)).toEqual([3, 5]);
+    });
+
     it('combines issue number filter with label filter', async () => {
       const scopedTools = createBacklogTools('testowner', 'testrepo', {
         defaultLabels: ['P1'],
@@ -188,6 +222,43 @@ describe('createBacklogTools', () => {
 
       const result = await tools.readIssue.execute({ issueNumber: 999 }, execCtx);
       expect(result).toHaveProperty('error');
+    });
+
+    it('blocks readIssue calls outside the selected worker scope', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', { issueNumbers: [3, 5] });
+
+      const result = await scopedTools.readIssue.execute({ issueNumber: 7 }, execCtx);
+      expect(result).toEqual({ error: 'Issue #7 is outside the selected worker scope' });
+      expect(mockFetchGitHubIssue).not.toHaveBeenCalled();
+    });
+
+    it('allows readIssue for issues surfaced by unscoped listIssues duplicate checks', async () => {
+      const scopedTools = createBacklogTools('testowner', 'testrepo', {
+        issueNumbers: [3],
+        scopeReadIssueToIssueNumbers: true,
+        allowGlobalBugDuplicateChecks: true,
+      });
+      mockListRepoIssues.mockResolvedValue({
+        issues: [
+          { number: 3, title: 'Selected issue', state: 'open', labels: ['feature'], createdAt: '2026-01-03T00:00:00Z' },
+          { number: 7, title: 'Existing blocker bug', state: 'open', labels: ['bug'], createdAt: '2026-01-07T00:00:00Z' },
+        ],
+      });
+      mockFetchGitHubIssue.mockResolvedValue({
+        title: 'Existing blocker bug',
+        body: 'Already tracked.',
+        labels: ['bug'],
+      });
+
+      await scopedTools.listIssues.execute({ labels: ['bug'], limit: 20 }, execCtx);
+      const result = await scopedTools.readIssue.execute({ issueNumber: 7 }, execCtx);
+
+      expect(result).toMatchObject({
+        title: 'Existing blocker bug',
+        labels: ['bug'],
+        dependsOn: [],
+      });
+      expect(mockFetchGitHubIssue).toHaveBeenCalledWith('testowner', 'testrepo', 7);
     });
   });
 });

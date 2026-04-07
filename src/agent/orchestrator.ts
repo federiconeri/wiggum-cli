@@ -1,4 +1,5 @@
 import { ToolLoopAgent } from 'ai';
+import { join } from 'node:path';
 import { MemoryStore } from './memory/store.js';
 import { ingestStrategicDocs } from './memory/ingest.js';
 import { createBacklogTools } from './tools/backlog.js';
@@ -6,138 +7,122 @@ import { createMemoryTools, REFLECT_TOOL_NAME } from './tools/memory.js';
 import { createExecutionTools } from './tools/execution.js';
 import { createReportingTools } from './tools/reporting.js';
 import { createIntrospectionTools } from './tools/introspection.js';
-import { createDryRunExecutionTools, createDryRunReportingTools, createDryRunFeatureStateTools } from './tools/dry-run.js';
+import { createDryRunExecutionTools, createDryRunFeatureStateTools, createDryRunReportingTools } from './tools/dry-run.js';
 import { createFeatureStateTools } from './tools/feature-state.js';
-import type { AgentConfig } from './types.js';
-import { join } from 'node:path';
+import type { AgentConfig, AgentIssueState, AgentStepEvent, BacklogCandidate } from './types.js';
+import { buildRankedBacklog, createSchedulerRunCache, invalidateSchedulerRunCache, toIssueStates } from './scheduler.js';
 import { logger } from '../utils/logger.js';
 import { getTracedAI } from '../utils/tracing.js';
 
-export const AGENT_SYSTEM_PROMPT = `You are wiggum's autonomous development agent. You work through the GitHub issue backlog, shipping features one at a time.
+export const AGENT_SYSTEM_PROMPT = `You are wiggum's per-issue autonomous development worker.
+
+You are given exactly one backlog issue that has already been selected by a higher-level orchestrator. Your job is to ship that issue or perform the required housekeeping for it. Do not select another issue.
 
 ## Workflow
 
-1. Read memory to recall previous work and context
-   - Use listStrategicDocs to see available project documentation
-   - Use readStrategicDoc to read full documents relevant to the current task (architecture, design, implementation plans)
-2. List open issues and cross-reference with memory
-   - Consider: PM priority labels (P0 > P1 > P2), dependencies, strategic context
-   - **Housekeeping:** If memory says an issue was already completed (outcome "success" or "skipped") but it's still open:
-     1. Call assessFeatureState with the featureName and issueNumber
-     2. If recommendation is "pr_merged" or "linked_pr_merged": close it with closeIssue. Reflect with outcome "skipped". Does NOT count against maxItems.
-     3. If recommendation is anything else (e.g., "resume_implementation", "start_fresh", "resume_pr_phase"): the issue was NOT actually shipped. Do NOT close it. Instead, prioritize it as your next work item and follow the Feature State Decision Tree. This counts against maxItems.
-   - **Retry:** If memory records a previous attempt at an issue with outcome "failure" or "partial", and it's still open, prioritize it over new issues. Bugs that caused the failure may have been fixed, and existing work (branch, spec, plan) should not be abandoned. Call assessFeatureState to determine the right action — usually resume_implementation. This counts against maxItems.
-3. For the chosen issue (one NOT already completed):
-   a. Read the full issue details
-   b. Derive a featureName from the issue title (lowercase, hyphens, no spaces)
-   c. **Assess feature state** using assessFeatureState — MANDATORY before any action
-   d. Follow the Feature State Decision Tree based on the recommendation field
-   e. Monitor progress with checkLoopStatus and readLoopLog
-   f. Report results by commenting on the issue
+1. Read memory and strategic docs to recover relevant context.
+2. Read the selected issue in full.
+3. Derive a short kebab-case feature name from the issue title.
+4. Call assessFeatureState before taking any action.
+5. Follow the feature-state decision tree:
+   - start_fresh -> generateSpec -> runLoop
+   - generate_plan -> runLoop without resume
+   - resume_implementation -> runLoop with resume: true
+   - resume_pr_phase -> runLoop with resume: true
+   - pr_closed -> comment about the closed PR, then re-triage:
+     - if branch commits or a plan already exist, runLoop with resume: true
+     - otherwise restart with generateSpec -> runLoop without resume
+   - pr_exists_open / linked_pr_open -> comment and stop
+   - pr_merged / linked_pr_merged -> check boxes, close issue, reflect with outcome "skipped", stop
+6. After every runLoop:
+   - readLoopLog
+   - assessFeatureState again
+   - create blocker issues for pre-existing/systemic failures when needed
+   - only close the issue if work is merged
+7. Always call reflectOnWork before stopping.
 
-## Feature State Decision Tree
+## Important rules
 
-After calling assessFeatureState, follow the recommendation:
+- You must stay within the selected issue.
+- You must pass issueNumber to assessFeatureState.
+- You must pass resume: true for resume_implementation and resume_pr_phase.
+- You must not force pr_closed into resume mode when there is no branch or plan state to resume.
+- You must forward Runtime Config values using the tool schemas:
+  - pass model and provider to generateSpec when they are set
+  - pass reviewMode to runLoop when it is set
+- You must not close an issue unless assessFeatureState confirms merged work.
+- If a loop fails, quote or summarize readLoopLog evidence in your issue comment. Do not guess.
+- You may use listIssues(labels: ["bug"]) only for blocker detection and duplicate checking.
+- Your only text response is a brief final summary after the selected issue is fully handled.`;
 
-| recommendation | action |
-|---|---|
-| start_fresh | generateSpec → runLoop (fresh) |
-| generate_plan | runLoop without resume (spec exists, needs planning) |
-| resume_implementation | runLoop with resume: true (plan has pending tasks) |
-| resume_pr_phase | runLoop with resume: true (all tasks done, needs PR) |
-| pr_exists_open | Comment on issue, do NOT re-run loop |
-| pr_merged | Verify PR is merged, close issue with closeIssue, reflect with outcome "skipped", move on |
-| pr_closed | Decide: restart from scratch or skip |
-| linked_pr_merged | Verify the linked PR is merged, close issue with closeIssue (comment "shipped via PR #N"), reflect with outcome "skipped", move on |
-| linked_pr_open | Work in progress under a different branch — comment "in progress via PR #N", do NOT re-run loop |
+export interface AgentOrchestrator {
+  readonly version: 'agent-v1';
+  readonly id: string | undefined;
+  readonly tools: Record<string, unknown>;
+  generate(options: { prompt: string | unknown[]; abortSignal?: AbortSignal; timeout?: unknown }): Promise<{ text?: string }>;
+  stream(options: { prompt: string | unknown[]; abortSignal?: AbortSignal; timeout?: unknown; experimental_transform?: unknown }): Promise<{ textStream: AsyncIterable<string> }>;
+}
 
-**Critical:**
-- When recommendation is resume_implementation or resume_pr_phase, you MUST pass resume: true to runLoop
-- When recommendation is generate_plan, do NOT pass resume (fresh branch needed)
-- When recommendation is start_fresh, generate a spec first, then run the loop without resume
-- ALWAYS pass issueNumber to assessFeatureState so it can detect work shipped under a different branch name
-- Derive short, stable feature names (2-4 words, kebab-case) from the issue title — e.g. "config-module" not "config-module-toml-read-write-with-secret-masking"
-4. After the loop completes (successfully or with failure) — MANDATORY for EVERY issue, including subsequent ones:
-   a. Call readLoopLog to get the actual log content
-   b. Call assessFeatureState to check the actual state — do NOT rely solely on loop log output
-   c. **Blocker detection (MANDATORY):** Scan the log for pre-existing test failures (lines like "All N test failure(s) are pre-existing"). If found:
-      1. Call listIssues with labels ["bug"] to check for existing bug issues covering these failures
-      2. If no existing issue covers them, you MUST call createIssue with title "Fix N pre-existing test failures", body listing the failing files, and labels ["bug"]. If a "P0" label exists on the repo you may add it; if not, just use ["bug"].
-      3. Do NOT skip this step just because the loop succeeded — pre-existing failures degrade CI and must be tracked
-   d. Only close the issue if assessFeatureState confirms a PR was merged (recommendation: "pr_merged" or "linked_pr_merged")
-   e. When closing: check off acceptance criteria with checkAllBoxes, then close with closeIssue
-   f. If the loop produced code but no PR was created/merged, run the loop again with resume: true to trigger the PR phase
-   g. If the loop failed and code exists on the branch without a PR, this is incomplete work — do NOT close the issue
-   h. Steps 4–6 are MANDATORY after every runLoop — including the 2nd, 3rd, etc. issue. Do NOT summarize or stop after runLoop returns. The next tool call must be readLoopLog.
-5. Reflect on the outcome:
-   - Call reflectOnWork with structured observations
-   - Use outcome "skipped" for issues that were already complete (no real work done) — these do NOT count against maxItems
-   - Use outcome "success"/"partial"/"failure" for issues where real work was performed
-   - Note what worked, what failed, any patterns discovered
-6. Continue to next issue — MANDATORY tool call sequence:
-   a. Call listIssues (with NO label filter) to get the full backlog
-   b. Cross-reference with memory to avoid re-doing completed work
-   c. If actionable issues remain and no stop condition is met, immediately call assessFeatureState for the next priority issue — do NOT generate text
-   d. When assessFeatureState returns, follow the Feature State Decision Tree (step 3d) for that issue — e.g. start_fresh → generateSpec → runLoop. This begins a full new work cycle (steps 3–6). Do NOT stop after assessFeatureState.
-   e. Only produce a text-only response (final summary) when the backlog is empty or a stop condition is met
-   f. ANY text without a tool call terminates the session — there is no "ask for permission" step
+interface WorkerOutcomeTracker {
+  outcome: 'success' | 'partial' | 'failure' | 'skipped' | 'unknown';
+  reflected: boolean;
+}
 
-## Model forwarding
+function shouldCountTowardCompletedBudget(
+  issue: Pick<AgentIssueState, 'scopeOrigin' | 'actionability'>,
+  outcome: WorkerOutcomeTracker['outcome'],
+): boolean {
+  return outcome !== 'skipped'
+    && outcome !== 'unknown'
+    && issue.scopeOrigin !== 'dependency'
+    && issue.actionability !== 'waiting_pr';
+}
 
-When calling generateSpec, ALWAYS forward the model and provider so the spec generation uses the same AI model as this agent session. The values are provided in the Runtime Config section below.
+function isRecoverableListingError(error: string): boolean {
+  return error.startsWith('GitHub issue listing failed:');
+}
 
-Do NOT forward model/provider to runLoop — the development loop resolves its own coding/review CLI and model configuration from project config.
+const MAX_STALLED_CONTINUATION_SELECTIONS = 4;
 
-When calling runLoop, pass the reviewMode from the Runtime Config below (if configured). This controls how the loop handles the PR phase:
-- 'manual': stop at PR creation (default)
-- 'auto': create PR + run automated review (no merge)
-- 'merge': create PR + review + merge if approved
+function needsFollowUpAfterSuccess(candidate: Pick<BacklogCandidate, 'recommendation'>): boolean {
+  return candidate.recommendation === 'resume_pr_phase'
+    || candidate.recommendation === 'pr_closed'
+    || candidate.recommendation === 'pr_merged'
+    || candidate.recommendation === 'linked_pr_merged';
+}
 
-## Prioritization
+function canResumeWithinRun(
+  candidate: BacklogCandidate,
+  prior: { outcome: WorkerOutcomeTracker['outcome']; selections: number } | undefined,
+): boolean {
+  if (!prior) return true;
 
-Use hybrid reasoning: respect PM labels (P0 > P1 > P2) but apply your own judgment for ordering within the same priority tier.
+  if (prior.outcome === 'success') {
+    return needsFollowUpAfterSuccess(candidate);
+  }
 
-**Ordering rules (in priority order):**
-1. PM priority labels: P0 > P1 > P2 > unlabeled
-2. Explicit dependencies: if readIssue returns a \`dependsOn\` array (parsed from "depends on #N" / "blocked by #N" in the issue body), complete those issues first
-3. Lower-numbered issues first: within the same priority tier, prefer lower issue numbers — they are typically more foundational (scaffolding, setup, core infrastructure)
-4. Prefer issues with existing branches: if assessFeatureState shows a branch exists with commits ahead, prefer that issue over one without a branch — existing branches diverge further from main with every merge, increasing conflict risk
-5. Strategic context from memory and what you learned from previous iterations
+  if (prior.outcome !== 'partial' && prior.outcome !== 'failure') return false;
+  return candidate.recommendation === 'resume_implementation'
+    || candidate.recommendation === 'resume_pr_phase'
+    || candidate.recommendation === 'pr_closed';
+}
 
-## When to stop
+function isAbortError(err: unknown, abortSignal?: AbortSignal): boolean {
+  if (abortSignal?.aborted) return true;
+  if (err instanceof Error) {
+    return err.name === 'AbortError' || err.message === 'Aborted';
+  }
+  return false;
+}
 
-Stop the loop when:
-- Backlog has no more actionable open issues
-- You've completed the maximum number of items (if configured)
-- A critical failure requires human attention
-- The user has signaled to stop
-
-IMPORTANT: Generating text without tool calls terminates the session immediately. After completing an issue, you MUST call listIssues (step 6) — never ask "should I continue?" or summarize before checking. After listIssues returns, scan the results for issues matching your constraints (if any). If actionable issues remain, immediately call assessFeatureState — do NOT generate a summary. After assessFeatureState returns for the next issue, you MUST follow the Feature State Decision Tree and call the next tool (e.g. generateSpec for start_fresh). Stopping after assessFeatureState is a bug — the result tells you what to do next. After runLoop returns, you MUST execute steps 4–6 (readLoopLog → assessFeatureState → close/comment → reflectOnWork → listIssues). Stopping after runLoop is a bug — there is always post-loop work to do. Your only text-only response is the final summary when ALL constrained issues are processed or a stop condition is met. If you were given specific issue numbers to work on, you MUST process ALL of them before stopping.
-
-## Learning
-
-After each issue, always call reflectOnWork. Your memory entries make you progressively better at this specific codebase. Be specific and narrative in what you record. Focus on: what patterns work here, what gotchas exist, which approaches produce better specs and fewer loop iterations.
-
-## Error recovery
-
-If spec generation fails: retry once with simplified goals. If it fails again, skip the issue and comment explaining why.
-If a loop fails:
-1. ALWAYS call readLoopLog to get the actual log content
-2. Your issue comment MUST quote or summarize what the log says — do NOT speculate or guess the cause
-3. Call assessFeatureState to check if a PR was merged despite the loop failure
-4. If assessFeatureState shows "pr_merged" or "linked_pr_merged" → close the issue (the work shipped)
-5. If assessFeatureState shows "resume_pr_phase" → the code exists but no PR was created. Run the loop again with resume: true to create and merge the PR. Do NOT close the issue yet.
-6. If the log says "already complete" but no PR is merged, the work is stranded on a branch — resume the loop to ship it
-7. If runLoop returns status "already_complete", verify with assessFeatureState before closing
-8. Reflect on what happened, then move to the next issue
-Never close an issue without verifying the code is merged to main. Loop log evidence alone is not sufficient.
-
-## Blocker detection (additional)
-
-Besides the mandatory check in step 4c, also create bug issues for systemic blockers you discover (broken CI, missing infrastructure, flaky tests). Always check with listIssues(labels: ["bug"]) before creating to avoid duplicates. After creating blocker issues, continue processing the backlog — never stop due to blockers alone.`;
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AgentOrchestrator = ToolLoopAgent<never, any, any>;
+function hasExceededWithinRunContinuationLimit(
+  candidate: BacklogCandidate,
+  prior: { outcome: WorkerOutcomeTracker['outcome']; selections: number } | undefined,
+): boolean {
+  if (!prior) return false;
+  if (!canResumeWithinRun(candidate, prior)) return false;
+  return prior.selections >= MAX_STALLED_CONTINUATION_SELECTIONS;
+}
 
 export function buildRuntimeConfig(config: AgentConfig): string {
   const lines: string[] = [];
@@ -152,42 +137,69 @@ export function buildRuntimeConfig(config: AgentConfig): string {
 export function buildConstraints(config: AgentConfig): string {
   const lines: string[] = [];
   if (config.maxItems != null) {
-    lines.push(`- You MUST stop after completing ${config.maxItems} issue(s). Call reflectOnWork for each, then stop.`);
+    lines.push(`- Stop after completing ${config.maxItems} issue(s).`);
   }
   if (config.labels?.length) {
-    lines.push(`- Only work on issues with these labels: ${config.labels.join(', ')}. Ignore all others.`);
+    lines.push(`- Initial backlog scope is limited to labels: ${config.labels.join(', ')}.`);
   }
   if (config.issues?.length) {
-    lines.push(`- ONLY work on these specific issues: ${config.issues.map(n => `#${n}`).join(', ')}. Ignore all others. You MUST process ALL of these issues before stopping — do not stop after the first one.`);
+    lines.push(`- Initial backlog scope is limited to issues: ${config.issues.map(n => `#${n}`).join(', ')}.`);
   }
   if (config.dryRun) {
-    lines.push('- DRY RUN MODE: Plan what you would do but do NOT execute. Execution and reporting tools return simulated results.');
+    lines.push('- DRY RUN MODE: execution and reporting tools are simulated.');
   }
   return lines.length > 0
     ? `\n\n## Constraints\n\n${lines.join('\n')}`
     : '';
 }
 
-export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator {
-  const { model, projectRoot, owner, repo } = config;
-  const memoryDir = join(projectRoot, '.ralph', 'agent');
-  const store = new MemoryStore(memoryDir);
+function mapToolResults(toolResults: Array<{ toolName: string; output: unknown }>) {
+  return toolResults.map((tr) => ({ toolName: tr.toolName, result: tr.output }));
+}
 
-  const backlog = createBacklogTools(owner, repo, {
+function createWorkerStepHandler(config: AgentConfig, tracker: WorkerOutcomeTracker) {
+  return async ({ toolCalls, toolResults }: { toolCalls: Array<{ toolName: string; input: unknown }>; toolResults: Array<{ toolName: string; output: unknown }> }) => {
+    try {
+      for (const tc of toolCalls) {
+        if (tc.toolName === REFLECT_TOOL_NAME && toolResults.some(tr => tr.toolName === REFLECT_TOOL_NAME)) {
+          const input = tc.input as { outcome?: WorkerOutcomeTracker['outcome'] };
+          tracker.outcome = input.outcome ?? 'unknown';
+          tracker.reflected = true;
+        }
+      }
+
+      const stepEvent: AgentStepEvent = {
+        toolCalls: toolCalls.map((tc) => ({ toolName: tc.toolName, args: tc.input })),
+        toolResults: mapToolResults(toolResults),
+        completedItems: tracker.outcome !== 'unknown' ? 1 : 0,
+      };
+
+      config.onStepUpdate?.(stepEvent);
+    } catch (err) {
+      logger.warn(`worker onStepFinish failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+}
+
+function createWorkerAgent(config: AgentConfig, store: MemoryStore) {
+  const backlog = createBacklogTools(config.owner, config.repo, {
     defaultLabels: config.labels,
     issueNumbers: config.issues,
+    scopeListIssuesToIssueNumbers: true,
+    scopeReadIssueToIssueNumbers: true,
+    allowGlobalBugDuplicateChecks: true,
   });
-  const memory = createMemoryTools(store, projectRoot);
+  const memory = createMemoryTools(store, config.projectRoot);
   const execution = config.dryRun
     ? createDryRunExecutionTools()
-    : createExecutionTools(projectRoot, { onProgress: config.onProgress });
+    : createExecutionTools(config.projectRoot, { onProgress: config.onProgress });
   const reporting = config.dryRun
     ? createDryRunReportingTools()
-    : createReportingTools(owner, repo);
-  const introspection = createIntrospectionTools(projectRoot);
+    : createReportingTools(config.owner, config.repo);
+  const introspection = createIntrospectionTools(config.projectRoot);
   const featureState = config.dryRun
     ? createDryRunFeatureStateTools()
-    : createFeatureStateTools(projectRoot);
+    : createFeatureStateTools(config.projectRoot);
 
   const tools = {
     ...backlog,
@@ -198,104 +210,337 @@ export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator 
     ...featureState,
   };
 
-  const effectiveMaxItems = config.maxItems ?? (config.issues?.length ? config.issues.length : undefined);
-  const constraintConfig = { ...config, maxItems: effectiveMaxItems };
-  const constraints = buildConstraints(constraintConfig);
-  const runtimeConfig = buildRuntimeConfig(config);
-  const fullPrompt = AGENT_SYSTEM_PROMPT + runtimeConfig + constraints;
-  const completedIssues = new Set<number>();
-  const issueNumberSet = config.issues?.length ? new Set(config.issues) : undefined;
-  const maxSteps = config.maxSteps ?? 200;
-
-  // Use traced ToolLoopAgent so Braintrust automatically captures
-  // all LLM calls, tool executions, and agent steps.
+  const fullPrompt = AGENT_SYSTEM_PROMPT + buildRuntimeConfig(config) + buildConstraints(config);
+  const tracker: WorkerOutcomeTracker = { outcome: 'unknown', reflected: false };
   const { ToolLoopAgent: TracedToolLoopAgent } = getTracedAI();
 
-  return new TracedToolLoopAgent({
-    model,
+  const agent = new TracedToolLoopAgent({
+    model: config.model,
     instructions: fullPrompt,
     tools,
     experimental_telemetry: {
       isEnabled: true,
-      functionId: 'agent-orchestrator',
-      metadata: { owner, repo, dryRun: String(config.dryRun ?? false) },
+      functionId: 'agent-worker',
+      metadata: {
+        owner: config.owner,
+        repo: config.repo,
+        dryRun: String(config.dryRun ?? false),
+      },
     },
-    stopWhen: ({ steps }) => {
-      if (steps.length >= maxSteps) return true;
-      if (effectiveMaxItems != null && completedIssues.size >= effectiveMaxItems) return true;
-      return false;
-    },
+    stopWhen: ({ steps }) => steps.length >= (config.maxSteps ?? 200),
     prepareStep: async ({ steps }) => {
       try {
         if (steps.length === 0) {
-          await ingestStrategicDocs(projectRoot, store);
+          await ingestStrategicDocs(config.projectRoot, store);
           await store.prune();
         }
 
         const all = await store.read({ limit: 50 });
-        const recentLogs = all.filter(e => e.type === 'work_log').slice(0, 5);
-        const knowledge = all.filter(e => e.type === 'project_knowledge').slice(0, 3);
-        const decisions = all.filter(e => e.type === 'decision').slice(0, 2);
-        // Strategic docs are injected as lightweight catalog entries (filename + summary).
-        // The agent reads full content on-demand via readStrategicDoc tool.
-        const strategic = all.filter(e => e.type === 'strategic_context');
-
-        const memoryContext = [
-          ...recentLogs.map(e => `[work] ${e.content}`),
-          ...knowledge.map(e => `[knowledge] ${e.content}`),
-          ...decisions.map(e => `[decision] ${e.content}`),
-          ...strategic.map(e => `[strategic-doc] ${e.content}`),
-        ].join('\n');
+        const memoryContext = all
+          .map((entry) => `[${entry.type}] ${entry.content}`)
+          .join('\n');
 
         if (!memoryContext) return undefined;
-
         return {
-          system: [
-            fullPrompt,
-            `## Current Memory\n\n${memoryContext}`,
-          ].join('\n\n'),
+          system: [fullPrompt, `## Current Memory\n\n${memoryContext}`].join('\n\n'),
         };
       } catch (err) {
-        logger.warn(`prepareStep failed, continuing without memory: ${err instanceof Error ? err.message : String(err)}`);
+        logger.warn(`worker prepareStep failed, continuing without memory: ${err instanceof Error ? err.message : String(err)}`);
         return undefined;
       }
     },
-    onStepFinish: async ({ toolCalls, toolResults }) => {
-      try {
-        for (const tc of toolCalls) {
-          if (tc.toolName === REFLECT_TOOL_NAME) {
-            const input = tc.input as { issueNumber?: number; outcome?: string };
-            if (input.issueNumber != null && input.outcome !== 'skipped') {
-              completedIssues.add(input.issueNumber);
-            }
-          }
-        }
-
-        // Filter listIssues results to configured issues before reaching the TUI.
-        // The tool's closure-based filter should handle this, but Braintrust's
-        // wrapAISDK Proxy chain can bypass tool closures in some edge cases.
-        const mappedResults = toolResults.map((tr) => {
-          const output = tr.output;
-          if (tr.toolName === 'listIssues' && issueNumberSet && output != null && typeof output === 'object') {
-            const raw = output as Record<string, unknown>;
-            if (Array.isArray(raw.issues)) {
-              const filtered = (raw.issues as Array<Record<string, unknown>>).filter(
-                (i) => issueNumberSet.has(Number(i.number)),
-              );
-              return { toolName: tr.toolName, result: { ...raw, issues: filtered } };
-            }
-          }
-          return { toolName: tr.toolName, result: output };
-        });
-
-        config.onStepUpdate?.({
-          toolCalls: toolCalls.map((tc) => ({ toolName: tc.toolName, args: tc.input })),
-          toolResults: mappedResults,
-          completedItems: completedIssues.size,
-        });
-      } catch (err) {
-        logger.warn(`onStepFinish failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    },
+    onStepFinish: createWorkerStepHandler(config, tracker),
   });
+
+  return { agent, tools, tracker };
+}
+
+function formatSelectionReasons(issue: AgentIssueState): string {
+  const reasons = issue.selectionReasons ?? [];
+  if (reasons.length === 0) return 'No additional scheduler rationale.';
+  return reasons
+    .slice(0, 5)
+    .map((reason) => `- ${reason.message}`)
+    .join('\n');
+}
+
+function buildWorkerPrompt(issue: BacklogCandidate): string {
+  return `Selected issue:
+
+#${issue.issueNumber}: ${issue.title}
+Labels: ${issue.labels.join(', ') || 'none'}
+Priority: ${issue.priorityTier ?? 'unlabeled'}
+Actionability: ${issue.actionability ?? 'ready'}
+Current recommendation: ${issue.recommendation ?? 'unknown'}
+Feature name: ${issue.loopFeatureName ?? 'feature'}
+
+Scheduler rationale:
+${formatSelectionReasons(issue)}
+
+Issue body:
+${issue.body}
+
+You must fully handle this selected issue and then stop.`;
+}
+
+interface ProcessedIssueSummary {
+  issue: AgentIssueState;
+  outcome: WorkerOutcomeTracker['outcome'];
+}
+
+function buildFinalSummary(processed: ProcessedIssueSummary[], blocked: AgentIssueState[]): string {
+  const lines = [`Processed ${processed.length} issue(s).`];
+  const byOutcome = new Map<WorkerOutcomeTracker['outcome'], number[]>();
+  for (const item of processed) {
+    const issues = byOutcome.get(item.outcome) ?? [];
+    issues.push(item.issue.issueNumber);
+    byOutcome.set(item.outcome, issues);
+  }
+  const orderedOutcomes: Array<{ outcome: WorkerOutcomeTracker['outcome']; label: string }> = [
+    { outcome: 'success', label: 'Completed' },
+    { outcome: 'partial', label: 'Partial' },
+    { outcome: 'failure', label: 'Failed' },
+    { outcome: 'skipped', label: 'Skipped' },
+    { outcome: 'unknown', label: 'Unknown' },
+  ];
+  for (const { outcome, label } of orderedOutcomes) {
+    const issues = byOutcome.get(outcome);
+    if (issues?.length) {
+      lines.push(`${label}: ${issues.map(issueNumber => `#${issueNumber}`).join(', ')}`);
+    }
+  }
+  if (blocked.length > 0) {
+    lines.push(`Blocked: ${blocked.map(issue => `#${issue.issueNumber} (${issue.actionability})`).join(', ')}`);
+  }
+  return lines.join('\n');
+}
+
+async function* oneChunk(text: string): AsyncGenerator<string> {
+  if (text) {
+    yield text;
+  }
+}
+
+class StructuredAgentOrchestrator implements AgentOrchestrator {
+  readonly version = 'agent-v1' as const;
+  readonly id = 'agent-orchestrator';
+  readonly tools: Record<string, unknown>;
+
+  constructor(private readonly config: AgentConfig) {
+    const memoryDir = join(config.projectRoot, '.ralph', 'agent');
+    const store = new MemoryStore(memoryDir);
+    this.tools = createWorkerAgent(config, store).tools;
+  }
+
+  private emit(event: Parameters<NonNullable<AgentConfig['onOrchestratorEvent']>>[0]) {
+    this.config.onOrchestratorEvent?.(event);
+  }
+
+  private async run(options: { abortSignal?: AbortSignal }): Promise<string> {
+    const memoryDir = join(this.config.projectRoot, '.ralph', 'agent');
+    const store = new MemoryStore(memoryDir);
+    await ingestStrategicDocs(this.config.projectRoot, store);
+    await store.prune();
+
+    const processed: ProcessedIssueSummary[] = [];
+    const attemptedThisRun = new Map<number, { outcome: WorkerOutcomeTracker['outcome']; selections: number }>();
+    const pendingContinuation = new Set<number>();
+    const countedBudgetIssues = new Set<number>();
+    let completedBudget = 0;
+    let blockedSnapshot: AgentIssueState[] = [];
+    const schedulerCache = createSchedulerRunCache();
+
+    while (true) {
+      if (options.abortSignal?.aborted) {
+        throw new Error('Aborted');
+      }
+
+      if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingContinuation.size === 0) {
+        return buildFinalSummary(processed, blockedSnapshot);
+      }
+
+      const hadPendingContinuation = pendingContinuation.size > 0;
+      const ranked = await buildRankedBacklog(this.config, store, schedulerCache);
+      if (ranked.errors.length > 0 && hadPendingContinuation) {
+        throw new Error(ranked.errors[0]);
+      }
+      for (const issueNumber of [...pendingContinuation]) {
+        const prior = attemptedThisRun.get(issueNumber);
+        const stillNeedsFollowUp = ranked.actionable.some(
+          candidate => candidate.issueNumber === issueNumber && canResumeWithinRun(candidate, prior),
+        );
+        if (!stillNeedsFollowUp) {
+          pendingContinuation.delete(issueNumber);
+        }
+      }
+      if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingContinuation.size === 0) {
+        return buildFinalSummary(processed, blockedSnapshot);
+      }
+      if (ranked.errors.length > 0) {
+        const canProceedWithRankedQueue = ranked.queue.length > 0
+          && ranked.errors.every(isRecoverableListingError);
+        if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingContinuation.size > 0) {
+          throw new Error(ranked.errors[0]);
+        }
+        if (!canProceedWithRankedQueue) {
+          throw new Error(ranked.errors[0]);
+        }
+      }
+      const queueStates = toIssueStates(ranked.queue);
+      blockedSnapshot = queueStates.filter(
+        issue => issue.actionability !== 'ready'
+          && issue.actionability !== 'housekeeping'
+          && issue.actionability !== 'waiting_pr',
+      );
+
+      if (ranked.expansions.length > 0) {
+        this.emit({ type: 'scope_expanded', expansions: ranked.expansions });
+      }
+      this.emit({ type: 'backlog_scanned', total: queueStates.length, issues: queueStates });
+      for (const candidate of ranked.queue) {
+        this.emit({ type: 'candidate_enriched', issue: {
+          issueNumber: candidate.issueNumber,
+          title: candidate.title,
+          labels: candidate.labels,
+          phase: candidate.phase,
+          actionability: candidate.actionability,
+          priorityTier: candidate.priorityTier,
+          dependsOn: candidate.dependsOn,
+          inferredDependsOn: candidate.inferredDependsOn,
+          blockedBy: candidate.blockedBy,
+          recommendation: candidate.recommendation,
+          selectionReasons: candidate.selectionReasons,
+          score: candidate.score,
+          attemptState: candidate.attemptState,
+          featureState: candidate.featureState,
+          loopFeatureName: candidate.loopFeatureName,
+        } });
+        if (candidate.inferredDependencyEdges.length > 0) {
+          this.emit({ type: 'dependencies_inferred', issueNumber: candidate.issueNumber, edges: candidate.inferredDependencyEdges });
+        }
+      }
+
+      this.emit({ type: 'queue_ranked', queue: queueStates });
+      for (const blocked of blockedSnapshot) {
+        this.emit({ type: 'task_blocked', issue: blocked });
+      }
+
+      const resumableCandidates = ranked.actionable.filter((candidate) => {
+        return pendingContinuation.has(candidate.issueNumber)
+          && canResumeWithinRun(candidate, attemptedThisRun.get(candidate.issueNumber));
+      });
+      const stalledCandidate = resumableCandidates.find((candidate) =>
+        hasExceededWithinRunContinuationLimit(candidate, attemptedThisRun.get(candidate.issueNumber)));
+      if (stalledCandidate) {
+        throw new Error(
+          `Issue #${stalledCandidate.issueNumber} remained in ${stalledCandidate.recommendation} after ${MAX_STALLED_CONTINUATION_SELECTIONS} attempts in the same run.`,
+        );
+      }
+      const next = (resumableCandidates[0] ?? ranked.actionable.find((candidate) => {
+        if (pendingContinuation.size > 0) {
+          return false;
+        }
+        return canResumeWithinRun(candidate, attemptedThisRun.get(candidate.issueNumber));
+      }));
+      if (!next) {
+        return buildFinalSummary(processed, blockedSnapshot);
+      }
+
+      const selected: AgentIssueState = {
+        issueNumber: next.issueNumber,
+        title: next.title,
+        labels: next.labels,
+        phase: 'planning',
+        scopeOrigin: next.scopeOrigin,
+        requestedBy: next.requestedBy,
+        actionability: next.actionability,
+        priorityTier: next.priorityTier,
+        dependsOn: next.dependsOn,
+        inferredDependsOn: next.inferredDependsOn,
+        blockedBy: next.blockedBy,
+        recommendation: next.recommendation,
+        selectionReasons: next.selectionReasons,
+        score: next.score,
+        attemptState: next.attemptState,
+        featureState: next.featureState,
+        loopFeatureName: next.loopFeatureName,
+      };
+      this.emit({ type: 'task_selected', issue: selected });
+      this.emit({ type: 'task_started', issue: selected });
+
+      const workerConfig: AgentConfig = {
+        ...this.config,
+        issues: [selected.issueNumber],
+        labels: undefined,
+        maxItems: 1,
+      };
+      const { agent, tracker } = createWorkerAgent(workerConfig, store);
+
+      try {
+        const result = await agent.stream({
+          prompt: buildWorkerPrompt(next),
+          abortSignal: options.abortSignal,
+        });
+
+        for await (const _chunk of result.textStream) {
+          // Worker text is surfaced only in the final returned summary.
+        }
+      } catch (err) {
+        if (isAbortError(err, options.abortSignal)) {
+          throw new Error('Aborted');
+        }
+        const failed: AgentIssueState = { ...selected, error: err instanceof Error ? err.message : String(err) };
+        const failureOutcome: WorkerOutcomeTracker['outcome'] = tracker.outcome === 'unknown' ? 'failure' : tracker.outcome;
+        processed.push({ issue: failed, outcome: failureOutcome });
+        this.emit({ type: 'task_completed', issue: failed, outcome: failureOutcome });
+        throw err;
+      }
+
+      if (!tracker.reflected) {
+        const failed: AgentIssueState = {
+          ...selected,
+          error: `Worker stopped before calling reflectOnWork for issue #${selected.issueNumber}.`,
+        };
+        processed.push({ issue: failed, outcome: 'failure' });
+        this.emit({ type: 'task_completed', issue: failed, outcome: 'failure' });
+        throw new Error(failed.error);
+      }
+
+      const completedIssue: AgentIssueState = {
+        ...selected,
+        phase: 'reflecting',
+      };
+      processed.push({ issue: completedIssue, outcome: tracker.outcome });
+      const prior = attemptedThisRun.get(selected.issueNumber);
+      attemptedThisRun.set(selected.issueNumber, {
+        outcome: tracker.outcome,
+        selections: (prior?.selections ?? 0) + 1,
+      });
+      if (shouldCountTowardCompletedBudget(selected, tracker.outcome)) {
+        pendingContinuation.add(selected.issueNumber);
+      } else {
+        pendingContinuation.delete(selected.issueNumber);
+      }
+      this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
+      if (shouldCountTowardCompletedBudget(selected, tracker.outcome) && !countedBudgetIssues.has(selected.issueNumber)) {
+        completedBudget += 1;
+        countedBudgetIssues.add(selected.issueNumber);
+      }
+      invalidateSchedulerRunCache(schedulerCache, [selected.issueNumber]);
+    }
+  }
+
+  async generate(options: { prompt: string | unknown[]; abortSignal?: AbortSignal; timeout?: unknown }): Promise<{ text?: string }> {
+    const text = await this.run({ abortSignal: options.abortSignal });
+    return { text };
+  }
+
+  async stream(options: { prompt: string | unknown[]; abortSignal?: AbortSignal; timeout?: unknown; experimental_transform?: unknown }): Promise<{ textStream: AsyncIterable<string> }> {
+    const text = await this.run({ abortSignal: options.abortSignal });
+    return { textStream: oneChunk(text) };
+  }
+}
+
+export function createAgentOrchestrator(config: AgentConfig): AgentOrchestrator {
+  return new StructuredAgentOrchestrator(config);
 }

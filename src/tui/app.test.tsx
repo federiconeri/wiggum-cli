@@ -15,8 +15,10 @@ import type { RunSummary } from './screens/RunScreen.js';
 
 // ── Hoisted mock state ────────────────────────────────────────────────────────
 
-const { capturedRunScreenProps } = vi.hoisted(() => ({
+const { capturedRunScreenProps, capturedAgentScreenProps, capturedHeaderProps } = vi.hoisted(() => ({
   capturedRunScreenProps: { current: null as Record<string, unknown> | null },
+  capturedAgentScreenProps: { current: null as Record<string, unknown> | null },
+  capturedHeaderProps: { current: null as Record<string, unknown> | null },
 }));
 
 // ── Module mocks ──────────────────────────────────────────────────────────────
@@ -28,6 +30,13 @@ vi.mock('./screens/RunScreen.js', () => ({
     return React.createElement(Box, null, React.createElement(Text, null, 'RunScreen'));
   },
   type: {} as RunSummary, // satisfy re-export
+}));
+
+vi.mock('./screens/AgentScreen.js', () => ({
+  AgentScreen: (props: Record<string, unknown>) => {
+    capturedAgentScreenProps.current = props;
+    return React.createElement(Box, null, React.createElement(Text, null, 'AgentScreen'));
+  },
 }));
 
 // Mock MainShell — renders a stable marker
@@ -47,7 +56,10 @@ vi.mock('./screens/InitScreen.js', () => ({
 
 // Mock HeaderContent
 vi.mock('./components/HeaderContent.js', () => ({
-  HeaderContent: () => React.createElement(Text, null, 'HEADER'),
+  HeaderContent: (props: Record<string, unknown>) => {
+    capturedHeaderProps.current = props;
+    return React.createElement(Text, null, 'HEADER');
+  },
 }));
 
 // Mock useBackgroundRuns
@@ -75,6 +87,8 @@ import { App } from './app.js';
 describe('App — runProps plumbing', () => {
   beforeEach(() => {
     capturedRunScreenProps.current = null;
+    capturedAgentScreenProps.current = null;
+    capturedHeaderProps.current = null;
   });
 
   it('screen=run with runProps passes featureName and monitorOnly=true to RunScreen', async () => {
@@ -163,6 +177,28 @@ describe('App — runProps plumbing', () => {
     expect(capturedRunScreenProps.current).toBeNull();
     const frame = lastFrame() ?? '';
     expect(frame).toContain('MainShell');
+
+    unmount();
+  });
+
+  it('keeps the agent header provider aligned with the configured/session provider', async () => {
+    const sessionState = createTestSessionState({ provider: 'anthropic', model: 'claude-sonnet-4-6' });
+
+    const { unmount } = render(
+      <App
+        screen="agent"
+        initialSessionState={sessionState}
+        agentProps={{ modelOverride: 'gpt-5.3-codex' }}
+        onExit={vi.fn()}
+      />,
+    );
+
+    await wait(200);
+
+    expect(capturedAgentScreenProps.current).not.toBeNull();
+    const header = capturedAgentScreenProps.current?.header as React.ReactElement<{ providerOverride?: string; modelOverride?: string }> | undefined;
+    expect(header?.props.providerOverride).toBe('anthropic');
+    expect(header?.props.modelOverride).toBe('gpt-5.3-codex');
 
     unmount();
   });
