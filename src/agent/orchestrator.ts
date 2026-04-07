@@ -72,7 +72,8 @@ function shouldCountTowardCompletedBudget(
   issue: Pick<AgentIssueState, 'scopeOrigin' | 'actionability'>,
   outcome: WorkerOutcomeTracker['outcome'],
 ): boolean {
-  return outcome === 'success'
+  return outcome !== 'skipped'
+    && outcome !== 'unknown'
     && issue.scopeOrigin !== 'dependency'
     && issue.actionability !== 'waiting_pr';
 }
@@ -80,8 +81,6 @@ function shouldCountTowardCompletedBudget(
 function isRecoverableListingError(error: string): boolean {
   return error.startsWith('GitHub issue listing failed:');
 }
-
-const MAX_WITHIN_RUN_SELECTIONS_PER_ISSUE = 3;
 
 function needsFollowUpAfterSuccess(candidate: Pick<BacklogCandidate, 'recommendation'>): boolean {
   return candidate.recommendation === 'resume_pr_phase'
@@ -94,7 +93,6 @@ function canResumeWithinRun(
   prior: { outcome: WorkerOutcomeTracker['outcome']; selections: number } | undefined,
 ): boolean {
   if (!prior) return true;
-  if (prior.selections >= MAX_WITHIN_RUN_SELECTIONS_PER_ISSUE) return false;
 
   if (prior.outcome === 'success') {
     return needsFollowUpAfterSuccess(candidate);
@@ -325,8 +323,8 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
 
     const processed: ProcessedIssueSummary[] = [];
     const attemptedThisRun = new Map<number, { outcome: WorkerOutcomeTracker['outcome']; selections: number }>();
-    const pendingPostSuccessVerification = new Set<number>();
-    const countedSuccessfulIssues = new Set<number>();
+    const pendingContinuation = new Set<number>();
+    const countedBudgetIssues = new Set<number>();
     let completedBudget = 0;
     let blockedSnapshot: AgentIssueState[] = [];
     const schedulerCache = createSchedulerRunCache();
@@ -336,16 +334,32 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         throw new Error('Aborted');
       }
 
-      if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingPostSuccessVerification.size === 0) {
+      if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingContinuation.size === 0) {
         return buildFinalSummary(processed, blockedSnapshot);
       }
 
+      const hadPendingContinuation = pendingContinuation.size > 0;
       const ranked = await buildRankedBacklog(this.config, store, schedulerCache);
+      if (ranked.errors.length > 0 && hadPendingContinuation) {
+        throw new Error(ranked.errors[0]);
+      }
+      for (const issueNumber of [...pendingContinuation]) {
+        const prior = attemptedThisRun.get(issueNumber);
+        const stillNeedsFollowUp = ranked.actionable.some(
+          candidate => candidate.issueNumber === issueNumber && canResumeWithinRun(candidate, prior),
+        );
+        if (!stillNeedsFollowUp) {
+          pendingContinuation.delete(issueNumber);
+        }
+      }
+      if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingContinuation.size === 0) {
+        return buildFinalSummary(processed, blockedSnapshot);
+      }
       if (ranked.errors.length > 0) {
         const canProceedWithRankedQueue = ranked.queue.length > 0
           && ranked.errors.every(isRecoverableListingError);
-        if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingPostSuccessVerification.size > 0) {
-          return buildFinalSummary(processed, blockedSnapshot);
+        if (this.config.maxItems != null && completedBudget >= this.config.maxItems && pendingContinuation.size > 0) {
+          throw new Error(ranked.errors[0]);
         }
         if (!canProceedWithRankedQueue) {
           throw new Error(ranked.errors[0]);
@@ -390,18 +404,16 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         this.emit({ type: 'task_blocked', issue: blocked });
       }
 
-      for (const issueNumber of [...pendingPostSuccessVerification]) {
-        const stillNeedsFollowUp = ranked.actionable.some(
-          candidate => candidate.issueNumber === issueNumber && needsFollowUpAfterSuccess(candidate),
-        );
-        if (!stillNeedsFollowUp) {
-          pendingPostSuccessVerification.delete(issueNumber);
-        }
-      }
-
-      const next = ranked.actionable.find((candidate) => {
-        return canResumeWithinRun(candidate, attemptedThisRun.get(candidate.issueNumber));
+      const resumableCandidates = ranked.actionable.filter((candidate) => {
+        return pendingContinuation.has(candidate.issueNumber)
+          && canResumeWithinRun(candidate, attemptedThisRun.get(candidate.issueNumber));
       });
+      const next = (resumableCandidates[0] ?? ranked.actionable.find((candidate) => {
+        if (pendingContinuation.size > 0) {
+          return false;
+        }
+        return canResumeWithinRun(candidate, attemptedThisRun.get(candidate.issueNumber));
+      }));
       if (!next) {
         return buildFinalSummary(processed, blockedSnapshot);
       }
@@ -468,14 +480,14 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         selections: (prior?.selections ?? 0) + 1,
       });
       if (shouldCountTowardCompletedBudget(selected, tracker.outcome)) {
-        pendingPostSuccessVerification.add(selected.issueNumber);
+        pendingContinuation.add(selected.issueNumber);
       } else {
-        pendingPostSuccessVerification.delete(selected.issueNumber);
+        pendingContinuation.delete(selected.issueNumber);
       }
       this.emit({ type: 'task_completed', issue: completedIssue, outcome: tracker.outcome });
-      if (shouldCountTowardCompletedBudget(selected, tracker.outcome) && !countedSuccessfulIssues.has(selected.issueNumber)) {
+      if (shouldCountTowardCompletedBudget(selected, tracker.outcome) && !countedBudgetIssues.has(selected.issueNumber)) {
         completedBudget += 1;
-        countedSuccessfulIssues.add(selected.issueNumber);
+        countedBudgetIssues.add(selected.issueNumber);
       }
       invalidateSchedulerRunCache(schedulerCache, [selected.issueNumber]);
     }

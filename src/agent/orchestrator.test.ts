@@ -836,7 +836,7 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Skipped: #93');
   });
 
-  it('returns the success summary when the post-success verification rescan fails', async () => {
+  it('fails when the required post-success verification rescan fails', async () => {
     mockBuildRankedBacklog.mockReset();
     mockToolLoopState.outcomes.push('success');
     const issue = {
@@ -878,11 +878,9 @@ describe('createAgentOrchestrator', () => {
       maxItems: 1,
     });
 
-    const result = await agent.generate({ prompt: 'Complete one issue.' });
-
+    await expect(agent.generate({ prompt: 'Complete one issue.' }))
+      .rejects.toThrow('GitHub issue listing failed: transient outage');
     expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
-    expect(result.text).toContain('Processed 1 issue(s).');
-    expect(result.text).toContain('Completed: #91');
   });
 
   it('counts only one successful pass per issue toward maxItems', async () => {
@@ -1013,7 +1011,7 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Completed: #92');
   });
 
-  it('does not consume maxItems on partial requested outcomes', async () => {
+  it('counts partial requested outcomes toward maxItems but still allows same-issue continuation', async () => {
     mockBuildRankedBacklog.mockReset();
     mockToolLoopState.outcomes.push('partial', 'partial');
     const resumable = {
@@ -1071,9 +1069,75 @@ describe('createAgentOrchestrator', () => {
     expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(3);
   });
 
-  it('stops retrying the same partial issue after the within-run retry cap', async () => {
+  it('does not start a second issue after a partial pass has consumed the maxItems budget', async () => {
     mockBuildRankedBacklog.mockReset();
-    mockToolLoopState.outcomes.push('partial', 'partial', 'partial');
+    mockToolLoopState.outcomes.push('partial');
+    const firstIssue = {
+      issueNumber: 90,
+      title: 'Partially handled issue',
+      body: 'Still needs follow-up.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'retry', message: 'Resume the blocked implementation.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'blocked-issue',
+      attemptState: 'never_tried',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    const unrelatedIssue = {
+      issueNumber: 91,
+      title: 'Unrelated issue',
+      body: 'Should not start after the first partial pass.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Another issue is ready.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'unrelated-issue',
+      attemptState: 'never_tried',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [firstIssue, unrelatedIssue],
+        actionable: [firstIssue, unrelatedIssue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [unrelatedIssue],
+        actionable: [unrelatedIssue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      maxItems: 1,
+    });
+
+    const result = await agent.generate({ prompt: 'Only process one logical issue.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(1);
+    expect(result.text).toContain('Processed 1 issue(s).');
+    expect(result.text).toContain('Partial: #90');
+    expect(result.text).not.toContain('#91');
+  });
+
+  it('does not abandon a resumable issue after three within-run passes', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('partial', 'partial', 'partial', 'partial');
     const resumable = {
       issueNumber: 90,
       title: 'Persistently blocked issue',
@@ -1118,6 +1182,13 @@ describe('createAgentOrchestrator', () => {
         blocked: [],
         expansions: [],
         errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [resumable],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
       });
 
     const agent = createAgentOrchestrator({
@@ -1127,12 +1198,12 @@ describe('createAgentOrchestrator', () => {
       repo: 'app',
     });
 
-    const result = await agent.generate({ prompt: 'Keep trying until the orchestrator gives up.' });
+    const result = await agent.generate({ prompt: 'Keep trying until the issue is no longer actionable.' });
 
-    expect(mockToolLoopStream).toHaveBeenCalledTimes(3);
-    expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(4);
-    expect(result.text).toContain('Processed 3 issue(s).');
-    expect(result.text).toContain('Partial: #90, #90, #90');
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(4);
+    expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(5);
+    expect(result.text).toContain('Processed 4 issue(s).');
+    expect(result.text).toContain('Partial: #90, #90, #90, #90');
   });
 });
 
