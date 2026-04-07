@@ -86,6 +86,7 @@ const MAX_STALLED_CONTINUATION_SELECTIONS = 4;
 
 function needsFollowUpAfterSuccess(candidate: Pick<BacklogCandidate, 'recommendation'>): boolean {
   return candidate.recommendation === 'resume_pr_phase'
+    || candidate.recommendation === 'pr_closed'
     || candidate.recommendation === 'pr_merged'
     || candidate.recommendation === 'linked_pr_merged';
 }
@@ -102,7 +103,16 @@ function canResumeWithinRun(
 
   if (prior.outcome !== 'partial' && prior.outcome !== 'failure') return false;
   return candidate.recommendation === 'resume_implementation'
-    || candidate.recommendation === 'resume_pr_phase';
+    || candidate.recommendation === 'resume_pr_phase'
+    || candidate.recommendation === 'pr_closed';
+}
+
+function isAbortError(err: unknown, abortSignal?: AbortSignal): boolean {
+  if (abortSignal?.aborted) return true;
+  if (err instanceof Error) {
+    return err.name === 'AbortError' || err.message === 'Aborted';
+  }
+  return false;
 }
 
 function hasExceededWithinRunContinuationLimit(
@@ -476,6 +486,9 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
           // Worker text is surfaced only in the final returned summary.
         }
       } catch (err) {
+        if (isAbortError(err, options.abortSignal)) {
+          throw new Error('Aborted');
+        }
         const failed: AgentIssueState = { ...selected, error: err instanceof Error ? err.message : String(err) };
         const failureOutcome: WorkerOutcomeTracker['outcome'] = tracker.outcome === 'unknown' ? 'failure' : tracker.outcome;
         processed.push({ issue: failed, outcome: failureOutcome });

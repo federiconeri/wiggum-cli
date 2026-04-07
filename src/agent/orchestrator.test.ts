@@ -548,6 +548,51 @@ describe('createAgentOrchestrator', () => {
     expect(events).toContainEqual({ type: 'task_completed', issue: 3, outcome: 'failure' });
   });
 
+  it('does not record a user-triggered abort as a task failure', async () => {
+    mockBuildRankedBacklog.mockReset();
+    const fresh = {
+      issueNumber: 3,
+      title: 'Fresh issue',
+      body: 'Do work.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'priority', message: 'Ready issue.' }],
+      recommendation: 'start_fresh',
+      loopFeatureName: 'fresh-issue',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+    mockBuildRankedBacklog.mockResolvedValue({
+      queue: [fresh],
+      actionable: [fresh],
+      blocked: [],
+      expansions: [],
+      errors: [],
+    });
+    const abortError = new Error('Aborted');
+    abortError.name = 'AbortError';
+    mockToolLoopStream.mockRejectedValueOnce(abortError);
+
+    const events: Array<{ type: string; outcome?: string; issue?: number }> = [];
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+      onOrchestratorEvent: (event) => {
+        if (event.type === 'task_completed') {
+          events.push({ type: event.type, outcome: event.outcome, issue: event.issue.issueNumber });
+        }
+      },
+    });
+
+    await expect(agent.generate({ prompt: 'Begin working through the backlog.' }))
+      .rejects.toThrow('Aborted');
+    expect(events).toEqual([]);
+  });
+
   it('dispatches waiting_pr issues through the worker path', async () => {
     mockBuildRankedBacklog.mockReset();
     mockToolLoopState.outcomes.push('partial');
@@ -776,6 +821,62 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).toContain('Processed 2 issue(s).');
     expect(result.text).toContain('Completed: #88');
     expect(result.text).toContain('Partial: #88');
+  });
+
+  it('allows a pr_closed issue to continue within the same run', async () => {
+    mockBuildRankedBacklog.mockReset();
+    mockToolLoopState.outcomes.push('partial', 'partial');
+    const issue = {
+      issueNumber: 94,
+      title: 'Recover closed PR work',
+      body: 'Re-triage the closed PR state.',
+      labels: ['loop'],
+      phase: 'idle',
+      actionability: 'ready',
+      priorityTier: 'unlabeled',
+      selectionReasons: [{ kind: 'retry', message: 'Re-triage the closed PR.' }],
+      recommendation: 'pr_closed',
+      loopFeatureName: 'recover-closed-pr-work',
+      attemptState: 'partial',
+      explicitDependencyEdges: [],
+      inferredDependencyEdges: [],
+    };
+
+    mockBuildRankedBacklog
+      .mockResolvedValueOnce({
+        queue: [{ ...issue, recommendation: 'start_fresh', attemptState: 'never_tried' }],
+        actionable: [{ ...issue, recommendation: 'start_fresh', attemptState: 'never_tried' }],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [issue],
+        actionable: [issue],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      })
+      .mockResolvedValueOnce({
+        queue: [issue],
+        actionable: [],
+        blocked: [],
+        expansions: [],
+        errors: [],
+      });
+
+    const agent = createAgentOrchestrator({
+      model: {} as any,
+      projectRoot: '/fake',
+      owner: 'acme',
+      repo: 'app',
+    });
+
+    const result = await agent.generate({ prompt: 'Continue handling the issue after the PR is closed.' });
+
+    expect(mockToolLoopStream).toHaveBeenCalledTimes(2);
+    expect(result.text).toContain('Processed 2 issue(s).');
+    expect(result.text).toContain('Partial: #94, #94');
   });
 
   it('allows a successful implementation pass to be reselected for merged housekeeping', async () => {
