@@ -82,6 +82,8 @@ function isRecoverableListingError(error: string): boolean {
   return error.startsWith('GitHub issue listing failed:');
 }
 
+const MAX_STALLED_CONTINUATION_SELECTIONS = 4;
+
 function needsFollowUpAfterSuccess(candidate: Pick<BacklogCandidate, 'recommendation'>): boolean {
   return candidate.recommendation === 'resume_pr_phase'
     || candidate.recommendation === 'pr_merged'
@@ -101,6 +103,15 @@ function canResumeWithinRun(
   if (prior.outcome !== 'partial' && prior.outcome !== 'failure') return false;
   return candidate.recommendation === 'resume_implementation'
     || candidate.recommendation === 'resume_pr_phase';
+}
+
+function hasExceededWithinRunContinuationLimit(
+  candidate: BacklogCandidate,
+  prior: { outcome: WorkerOutcomeTracker['outcome']; selections: number } | undefined,
+): boolean {
+  if (!prior) return false;
+  if (!canResumeWithinRun(candidate, prior)) return false;
+  return prior.selections >= MAX_STALLED_CONTINUATION_SELECTIONS;
 }
 
 export function buildRuntimeConfig(config: AgentConfig): string {
@@ -408,6 +419,13 @@ class StructuredAgentOrchestrator implements AgentOrchestrator {
         return pendingContinuation.has(candidate.issueNumber)
           && canResumeWithinRun(candidate, attemptedThisRun.get(candidate.issueNumber));
       });
+      const stalledCandidate = resumableCandidates.find((candidate) =>
+        hasExceededWithinRunContinuationLimit(candidate, attemptedThisRun.get(candidate.issueNumber)));
+      if (stalledCandidate) {
+        throw new Error(
+          `Issue #${stalledCandidate.issueNumber} remained in ${stalledCandidate.recommendation} after ${MAX_STALLED_CONTINUATION_SELECTIONS} attempts in the same run.`,
+        );
+      }
       const next = (resumableCandidates[0] ?? ranked.actionable.find((candidate) => {
         if (pendingContinuation.size > 0) {
           return false;

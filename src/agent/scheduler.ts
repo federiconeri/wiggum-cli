@@ -889,7 +889,12 @@ async function expandIssueScope(
         deriveFeatureNameFromTitle(detail.title),
         cache,
       );
-      if (featureState.recommendation === 'pr_exists_open' || featureState.recommendation === 'linked_pr_open') {
+      if (
+        featureState.recommendation === 'pr_exists_open'
+        || featureState.recommendation === 'linked_pr_open'
+        || featureState.recommendation === 'pr_merged'
+        || featureState.recommendation === 'linked_pr_merged'
+      ) {
         continue;
       }
     }

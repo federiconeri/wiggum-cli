@@ -1135,7 +1135,7 @@ describe('createAgentOrchestrator', () => {
     expect(result.text).not.toContain('#91');
   });
 
-  it('does not abandon a resumable issue after three within-run passes', async () => {
+  it('fails explicitly when a resumable issue remains stuck for too many within-run passes', async () => {
     mockBuildRankedBacklog.mockReset();
     mockToolLoopState.outcomes.push('partial', 'partial', 'partial', 'partial');
     const resumable = {
@@ -1185,7 +1185,7 @@ describe('createAgentOrchestrator', () => {
       })
       .mockResolvedValueOnce({
         queue: [resumable],
-        actionable: [],
+        actionable: [resumable],
         blocked: [],
         expansions: [],
         errors: [],
@@ -1198,12 +1198,11 @@ describe('createAgentOrchestrator', () => {
       repo: 'app',
     });
 
-    const result = await agent.generate({ prompt: 'Keep trying until the issue is no longer actionable.' });
+    await expect(agent.generate({ prompt: 'Keep trying until the issue is no longer actionable.' }))
+      .rejects.toThrow('Issue #90 remained in resume_implementation after 4 attempts in the same run.');
 
     expect(mockToolLoopStream).toHaveBeenCalledTimes(4);
     expect(mockBuildRankedBacklog).toHaveBeenCalledTimes(5);
-    expect(result.text).toContain('Processed 4 issue(s).');
-    expect(result.text).toContain('Partial: #90, #90, #90, #90');
   });
 });
 
