@@ -271,13 +271,16 @@ describe('writeKeysToEnvFile', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
     vi.spyOn(fs, 'mkdirSync').mockReturnValue(undefined);
     vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'chmodSync').mockReturnValue(undefined);
 
     writeKeysToEnvFile(filePath, keys);
 
     expect(fs.writeFileSync).toHaveBeenCalledWith(
       filePath,
-      'OPENAI_API_KEY=sk-test-123\n'
+      'OPENAI_API_KEY=sk-test-123\n',
+      { mode: 0o600 }
     );
+    expect(fs.chmodSync).toHaveBeenCalledWith(filePath, 0o600);
   });
 
   it('merges keys into existing file content (preserves other keys)', () => {
@@ -288,6 +291,9 @@ describe('writeKeysToEnvFile', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(existingContent);
     vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'chmodSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'chmodSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'chmodSync').mockReturnValue(undefined);
 
     writeKeysToEnvFile(filePath, keys);
 
@@ -322,13 +328,16 @@ describe('writeKeysToEnvFile', () => {
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);
     vi.spyOn(fs, 'readFileSync').mockReturnValue(existingContent);
     vi.spyOn(fs, 'writeFileSync').mockReturnValue(undefined);
+    vi.spyOn(fs, 'chmodSync').mockReturnValue(undefined);
 
     writeKeysToEnvFile(filePath, keys);
 
     expect(fs.writeFileSync).toHaveBeenCalledWith(
       filePath,
-      existingContent
+      existingContent,
+      { mode: 0o600 }
     );
+    expect(fs.chmodSync).toHaveBeenCalledWith(filePath, 0o600);
   });
 
   it('skips keys with empty string values', () => {

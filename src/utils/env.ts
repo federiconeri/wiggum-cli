@@ -86,7 +86,12 @@ export function writeKeysToEnvFile(filePath: string, keys: Record<string, string
     }
   }
 
-  fs.writeFileSync(filePath, envContent);
+  fs.writeFileSync(filePath, envContent, { mode: 0o600 });
+  try {
+    fs.chmodSync(filePath, 0o600);
+  } catch {
+    // Best-effort hardening; ignore chmod failures on unusual filesystems.
+  }
 }
 
 /**

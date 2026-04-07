@@ -87,7 +87,8 @@ describe('handleConfigCommand - init guard', () => {
     // Should write to .ralph/.env.local
     expect(writeSpy).toHaveBeenCalledWith(
       envLocalPath,
-      'TAVILY_API_KEY=tvly-test-key-1234567890\n'
+      'TAVILY_API_KEY=tvly-test-key-1234567890\n',
+      { mode: 0o600 }
     );
 
     // Should set environment variable
@@ -212,15 +213,27 @@ describe('handleConfigCommand - init guard', () => {
 
     // Test tavily
     await handleConfigCommand(['set', 'tavily', 'tvly-key-1234567890'], mockState);
-    expect(writeSpy).toHaveBeenLastCalledWith(envLocalPath, 'TAVILY_API_KEY=tvly-key-1234567890\n');
+    expect(writeSpy).toHaveBeenLastCalledWith(
+      envLocalPath,
+      'TAVILY_API_KEY=tvly-key-1234567890\n',
+      { mode: 0o600 }
+    );
 
     // Test context7
     await handleConfigCommand(['set', 'context7', 'c7-key-1234567890'], mockState);
-    expect(writeSpy).toHaveBeenLastCalledWith(envLocalPath, 'CONTEXT7_API_KEY=c7-key-1234567890\n');
+    expect(writeSpy).toHaveBeenLastCalledWith(
+      envLocalPath,
+      'CONTEXT7_API_KEY=c7-key-1234567890\n',
+      { mode: 0o600 }
+    );
 
     // Test braintrust
     await handleConfigCommand(['set', 'braintrust', 'bt-key-1234567890'], mockState);
-    expect(writeSpy).toHaveBeenLastCalledWith(envLocalPath, 'BRAINTRUST_API_KEY=bt-key-1234567890\n');
+    expect(writeSpy).toHaveBeenLastCalledWith(
+      envLocalPath,
+      'BRAINTRUST_API_KEY=bt-key-1234567890\n',
+      { mode: 0o600 }
+    );
   });
 
   it('persists /config set cli codex into ralph.config.cjs', async () => {
