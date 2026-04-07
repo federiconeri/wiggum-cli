@@ -324,15 +324,17 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
 
   it('supports codex exec and codex exec resume JSON paths', () => {
     const template = readFeatureLoopTemplate();
-    expect(template).toContain('echo "codex --ask-for-approval \\"$CODEX_APPROVAL_POLICY\\" --sandbox \\"$CODEX_SANDBOX\\" exec -C \\"$APP_DIR\\" --model \\"${model}\\"${codex_extra}"');
+    expect(template).toContain('echo "codex --ask-for-approval ${CODEX_APPROVAL_POLICY} --sandbox ${CODEX_SANDBOX} exec --cd . --model ${model}${codex_extra}"');
     expect(template).toContain('DISABLE_MCP_IN_AUTOMATED_NORM=$(echo "$DISABLE_MCP_IN_AUTOMATED" | tr \'[:upper:]\' \'[:lower:]\')');
     expect(template).toContain('if [ "${RALPH_AUTOMATED:-}" = "1" ] && [ "$DISABLE_MCP_IN_AUTOMATED_NORM" = "true" ]; then');
-    expect(template).toContain(`codex_extra=" -c 'mcp_servers={}'"`);
+    expect(template).toContain('codex_extra=" -c mcp_servers={}"');
     expect(template).toContain('claude -p --output-format json --permission-mode ${CLAUDE_PERMISSION_MODE} --model ${model}');
-    expect(template).toContain('eval "$claude_cmd --json --output-last-message \\"$LAST_MESSAGE_FILE\\" -"');
+    expect(template).toContain('read -r -a cmd_parts <<< "$claude_cmd"');
+    expect(template).toContain('"${cmd_parts[@]}" --json --output-last-message "$LAST_MESSAGE_FILE" -');
     expect(template).toContain('local resume_cmd="${claude_cmd/ exec / exec resume }"');
-    expect(template).toContain('resume_cmd="${resume_cmd/ -C \\"$APP_DIR\\"/}"');
-    expect(template).toContain('cd "$APP_DIR" && eval "$resume_cmd \\"$session_id\\" - --json --output-last-message \\"$LAST_MESSAGE_FILE\\""');
+    expect(template).toContain('resume_cmd="${resume_cmd/ --cd ./}"');
+    expect(template).toContain('"${resume_parts[@]}" "$session_id" - --json --output-last-message "$LAST_MESSAGE_FILE"');
+    expect(template).not.toContain('eval "$');
   });
 
   it('extracts Codex token usage using multiple key shapes without overcounting repeated events', () => {
@@ -389,7 +391,8 @@ describe('feature-loop.sh.tmpl — CLI adapter routing', () => {
   it('parses review-fix output with implementation CLI adapter', () => {
     const template = readFeatureLoopTemplate();
     expect(template).toContain('local impl_cli="$CODING_CLI"');
-    expect(template).toContain('impl_cmd="$IMPL_CMD --json --output-last-message \\"$LAST_MESSAGE_FILE\\""');
+    expect(template).toContain('read -r -a impl_cmd_parts <<< "$IMPL_CMD"');
+    expect(template).toContain('"${impl_cmd_parts[@]}" --json --output-last-message "$LAST_MESSAGE_FILE" -');
     expect(template).toContain('extract_session_result "${CLAUDE_OUTPUT}.raw" "$impl_cli"');
     expect(template).toContain('accumulate_tokens_from_session "$LAST_SESSION_ID" "${CLAUDE_OUTPUT}.raw" "$impl_cli"');
   });

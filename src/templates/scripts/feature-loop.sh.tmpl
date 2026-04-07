@@ -236,6 +236,10 @@ fi
 build_cli_cmd() {
     local cli="$1"
     local model="$2"
+    if [[ ! "$model" =~ ^[A-Za-z0-9._:/=-]+$ ]]; then
+        echo "ERROR: Invalid model value '$model'. Only alphanumeric, dot, underscore, colon, slash, equals and hyphen are allowed." >&2
+        return 1
+    fi
     case "$cli" in
         claude)
             echo "claude -p --output-format json --permission-mode ${CLAUDE_PERMISSION_MODE} --model ${model}"
@@ -244,9 +248,10 @@ build_cli_cmd() {
             local codex_extra=""
             # Avoid MCP startup deadlocks in unattended loop runs.
             if [ "${RALPH_AUTOMATED:-}" = "1" ] && [ "$DISABLE_MCP_IN_AUTOMATED_NORM" = "true" ]; then
-                codex_extra=" -c 'mcp_servers={}'"
+                codex_extra=" -c mcp_servers={}"
             fi
-            echo "codex --ask-for-approval \"$CODEX_APPROVAL_POLICY\" --sandbox \"$CODEX_SANDBOX\" exec -C \"$APP_DIR\" --model \"${model}\"${codex_extra}"
+            # Keep command string token-safe. run_claude_* parses it as an argument array.
+            echo "codex --ask-for-approval ${CODEX_APPROVAL_POLICY} --sandbox ${CODEX_SANDBOX} exec --cd . --model ${model}${codex_extra}"
             ;;
         *)
             echo "ERROR: Unsupported CLI '$cli'" >&2
@@ -332,12 +337,14 @@ fi
 run_claude_prompt() {
     local prompt_file="$1"
     local claude_cmd="$2"
-    if [[ "$claude_cmd" == codex* ]]; then
+    local -a cmd_parts=()
+    read -r -a cmd_parts <<< "$claude_cmd"
+    if [[ "${cmd_parts[0]:-}" == "codex" ]]; then
         LAST_RUN_CLI="codex"
-        { cat "$prompt_file" | envsubst; echo "$AUTOMATION_FOOTER"; } | (cd "$APP_DIR" && eval "$claude_cmd --json --output-last-message \"$LAST_MESSAGE_FILE\" -")
+        { cat "$prompt_file" | envsubst; echo "$AUTOMATION_FOOTER"; } | (cd "$APP_DIR" && "${cmd_parts[@]}" --json --output-last-message "$LAST_MESSAGE_FILE" -)
     else
         LAST_RUN_CLI="claude"
-        { cat "$prompt_file" | envsubst; echo "$AUTOMATION_FOOTER"; } | $claude_cmd
+        { cat "$prompt_file" | envsubst; echo "$AUTOMATION_FOOTER"; } | "${cmd_parts[@]}"
     fi
 }
 
@@ -346,6 +353,10 @@ run_claude_resume() {
     local session_id="$1"
     local continuation_prompt="$2"
     local claude_cmd="$3"
+    if [[ ! "$session_id" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+        echo "WARNING: Refusing to resume with unsafe session id '$session_id'" >&2
+        return 1
+    fi
     if [[ "$claude_cmd" == codex* ]]; then
         LAST_RUN_CLI="codex"
         local resume_cmd="${claude_cmd/ exec / exec resume }"
@@ -354,18 +365,22 @@ run_claude_resume() {
             return 1
         fi
         # codex exec resume does not accept -C/--cd; resume from APP_DIR instead.
-        resume_cmd="${resume_cmd/ -C \"$APP_DIR\"/}"
-        resume_cmd="${resume_cmd/ --cd \"$APP_DIR\"/}"
-        { echo "$continuation_prompt"; echo "$AUTOMATION_FOOTER"; } | (cd "$APP_DIR" && eval "$resume_cmd \"$session_id\" - --json --output-last-message \"$LAST_MESSAGE_FILE\"")
+        resume_cmd="${resume_cmd/ --cd ./}"
+        resume_cmd="${resume_cmd/ -C ./}"
+        local -a resume_parts=()
+        read -r -a resume_parts <<< "$resume_cmd"
+        { echo "$continuation_prompt"; echo "$AUTOMATION_FOOTER"; } | (cd "$APP_DIR" && "${resume_parts[@]}" "$session_id" - --json --output-last-message "$LAST_MESSAGE_FILE")
     else
         LAST_RUN_CLI="claude"
-        # Insert --resume "$session_id" before the -p flag
-        local resume_cmd="${claude_cmd/ -p / --resume \"$session_id\" -p }"
+        # Insert --resume before the -p flag.
+        local resume_cmd="${claude_cmd/ -p / --resume ${session_id} -p }"
         if [ "$resume_cmd" = "$claude_cmd" ]; then
             echo "WARNING: --resume injection failed, -p flag not found in command" >&2
             return 1
         fi
-        { echo "$continuation_prompt"; echo "$AUTOMATION_FOOTER"; } | $resume_cmd
+        local -a resume_parts=()
+        read -r -a resume_parts <<< "$resume_cmd"
+        { echo "$continuation_prompt"; echo "$AUTOMATION_FOOTER"; } | "${resume_parts[@]}"
     fi
 }
 
@@ -931,15 +946,12 @@ except Exception:
 run_review_fix() {
     local findings
     local impl_cli="$CODING_CLI"
-    local impl_cmd="$IMPL_CMD"
     findings=$(extract_review_findings "${CLAUDE_OUTPUT}.raw")
+    local -a impl_cmd_parts=()
+    read -r -a impl_cmd_parts <<< "$IMPL_CMD"
     if [ "$impl_cli" = "codex" ]; then
         LAST_RUN_CLI="codex"
-        impl_cmd="$IMPL_CMD --json --output-last-message \"$LAST_MESSAGE_FILE\""
-    else
-        LAST_RUN_CLI="claude"
-    fi
-    cat <<FIXEOF | eval "$impl_cmd" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+        cat <<FIXEOF | "${impl_cmd_parts[@]}" --json --output-last-message "$LAST_MESSAGE_FILE" - 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
 ## Code Review Findings
 
 The following issues were found during code review:
@@ -954,8 +966,51 @@ Fix each issue listed above. Run git diff $DEFAULT_BRANCH to see the current cha
 3. Commit and push the fixes
 Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push.
 FIXEOF
+    else
+        LAST_RUN_CLI="claude"
+        cat <<FIXEOF | "${impl_cmd_parts[@]}" 2>&1 | tee "${CLAUDE_OUTPUT}.raw" || true
+## Code Review Findings
+
+The following issues were found during code review:
+
+${findings}
+
+## Task
+
+Fix each issue listed above. Run git diff $DEFAULT_BRANCH to see the current changes, then:
+1. Fix each issue referenced in the review
+2. Run tests to verify fixes
+3. Commit and push the fixes
+Do NOT propose completion options or ask interactive questions. Just fix, test, commit, push.
+FIXEOF
+    fi
     extract_session_result "${CLAUDE_OUTPUT}.raw" "$impl_cli"
     accumulate_tokens_from_session "$LAST_SESSION_ID" "${CLAUDE_OUTPUT}.raw" "$impl_cli"
+}
+
+validate_simple_command() {
+    local command="$1"
+    if [[ "$command" =~ [\;\&\|\<\>\`\$\(\)] ]]; then
+        return 1
+    fi
+    if [[ "$command" =~ [[:cntrl:]] ]]; then
+        return 1
+    fi
+    return 0
+}
+
+run_test_command() {
+    if ! validate_simple_command "$TEST_COMMAND"; then
+        echo "ERROR: commands.test contains unsupported shell operators. Use a plain command and arguments." >&2
+        return 2
+    fi
+    local -a test_cmd_parts=()
+    read -r -a test_cmd_parts <<< "$TEST_COMMAND"
+    if [ ${#test_cmd_parts[@]} -eq 0 ]; then
+        echo "ERROR: commands.test resolved to an empty command." >&2
+        return 2
+    fi
+    (cd "$APP_DIR" && "${test_cmd_parts[@]}")
 }
 
 # Normalize test failure lines: extract test name, strip timing, deduplicate.
@@ -968,7 +1023,7 @@ normalize_test_failures() {
 # Returns 0 if tests pass OR all failures are pre-existing (captured at baseline).
 check_tests_pass_or_baseline() {
     local test_output
-    test_output=$( (cd "$APP_DIR" && eval "$TEST_COMMAND") 2>&1 )
+    test_output=$(run_test_command 2>&1)
     local exit_code=$?
 
     if [ $exit_code -eq 0 ]; then
@@ -1152,11 +1207,11 @@ fi
 # Capture baseline test failures for pre-existing failure detection
 BASELINE_FAILURES_FILE="/tmp/ralph-loop-${FEATURE}.baseline-failures"
 echo "Capturing baseline test failures..."
-if (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1) > /dev/null 2>&1; then
+if run_test_command > /dev/null 2>&1; then
     echo "Baseline: all tests passing"
     : > "$BASELINE_FAILURES_FILE"
 else
-    (cd "$APP_DIR" && eval "$TEST_COMMAND" 2>&1) | normalize_test_failures > "$BASELINE_FAILURES_FILE" 2>/dev/null || true
+    run_test_command 2>&1 | normalize_test_failures > "$BASELINE_FAILURES_FILE" 2>/dev/null || true
     BASELINE_COUNT=$(wc -l < "$BASELINE_FAILURES_FILE" | tr -d ' ')
     echo "Baseline: $BASELINE_COUNT pre-existing test failure(s) recorded"
 fi
