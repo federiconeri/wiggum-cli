@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <strong>Plug into any codebase. Generate specs. Ship features while you sleep.</strong>
+  <strong>Plug into any codebase. Generate specs. Run autonomous feature loops with Claude Code or Codex.</strong>
 </p>
 
 <p align="center">
@@ -32,9 +32,9 @@
 
 ## What is Wiggum?
 
-Wiggum is an **AI agent** that plugs into any codebase and makes it ready for autonomous feature development — no configuration, no boilerplate.
+Wiggum is an **AI agent CLI** that plugs into any codebase and prepares it for autonomous feature development.
 
-It works in two phases. First, **Wiggum itself is the agent**: it scans your project, detects your stack, and runs an AI-guided interview to produce detailed specs, prompts, and scripts — all tailored to your codebase. Then it delegates the actual coding to [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or any CLI-based coding agent, running an autonomous **implement → test → fix** loop until the feature ships.
+It works in two phases. First, **Wiggum itself is the agent**: it scans your project, detects your stack, and runs an AI-guided interview to produce detailed specs, prompts, and scripts tailored to your codebase. Then it delegates coding loops to [Claude Code](https://docs.anthropic.com/en/docs/claude-code) or [Codex CLI](https://github.com/openai/codex), running **implement → test → fix** cycles until completion.
 
 Plug & play. Point it at a repo. It figures out the rest.
 
@@ -48,7 +48,7 @@ Plug & play. Point it at a repo. It figures out the rest.
   │  plug&play   prompts     guides    until done        │
   │                            │    │                    │
   └────────────────────────────┘    └────────────────────┘
-       runs in your terminal          Claude Code / any agent
+       runs in your terminal          Claude Code / Codex CLI
 ```
 
 ---
@@ -65,6 +65,7 @@ Then, in your project:
 wiggum init                  # Scan project, configure AI provider
 wiggum new user-auth         # AI interview → feature spec
 wiggum run user-auth         # Autonomous coding loop
+wiggum agent --dry-run       # Preview backlog automation plan
 ```
 
 Or skip the global install:
@@ -81,13 +82,17 @@ npx wiggum-cli init
 
 🎙️ **AI-Guided Interviews** — Generates detailed, project-aware feature specs through a structured 4-phase interview. No more blank-page problem.
 
-🔁 **Autonomous Coding Loops** — Hands specs to Claude Code (or any agent) and runs implement → test → fix cycles with git worktree isolation.
+🔁 **Autonomous Coding Loops** — Hands specs to Claude Code or Codex CLI and runs implement → test → fix cycles with git worktree isolation.
 
 ✨ **Spec Autocomplete** — AI pre-fills spec names from your codebase context when running `/run`.
 
 📥 **Action Inbox** — Review AI decisions inline without breaking your flow. The loop pauses, you approve or redirect, it continues.
 
 📊 **Run Summaries** — See exactly what changed and why after each loop completes, with activity feed and diff stats.
+
+🧠 **Backlog Agent** — Run `wiggum agent` to execute prioritized GitHub backlog items with dependency-aware scheduling and review-mode controls.
+
+🗂️ **Issue Intake** — Use `/issue` in TUI to browse GitHub issues and start specs directly from issue context.
 
 📋 **Tailored Prompts** — Generates prompts, guides, and scripts specific to your stack. Not generic templates — actual context about *your* project.
 
@@ -105,12 +110,11 @@ npx wiggum-cli init
 wiggum init
 ```
 
-Wiggum reads your `package.json`, config files, source tree, and directory structure. A multi-agent AI system then analyzes the results:
+Wiggum reads your `package.json`, config files, source tree, and directory structure. It then runs a simplified analysis pipeline:
 
-1. **Planning Orchestrator** — creates an analysis plan based on detected stack
-2. **Parallel Workers** — Context Enricher explores code while Tech Researchers gather best practices
-3. **Synthesis** — merges results, detects relevant MCP servers
-4. **Evaluator-Optimizer** — QA loop that validates and refines the output
+1. **Codebase Analyzer (unified agent)** — builds project context, commands, and implementation guidance from your actual codebase
+2. **MCP Detection** — maps detected stack to essential/recommended MCP server suggestions
+3. **Context Persistence** — saves enriched context and generated assets under `.ralph/`
 
 Output: a `.ralph/` directory with configuration, prompts, guides, and scripts — all tuned to your project.
 
@@ -135,7 +139,7 @@ An AI-guided interview walks you through:
 wiggum run payment-flow
 ```
 
-Wiggum hands the spec + prompts + project context to your coding agent and runs an autonomous loop:
+Wiggum hands the spec + prompts + project context to Claude Code or Codex CLI and runs an autonomous loop:
 
 ```
 implement → run tests → fix failures → repeat
@@ -159,7 +163,10 @@ $ wiggum
 | `/new <feature>` | `/n` | AI interview → feature spec |
 | `/run <feature>` | `/r` | Run autonomous coding loop |
 | `/monitor <feature>` | `/m` | Monitor a running feature |
+| `/issue [query]` | — | Browse GitHub issues and start a spec |
+| `/agent [flags]` | `/a` | Run autonomous backlog executor |
 | `/sync` | `/s` | Re-scan project, update context |
+| `/config [...]` | `/cfg` | Manage API keys and loop settings |
 | `/help` | `/h` | Show commands |
 | `/exit` | `/q` | Exit |
 
@@ -214,9 +221,12 @@ Create a feature specification via AI-powered interview.
 
 | Flag | Description |
 |------|-------------|
-| `--ai` | Use AI interview (default in TUI mode) |
 | `--provider <name>` | AI provider for spec generation |
 | `--model <model>` | Model to use |
+| `--issue <number\|url>` | Add GitHub issue as context (repeatable) |
+| `--context <url\|path>` | Add URL/file context (repeatable) |
+| `--auto` | Headless mode (skip TUI) |
+| `--goals <description>` | Feature goals for `--auto` mode |
 | `-e, --edit` | Open in editor after creation |
 | `-f, --force` | Overwrite existing spec |
 
@@ -245,6 +255,13 @@ For loop models:
 - Codex CLI phases default to `gpt-5.3-codex` across all phases.
 
 <details>
+<summary><code>wiggum sync</code></summary>
+
+Re-scan project and refresh saved context (`.ralph/.context.json`) using current provider/model settings.
+
+</details>
+
+<details>
 <summary><code>wiggum monitor &lt;feature&gt; [options]</code></summary>
 
 Track feature development progress in real-time.
@@ -253,6 +270,26 @@ Track feature development progress in real-time.
 |------|-------------|
 | `--interval <seconds>` | Refresh interval (default: 5) |
 | `--bash` | Use bash monitor script |
+| `--stream` | Force headless streaming monitor output |
+
+</details>
+
+<details>
+<summary><code>wiggum agent [options]</code></summary>
+
+Run the autonomous backlog executor (GitHub issue queue + dependency-aware scheduling).
+
+| Flag | Description |
+|------|-------------|
+| `--model <model>` | Model override (defaults from `ralph.config.cjs`) |
+| `--max-items <n>` | Max issues to process before stopping |
+| `--max-steps <n>` | Max agent steps before stopping |
+| `--labels <l1,l2>` | Only process issues matching these labels |
+| `--issues <n1,n2,...>` | Only process specific issue numbers |
+| `--review-mode <mode>` | `manual`, `auto`, or `merge` |
+| `--dry-run` | Plan actions without executing |
+| `--stream` | Stream output instead of waiting for final response |
+| `--diagnose-gh` | Run GitHub connectivity diagnostics for agent flows |
 
 </details>
 
@@ -309,6 +346,7 @@ Keys are stored in `.ralph/.env.local` and never leave your machine.
 
 - **Node.js** >= 18.0.0
 - **Git** (for worktree features)
+- **GitHub CLI (`gh`)** for `/issue` browsing and backlog agent operations
 - An AI provider API key (Anthropic, OpenAI, or OpenRouter)
 - A supported coding CLI for loop execution: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) and/or [Codex CLI](https://github.com/openai/codex)
 
