@@ -24,6 +24,22 @@ vi.mock('../hooks/useSync.js', () => ({
 
 const testHeader = <Text>HEADER</Text>;
 
+async function waitForFrameContains(
+  instance: ReturnType<typeof render>,
+  needle: string,
+  timeoutMs = 1500,
+): Promise<string> {
+  const start = Date.now();
+  let frame = stripAnsi(instance.lastFrame() ?? '');
+
+  while (!frame.includes(needle) && Date.now() - start < timeoutMs) {
+    await wait(25);
+    frame = stripAnsi(instance.lastFrame() ?? '');
+  }
+
+  return frame;
+}
+
 describe('MainShell', () => {
   let onNavigate: ReturnType<typeof vi.fn<(target: NavigationTarget, props?: NavigationProps) => void>>;
 
@@ -49,11 +65,9 @@ describe('MainShell', () => {
     );
 
     // Use /h alias which is shorter and more reliable in CI
-    await typeText(instance, '/h ');
+    await typeText(instance, '/help ');
     pressEnter(instance);
-    await wait(100);
-
-    const frame = stripAnsi(instance.lastFrame() ?? '');
+    const frame = await waitForFrameContains(instance, 'Available commands');
     expect(frame).toContain('Available commands');
     instance.unmount();
   });
@@ -110,9 +124,7 @@ describe('MainShell', () => {
 
     await typeText(instance, '/h ');
     pressEnter(instance);
-    await wait(50);
-
-    const frame = stripAnsi(instance.lastFrame() ?? '');
+    const frame = await waitForFrameContains(instance, 'Available commands');
     expect(frame).toContain('Available commands');
     instance.unmount();
   });
