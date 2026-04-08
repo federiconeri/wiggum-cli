@@ -1,6 +1,6 @@
 {
   "name": "wiggum-cli",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "description": "AI agent CLI for spec-driven feature loops with Claude Code and Codex",
   "type": "module",
   "main": "dist/index.js",
